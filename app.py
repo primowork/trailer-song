@@ -1,5 +1,5 @@
 import streamlit as st
-from scanner import fetch_web_covers, filter_candidates_by_artist_presence, verify_selected_tracks
+from scanner import fetch_web_covers, verify_single_track, clean_artist_name
 
 st.set_page_config(page_title="סורק קאברים - IFPI Israel", page_icon="🎵", layout="wide")
 
@@ -10,17 +10,28 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# אתחול רשימה שחורה ולבנה בזיכרון המערכת
+# אתחול זיכרון לבדיקות ולרשימה שחורה
+if 'statuses' not in st.session_state:
+    st.session_state['statuses'] = {} # track_id -> {"approved": bool, "publisher": str}
 if 'blacklist' not in st.session_state:
     st.session_state['blacklist'] = set()
-if 'whitelist' not in st.session_state:
-    st.session_state['whitelist'] = set()
 
-st.title("🎵 סורק קאברים ממוקד מול הפדרציה (IFPI Israel)")
-st.write("המערכת מסננת אוטומטית אמנים שאינם מופיעים בפדרציה ומציגה לך רק קאברים מיוצרים מורשים.")
+# ניהול רשימה שחורה בסיידבר
+with st.sidebar:
+    st.markdown("### 🚫 אמנים ברשימה השחורה")
+    st.write(f"סה\"כ נחסמו: **{len(st.session_state['blacklist'])}**")
+    
+    if st.session_state['blacklist']:
+        st.write(list(st.session_state['blacklist']))
+        if st.button("🗑️ נקה רשימה שחורה"):
+            st.session_state['blacklist'] = set()
+            st.rerun()
+
+st.title("🎵 סורק קאברים מהיר (IFPI Israel)")
+st.write("הכנס חיפוש לקבלת תוצאות מיידיות. הקשב לאודיו, סרוק שירים בפדרציה או חסום אמנים שאינם רלוונטיים בלחיצה אחת.")
 
 # פילטרים
-with st.expander("🎛️ פילטרים לחיפוש (סגנון, קצב, אורך)", expanded=True):
+with st.expander("🎛️ פילטרים לחיפוש (סגנון, קצב, אורך)", expanded=False):
     col1, col2, col3 = st.columns(3)
     with col1:
         style_filter = st.selectbox("סגנון / ז'אנר:", ["הכל", "Epic Orchestral", "Rock Hybrid", "Dark Electronic", "Dramatic Piano"])
@@ -37,113 +48,81 @@ filters = {
 
 query = st.text_input("מילת חיפוש / אמן / שיר מקור:", placeholder="למשל: victory, 2WEI, Hans Zimmer")
 
-if st.button("1. חפש אופציות (כולל סינון אמנים מוקדם)", type="primary"):
+if st.button("🔎 חפש שירים מיידית", type="primary"):
     if query.strip():
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        with st.spinner("שולף שירים מאינטרנט..."):
+            raw_results = fetch_web_covers(query, limit=40, filters=filters)
+            # סינון מיידי של אמנים ברשימה השחורה
+            st.session_state['candidates'] = [
+                item for item in raw_results
+                if clean_artist_name(item.get("artistName", "")).lower() not in st.session_state['blacklist']
+            ]
 
-        def update_progress(current, total, msg):
-            progress_bar.progress(current / total)
-            status_text.text(f"[{current}/{total}] {msg}")
-
-        with st.spinner("שולף ומסנן אמנים לא מיוצגים..."):
-            # 1. שליפה מ-iTunes עם סינון רשימה שחורה קיימת
-            raw_candidates = fetch_web_covers(query, limit=30, filters=filters, blacklist=st.session_state['blacklist'])
-            
-            # 2. סינון אמנים מול הפדרציה
-            valid_candidates, updated_bl, updated_wl = filter_candidates_by_artist_presence(
-                raw_candidates, 
-                st.session_state['blacklist'], 
-                st.session_state['whitelist'],
-                progress_callback=update_progress
-            )
-            
-            st.session_state['blacklist'] = updated_bl
-            st.session_state['whitelist'] = updated_wl
-            st.session_state['candidates'] = valid_candidates
-            st.session_state['results'] = None
-
-        status_text.empty()
-        progress_bar.empty()
-
-# הצגת המועמדים המסוננים בלבד
+# הצגת השירים מיידית
 if 'candidates' in st.session_state and st.session_state['candidates']:
-    st.subheader(f"נמצאו {len(st.session_state['candidates'])} קאברים מאמנים מוכרים בפדרציה. האזן וסמן לבדיקת שיר ספציפי:")
+    st.subheader(f"נמצאו {len(st.session_state['candidates'])} קאברים:")
     
-    selected_to_scan = []
-    
+    selected_to_batch = []
+
     for idx, item in enumerate(st.session_state['candidates']):
-        col_check, col_title, col_audio, col_similar = st.columns([1, 3, 3, 2])
-        
+        track_id = item.get("trackId", idx)
         artist = item.get("artistName", "")
         track = item.get("trackName", "")
-        genre = item.get("primaryGenreName", "")
+        clean_art = clean_artist_name(artist).lower()
         duration_min = round(item.get("trackTimeMillis", 0) / 60000, 1)
         
+        status_info = st.session_state['statuses'].get(track_id)
+
+        col_check, col_title, col_audio, col_status, col_btn_check, col_btn_block = st.columns([0.5, 3, 3, 2, 1.5, 1.2])
+        
         with col_check:
-            is_selected = st.checkbox("סרוק שיר", key=f"chk_{idx}")
+            is_selected = st.checkbox("", key=f"chk_{track_id}")
+            if is_selected:
+                selected_to_batch.append(item)
+
         with col_title:
             st.markdown(f"**{artist}** - {track}")
-            st.caption(f"ז'אנר: {genre} | אורך: {duration_min} דק'")
+            st.caption(f"אורך: {duration_min} דק'")
+
         with col_audio:
             if item.get("previewUrl"):
                 st.audio(item.get("previewUrl"))
-        with col_similar:
-            if st.button("🔎 מצא עוד כזה", key=f"btn_sim_{idx}"):
-                similar_query = f"{artist} {genre}"
-                with st.spinner(f"מחפש שירים דומים ל-{artist}..."):
-                    raw_sim = fetch_web_covers(similar_query, limit=30, filters=filters, blacklist=st.session_state['blacklist'])
-                    valid_sim, updated_bl, updated_wl = filter_candidates_by_artist_presence(
-                        raw_sim, st.session_state['blacklist'], st.session_state['whitelist']
-                    )
-                    st.session_state['blacklist'] = updated_bl
-                    st.session_state['whitelist'] = updated_wl
-                    st.session_state['candidates'] = valid_sim
-                    st.session_state['results'] = None
+
+        with col_status:
+            if status_info is None:
+                st.info("⚪ טרם נבדק")
+            elif status_info["approved"]:
+                st.success(f"🟢 מיוצג ({status_info['publisher']})")
+            else:
+                st.error("🔴 לא מיוצג בפדרציה")
+
+        with col_btn_check:
+            if st.button("🔍 בדוק בפדרציה", key=f"btn_check_{track_id}"):
+                with st.spinner("בודק..."):
+                    is_approved, pub = verify_single_track(item)
+                    st.session_state['statuses'][track_id] = {"approved": is_approved, "publisher": pub}
                     st.rerun()
-        
-        if is_selected:
-            selected_to_scan.append(item)
+
+        with col_btn_block:
+            if st.button("🚫 חסום אמן", key=f"btn_block_{track_id}"):
+                st.session_state['blacklist'].add(clean_art)
+                # הסרת כל השירים של האמן הזה מהתוצאות הנוכחיות
+                st.session_state['candidates'] = [
+                    c for c in st.session_state['candidates']
+                    if clean_artist_name(c.get("artistName", "")).lower() not in st.session_state['blacklist']
+                ]
+                st.toast(f"האמן '{artist}' הועבר לרשימה השחורה", icon="🚫")
+                st.rerun()
+
         st.divider()
 
-    if st.button("2. 🔍 סרוק זכויות בפדרציה לשירים שנבחרו", type="secondary"):
-        if not selected_to_scan:
-            st.warning("אנא סמן לפחות שיר אחד לבדיקה.")
-        else:
+    # אפשרות בדיקה מרוכזת למסומנים בלבד
+    if selected_to_batch:
+        if st.button(f"🔍 בדוק בפדרציה את {len(selected_to_batch)} השירים המסומנים", type="secondary"):
             progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            def update_progress(current, total, msg):
-                progress_bar.progress(current / total)
-                status_text.text(f"[{current}/{total}] {msg}")
-
-            with st.spinner("מריץ אימות סופית לשירים שנבחרו..."):
-                results = verify_selected_tracks(selected_to_scan, progress_callback=update_progress)
-                st.session_state['results'] = results
-
-            status_text.empty()
-            progress_bar.empty()
-
-# הצגת תוצאות
-if 'results' in st.session_state and st.session_state['results']:
-    approved = [r for r in st.session_state['results'] if r['approved']]
-    rejected = [r for r in st.session_state['results'] if not r['approved']]
-
-    st.success(f"סריקה הושלמה! נמצאו {len(approved)} שירים מאושרים מתוך {len(st.session_state['results'])} שנבדקו.")
-
-    if approved:
-        st.subheader("🟢 מאושרים בפדרציה")
-        for item in approved:
-            st.markdown(f"✅ **{item['artist']}** - {item['song']} *(מיוצג ע\"י: {item['publisher']})*")
-            if item.get("preview"):
-                st.audio(item["preview"])
-
-    if rejected:
-        with st.expander("🔴 לא מיוצגים בפדרציה"):
-            for item in rejected:
-                st.write(f"❌ {item['artist']} - {item['song']}")
-
-# הצגת סטטיסטיקת רשימה שחורה בסיידבר
-st.sidebar.markdown("### 🛡️ נתוני סינון אמנים")
-st.sidebar.write(f"אמנים ברשימה השחורה: **{len(st.session_state['blacklist'])}**")
-st.sidebar.write(f"אמנים ברשימה הלבנה: **{len(st.session_state['whitelist'])}**")
+            for i, track_item in enumerate(selected_to_batch):
+                t_id = track_item.get("trackId", i)
+                is_approved, pub = verify_single_track(track_item)
+                st.session_state['statuses'][t_id] = {"approved": is_approved, "publisher": pub}
+                progress_bar.progress((i + 1) / len(selected_to_batch))
+            st.rerun()
