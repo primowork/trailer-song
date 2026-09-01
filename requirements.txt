@@ -2,3 +2,4 @@ streamlit>=1.30.0
 httpx>=0.27.0
 beautifulsoup4>=4.12.0
 playwright>=1.42.0
+thefuzz>=0.22.0
