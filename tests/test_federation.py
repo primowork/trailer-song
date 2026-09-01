@@ -304,3 +304,90 @@ def test_diagnose_reports_dns_failure():
     report = federation.diagnose("https://nonexistent.invalid/search.asp")
     assert report["host"] == "nonexistent.invalid"
     assert "נכשל" in report["dns"]
+
+
+# ---------- אתר שאינו נגיש מהשרת ----------
+
+class _TimingOutHttp:
+    def get(self, *a, **k):
+        raise RuntimeError("timed out")
+
+
+def test_both_paths_timing_out_explains_it_is_a_network_block(monkeypatch):
+    """הפלט מהדיפלוימנט: HTTP timed out וגם Page.goto Timeout 30000ms."""
+    monkeypatch.setattr(federation, "PROXY", "")
+    client = _bare_client()
+    client._http = _TimingOutHttp()
+
+    def browser_timeout():
+        raise RuntimeError("Page.goto: Timeout 30000ms exceeded.")
+
+    client._ensure_page = browser_timeout
+    assert client.preflight() is False
+    assert "אינו נגיש מהרשת של השרת" in client.preflight_error
+    assert "IFPI_PROXY" in client.preflight_error
+
+
+def test_timeout_message_changes_once_a_proxy_is_configured(monkeypatch):
+    monkeypatch.setattr(federation, "PROXY", "http://proxy.example:8080")
+    client = _bare_client()
+    client._http = _TimingOutHttp()
+
+    def browser_timeout():
+        raise RuntimeError("Page.goto: Timeout 30000ms exceeded.")
+
+    client._ensure_page = browser_timeout
+    client.preflight()
+    assert "גם דרך ה-proxy" in client.preflight_error
+    assert "IFPI_PROXY" not in client.preflight_error
+
+
+def test_non_timeout_failure_keeps_the_generic_hint(monkeypatch):
+    monkeypatch.setattr(federation, "PROXY", "")
+    client = _bare_client()
+
+    class Refused:
+        def get(self, *a, **k):
+            raise RuntimeError("connection refused")
+
+    client._http = Refused()
+
+    def browser_error():
+        raise RuntimeError("net::ERR_CONNECTION_REFUSED")
+
+    client._ensure_page = browser_error
+    client.preflight()
+    assert "אינו נגיש מהרשת של השרת" not in client.preflight_error
+    assert "בדוק חיבור לפדרציה" in client.preflight_error
+
+
+def test_http_client_passes_the_proxy_through(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(federation.httpx, "Client", FakeClient)
+    monkeypatch.setattr(federation, "PROXY", "http://proxy.example:8080")
+    federation._http_client()
+    assert captured["proxy"] == "http://proxy.example:8080"
+
+
+def test_http_client_omits_proxy_when_unset(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(federation.httpx, "Client", FakeClient)
+    monkeypatch.setattr(federation, "PROXY", "")
+    federation._http_client()
+    assert "proxy" not in captured
+
+
+def test_diagnose_separates_tcp_from_http():
+    report = federation.diagnose("https://nonexistent.invalid/search.asp")
+    assert "proxy" in report
+    assert "נכשל" in report["dns"]
