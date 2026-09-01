@@ -73,35 +73,6 @@ def test_relevance_dominates_over_epic_bonus():
 
 # ---------- (3) סימן הטריילר ----------
 
-def test_mainstream_trailer_cover_artist_is_recognized():
-    """הרגרסיה: is_epic_performer('Sia') החזיר False והצ'קבוקס מחק אותה."""
-    assert covers.trailer_signal(SIA)
-
-
-def test_soundtrack_marker_is_its_own_signal():
-    signals = covers.trailer_signal(make("Anyone At All", ITUNES_PARENS))
-    assert "שיבוץ בפסקול" in signals
-
-
-def test_production_house_and_mainstream_are_distinct_signals():
-    assert covers.trailer_signal(make("2WEI", "X")) == ["בית הפקה"]
-    assert covers.trailer_signal(make("Sia", "X")) == ["אמן קאברים לטריילרים"]
-
-
-def test_unrelated_artist_has_no_signal():
-    assert covers.trailer_signal(make("The Cranberries", "Zombie")) == []
-
-
-def test_epic_only_no_longer_drops_sia(monkeypatch):
-    monkeypatch.setattr(covers, "shs_search_work", lambda *a, **k: {"uri": "http://x"})
-    monkeypatch.setattr(covers, "shs_list_versions", lambda *a, **k: [
-        {"artist": "Sia", "track": REAL, "source_db": "SecondHandSongs"},
-    ])
-    monkeypatch.setattr(covers, "_enrich_one", lambda v, c: make(v["artist"], v["track"]))
-    results, _ = covers.find_covers(TYPED, epic_only=True)
-    assert [t["artist"] for t in results] == ["Sia"]
-
-
 # ---------- (4) ההעשרה ----------
 
 def test_enrichment_matches_the_store_title_variant(monkeypatch):

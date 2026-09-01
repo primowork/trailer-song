@@ -16,8 +16,7 @@ import httpx
 from thefuzz import fuzz
 
 import search as search_module
-from search import (EPIC_GENRES, EPIC_KEYWORDS, EPIC_SEEDS, TRAILER_COVER_ARTISTS,
-                    clean_artist_name, clean_track_title, normalize_artist,
+from search import (clean_artist_name, clean_track_title, normalize_artist,
                     normalize_title, score_track, track_key)
 
 SHS_BASE = os.environ.get("SHS_API_URL", "https://secondhandsongs.com/api")
@@ -238,57 +237,26 @@ def _enrich_one(version: dict, client: httpx.Client) -> dict:
     }
 
 
-# סמנים בכותרת שמעידים באמת על גרסת טריילר. רשימה צרה בכוונה מ-EPIC_KEYWORDS,
-# שמשמשת לדירוג חיפוש: שם אלבום כמו "Expanded Version" או "Hits Covered By Snow"
-# הפעיל שם את הסימן על שירי קאנטרי מ-1960. נבדק על גבול מילה כדי ש-"Covered"
-# לא ייחשב "cover", ורק בכותרת השיר — לא באלבום.
-TRAILER_TITLE_MARKERS = (
-    "trailer", "cinematic", "epic", "orchestral cover", "trailer version",
-)
+def pick_original(versions: list[dict], artist: str = "") -> dict | None:
+    """מזהה את הגרסה המקורית — הבסיס להשוואה.
 
-
-def _has_trailer_marker(title: str) -> bool:
-    lowered = (title or "").lower()
-    return any(re.search(rf"\b{re.escape(m)}\b", lowered) for m in TRAILER_TITLE_MARKERS)
-
-
-def trailer_signal(track: dict) -> list[str]:
-    """אילו סימנים מקשרים את ההקלטה לעולם הטריילרים.
-
-    מחליף את is_epic_performer, שבדק רק חברות מוזיקת טריילרים ולכן החזיר False
-    לארכיטיפ הנפוץ ביותר: אמן מיינסטרים שעשה קאבר לשיר ישן עבור טריילר
-    (Sia - California Dreamin' ב-San Andreas).
+    האמן שהמשתמש הקליד קודם; אחרת המוקדמת ביותר לפי שנה.
     """
-    artist = track.get("artist", "") if isinstance(track, dict) else str(track)
-    title = track.get("track", "") if isinstance(track, dict) else ""
-    album = track.get("album", "") if isinstance(track, dict) else ""
-    genre = track.get("genre", "") if isinstance(track, dict) else ""
-
-    normalized_artist = normalize_artist(artist)
-    signals = []
-
-    if any(fuzz.partial_ratio(seed.lower(), normalized_artist) > 90 for seed in EPIC_SEEDS):
-        signals.append("בית הפקה")
-    if any(fuzz.ratio(seed.lower(), normalized_artist) > 90 for seed in TRAILER_COVER_ARTISTS):
-        signals.append("אמן קאברים לטריילרים")
-    if re.search(r'from\s+["“]', f"{title} {album}", re.IGNORECASE):
-        signals.append("שיבוץ בפסקול")
-    if any(g in (genre or "").lower() for g in EPIC_GENRES):
-        signals.append("ז'אנר")
-    if _has_trailer_marker(title):
-        signals.append("מילת מפתח")
-
-    return signals
+    if not versions:
+        return None
+    if artist:
+        target = normalize_artist(artist)
+        for version in versions:
+            if fuzz.ratio(target, normalize_artist(version.get("artist", ""))) > 90:
+                return version
+    dated = [v for v in versions if str(v.get("year", "")).strip().isdigit()]
+    if dated:
+        return min(dated, key=lambda v: int(str(v["year"])[:4]))
+    return versions[0]
 
 
-def is_epic_performer(artist: str) -> bool:
-    """נשמר לתאימות לאחור: האם המבצע הוא חברת מוזיקת טריילרים."""
-    normalized = normalize_artist(artist)
-    return any(fuzz.partial_ratio(seed.lower(), normalized) > 90 for seed in EPIC_SEEDS)
-
-
-def find_covers(title: str, artist: str = "", epic_only: bool = False,
-                limit: int = 80, work_id: str = "") -> tuple[list[dict], str]:
+def find_covers(title: str, artist: str = "",
+                limit: int = 80, work_id: str = "") -> tuple[list[dict], str, dict | None]:
     """מחזיר (גרסאות, שם המקור ששימש בפועל).
 
     מנסה SecondHandSongs, ונופל ל-MusicBrainz אם הוא לא זמין או לא החזיר דבר.
@@ -315,7 +283,9 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
                 source_used = "MusicBrainz"
 
         if not versions:
-            return [], ""
+            return [], "", None
+
+        original_version = pick_original(versions, artist)
 
         # לא לכלול את הביצוע המקורי עצמו כשחיפשו לפי אמן
         if artist:
@@ -329,8 +299,19 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
         # הייתה נופלת כאן עוד לפני שהתגלה שיש לה סימן. הסינון מתבצע אחרי ההעשרה.
         versions = versions[:limit]
 
+        to_enrich = list(versions)
+        if original_version and original_version not in to_enrich:
+            to_enrich.append(original_version)
+
         with ThreadPoolExecutor(max_workers=8) as pool:
-            enriched = list(pool.map(lambda v: _enrich_one(v, client), versions))
+            enriched_all = list(pool.map(lambda v: _enrich_one(v, client), to_enrich))
+
+        original = enriched_all[-1] if (original_version
+                                        and original_version not in versions) else None
+        enriched = enriched_all[:len(versions)]
+        if original is None and original_version:
+            index = versions.index(original_version)
+            original = enriched[index]
 
     # שתי גרסאות שונות מהמאגר יכולות להתאים לאותה תוצאה בחנות ולקבל אותו uid.
     # Streamlit קורס על מפתח widget כפול, ולכן הייחודיות נאכפת על שניהם.
@@ -344,12 +325,7 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
             item["uid"] = f"{item['uid']}-{len(seen_uids)}"
         seen_uids.add(item["uid"])
         item["score"] = score_track(item, clean_title)
-        item["trailer_signals"] = trailer_signal(item)
-        item["is_epic_performer"] = bool(item["trailer_signals"])
         unique.append(item)
 
-    if epic_only:
-        unique = [t for t in unique if t.get("trailer_signals")]
-
     unique.sort(key=lambda t: t.get("score", 0), reverse=True)
-    return unique, source_used
+    return unique, source_used, original
