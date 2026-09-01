@@ -11,42 +11,62 @@ def clean_text(text: str) -> str:
         text = re.sub(rf'\b{kw}\b', '', text, flags=re.IGNORECASE)
     return text.strip()
 
-def fetch_web_covers(query: str, limit: int = 10):
-    """שליפת מועמדים אמיתיים מ-iTunes API ללא צורך במפתחות API"""
-    search_term = f"{query} trailer cover"
-    url = f"https://itunes.apple.com/search?term={urllib.parse.quote(search_term)}&media=music&entity=song&limit={limit}"
+def fetch_web_covers(query: str, limit: int = 30, filters: dict = None):
+    """שליפת מועמדים מ-iTunes API עם סינון לפי קצב, אורך וסגנון"""
+    search_query = query
+    if filters:
+        if filters.get("style") and filters["style"] != "הכל":
+            search_query += f" {filters['style']}"
+        if filters.get("tempo") and filters["tempo"] != "הכל":
+            search_query += f" {filters['tempo']}"
+
+    search_term = f"{search_query} trailer cover"
+    url = f"https://itunes.apple.com/search?term={urllib.parse.quote(search_term)}&media=music&entity=song&limit=50"
     
     try:
         response = httpx.get(url, timeout=10.0)
         data = response.json()
-        return data.get("results", [])
+        results = data.get("results", [])
     except Exception:
         return []
 
-def scan_and_verify_ifpi(query: str, progress_callback=None):
-    """סריקה אוטומטית בדפדפן Playwright מול אתר הפדרציה"""
-    raw_tracks = fetch_web_covers(query)
-    if not raw_tracks:
-        return []
+    filtered = []
+    for track in results:
+        duration_sec = track.get("trackTimeMillis", 0) / 1000
 
+        # פילטר אורך השיר
+        if filters and filters.get("length") == "קצר (< 3 דק')" and duration_sec > 180:
+            continue
+        if filters and filters.get("length") == "ארוך (> 4 דק')" and duration_sec < 240:
+            continue
+        if filters and filters.get("length") == "בינוני (3-4 דק')" and not (180 <= duration_sec <= 240):
+            continue
+
+        filtered.append(track)
+        if len(filtered) >= limit:
+            break
+
+    return filtered
+
+def verify_selected_tracks(selected_tracks: list, progress_callback=None):
+    """מריץ דפדפן Playwright אך ורק על השירים שהמשתמש סימן ב-V"""
     verified_results = []
+    total = len(selected_tracks)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
         page = context.new_page()
 
-        total = len(raw_tracks)
-        for idx, track in enumerate(raw_tracks):
+        for idx, track in enumerate(selected_tracks):
             artist = track.get("artistName", "")
             song = track.get("trackName", "")
-            preview_url = track.get("previewUrl", "")
 
             clean_artist_str = clean_text(artist)
             clean_song_str = clean_text(song)
 
             if progress_callback:
-                progress_callback(idx + 1, total, f"בודק: {artist} - {song}")
+                progress_callback(idx + 1, total, f"בודק בפדרציה: {artist} - {song}")
 
             is_approved = False
             try:
@@ -65,7 +85,7 @@ def scan_and_verify_ifpi(query: str, progress_callback=None):
             verified_results.append({
                 "artist": artist,
                 "song": song,
-                "preview": preview_url,
+                "preview": track.get("previewUrl", ""),
                 "approved": is_approved
             })
 
