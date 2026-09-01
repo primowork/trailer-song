@@ -2,4 +2,3 @@ streamlit
 spotipy
 playwright
 pandas
-youtube
