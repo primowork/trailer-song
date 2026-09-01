@@ -1,5 +1,26 @@
+import json
+import os
 import streamlit as st
 from scanner import fetch_web_covers, verify_single_track, clean_artist_name
+
+# הגדרת נתיב הקובץ הקבוע לאחסון הרשימה השחורה
+DATA_FILE = "/data/blacklist.json"
+
+def load_blacklist():
+    """טוען את הרשימה השחורה מהכונן הקשיח בעליית השרת"""
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except:
+            return set()
+    return set()
+
+def save_blacklist(bl_set):
+    """שומר את הרשימה השחורה לקובץ פיזי כדי שלא תימחק בעדכונים"""
+    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(bl_set), f, ensure_ascii=False)
 
 st.set_page_config(page_title="סורק קאברים - IFPI Israel", page_icon="🎵", layout="wide")
 
@@ -10,11 +31,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# אתחול זיכרון לבדיקות ולרשימה שחורה
+# אתחול הזיכרון וטעינת הרשימה השחורה מהקובץ
 if 'statuses' not in st.session_state:
-    st.session_state['statuses'] = {} # track_id -> {"approved": bool, "publisher": str}
+    st.session_state['statuses'] = {}
 if 'blacklist' not in st.session_state:
-    st.session_state['blacklist'] = set()
+    st.session_state['blacklist'] = load_blacklist()
 
 # ניהול רשימה שחורה בסיידבר
 with st.sidebar:
@@ -25,6 +46,7 @@ with st.sidebar:
         st.write(list(st.session_state['blacklist']))
         if st.button("🗑️ נקה רשימה שחורה"):
             st.session_state['blacklist'] = set()
+            save_blacklist(st.session_state['blacklist']) # שמירת הניקוי לקובץ
             st.rerun()
 
 st.title("🎵 סורק קאברים מהיר (IFPI Israel)")
@@ -52,13 +74,12 @@ if st.button("🔎 חפש שירים מיידית", type="primary"):
     if query.strip():
         with st.spinner("שולף שירים מאינטרנט..."):
             raw_results = fetch_web_covers(query, limit=40, filters=filters)
-            # סינון מיידי של אמנים ברשימה השחורה
             st.session_state['candidates'] = [
                 item for item in raw_results
                 if clean_artist_name(item.get("artistName", "")).lower() not in st.session_state['blacklist']
             ]
 
-# הצגת השירים מיידית
+# הצגת השירים
 if 'candidates' in st.session_state and st.session_state['candidates']:
     st.subheader(f"נמצאו {len(st.session_state['candidates'])} קאברים:")
     
@@ -106,7 +127,8 @@ if 'candidates' in st.session_state and st.session_state['candidates']:
         with col_btn_block:
             if st.button("🚫 חסום אמן", key=f"btn_block_{track_id}"):
                 st.session_state['blacklist'].add(clean_art)
-                # הסרת כל השירים של האמן הזה מהתוצאות הנוכחיות
+                save_blacklist(st.session_state['blacklist']) # שמירת החסימה החדשה לקובץ
+                
                 st.session_state['candidates'] = [
                     c for c in st.session_state['candidates']
                     if clean_artist_name(c.get("artistName", "")).lower() not in st.session_state['blacklist']
@@ -116,7 +138,6 @@ if 'candidates' in st.session_state and st.session_state['candidates']:
 
         st.divider()
 
-    # אפשרות בדיקה מרוכזת למסומנים בלבד
     if selected_to_batch:
         if st.button(f"🔍 בדוק בפדרציה את {len(selected_to_batch)} השירים המסומנים", type="secondary"):
             progress_bar = st.progress(0)
