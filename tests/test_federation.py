@@ -90,11 +90,88 @@ def test_verify_result_helpers():
     assert not federation.VerifyResult(status=federation.NOT_FOUND).approved
 
 
-def test_verify_returns_unknown_when_every_strategy_fails(monkeypatch):
+FORM_HTML = """
+<html><body><form action="search.asp" method="get">
+  <input type="text" name="artName">
+  <input type="text" name="trkName">
+  <input type="submit" value="חפש">
+</form></body></html>
+"""
+
+NO_FORM_HTML = "<html><body><p>ברוכים הבאים</p></body></html>"
+
+
+def _client_with_form(fields=("artName", "trkName")):
+    """לקוח שה-preflight שלו כבר הצליח, בלי לגעת ברשת."""
     client = federation.FederationClient.__new__(federation.FederationClient)
     client.use_http_fast_path = False
     client.debug = False
     client.last_html = ""
+    client.artist_field, client.track_field = fields
+    client.preflight_error = ""
+    client._preflight_done = True
+    return client
+
+
+def test_field_detection_picks_the_name_present_in_the_page():
+    assert federation._first_present_field(FORM_HTML, [None, "artist", "artName"]) == "artName"
+    assert federation._first_present_field(FORM_HTML, ["nope", "trkName"]) == "trkName"
+    assert federation._first_present_field(NO_FORM_HTML, ["artName", "artist"]) == ""
+
+
+def test_field_detection_is_case_insensitive():
+    html = '<form><input name="ArtistName"></form>'
+    assert federation._first_present_field(html, ["artistname"]) == "ArtistName"
+
+
+def test_preflight_failure_marks_unknown_without_touching_the_browser():
+    """הבאג שהיה: 30 שניות timeout כפול שלוש אסטרטגיות כפול כל שיר."""
+    client = federation.FederationClient.__new__(federation.FederationClient)
+    client.use_http_fast_path = False
+    client.debug = False
+    client.last_html = ""
+    client._preflight_done = False
+    client.artist_field = client.track_field = ""
+    client.preflight_error = ""
+
+    class FakeResponse:
+        text = NO_FORM_HTML
+
+    class FakeHttp:
+        def get(self, *a, **k):
+            return FakeResponse()
+
+    client._http = FakeHttp()
+
+    def must_not_run(*a, **k):
+        raise AssertionError("אסור להריץ חיפוש אחרי preflight שנכשל")
+
+    client._search = must_not_run
+
+    result = federation.FederationClient.verify(client, {"artist": "2WEI", "track": "Survivor"})
+    assert result.status == federation.UNKNOWN
+    assert result.strategy == "preflight"
+    assert "לא זוהה" in result.error
+
+
+def test_preflight_unreachable_page_is_unknown():
+    client = federation.FederationClient.__new__(federation.FederationClient)
+    client._preflight_done = False
+    client.artist_field = client.track_field = ""
+    client.preflight_error = ""
+    client.debug = False
+
+    class FakeHttp:
+        def get(self, *a, **k):
+            raise RuntimeError("connection refused")
+
+    client._http = FakeHttp()
+    assert client.preflight() is False
+    assert "connection refused" in client.preflight_error
+
+
+def test_verify_returns_unknown_when_every_strategy_fails():
+    client = _client_with_form()
 
     def boom(*args, **kwargs):
         raise RuntimeError("no network")
@@ -107,10 +184,7 @@ def test_verify_returns_unknown_when_every_strategy_fails(monkeypatch):
 
 def test_verify_stops_at_first_approval():
     calls = []
-    client = federation.FederationClient.__new__(federation.FederationClient)
-    client.use_http_fast_path = False
-    client.debug = False
-    client.last_html = ""
+    client = _client_with_form()
 
     def fake_search(artist, track):
         calls.append((artist, track))
@@ -121,3 +195,23 @@ def test_verify_stops_at_first_approval():
     assert result.status == federation.APPROVED
     assert len(calls) == 1  # לא ממשיכים לאסטרטגיות הבאות מיותרות
     assert result.strategy == "אמן + שיר"
+
+
+def test_strategies_needing_a_missing_field_are_skipped():
+    """אם בטופס אין שדה אמן, אין טעם לנסות אסטרטגיה שדורשת אותו."""
+    calls = []
+    client = _client_with_form(fields=("", "trkName"))
+
+    def fake_search(artist, track):
+        calls.append((artist, track))
+        return "<html><body>לא נמצאו תוצאות</body></html>"
+
+    client._search = fake_search
+    federation.FederationClient.verify(client, {"artist": "2WEI", "track": "Survivor"})
+    assert all(artist == "" for artist, _ in calls)
+
+
+def test_target_is_the_record_federation_not_the_anti_counterfeiting_one():
+    """רגרסיה: federation.co.il הוא ארגון אחר לגמרי."""
+    assert "ifpi.co.il" in federation.FEDERATION_URL
+    assert "federation.co.il" not in federation.FEDERATION_URL

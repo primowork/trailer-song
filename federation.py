@@ -1,12 +1,16 @@
-"""אימות ייצוג מול אתר הפדרציה הישראלית (federation.co.il).
+"""בדיקת רפרטואר מול הפדרציה הישראלית לתקליטים וקלטות (ifpi.co.il).
 
-שני שיפורים מרכזיים על הגרסה הקודמת:
-1. מהירות — דפדפן אחד לכל האצווה במקום דפדפן לכל שיר, ניסיון HTTP מהיר לפני
-   הרמת דפדפן בכלל, וקאש תוצאות.
-2. דיוק — התאמה דורשת גם אמן וגם שם שיר, והמייצג נלקח מעמודה מזוהה. כישלון
-   סריקה מוחזר כ-UNKNOWN ולא כ"לא מיוצג".
+הערה על היעד: גרסאות קודמות פנו ל-federation.co.il, שהוא ארגון אחר לגמרי
+(הפדרציה לקניין רוחני ומלחמה בסחר בלתי חוקי, אתר WordPress). השדות artName/trkName
+ו-CategoryID=94 נכתבו עבור אותו אתר שגוי ולכן מעולם לא נמצאו, מה שגרם ל-Timeout של
+30 שניות לכל אסטרטגיה. הפדרציה לתקליטים היא ifpi.co.il, אתר ASP, ומנוע הרפרטואר שלה
+הוא search.asp ("רפרטואר הפדרציה").
+
+שמות השדות בטופס אינם ידועים מראש וניתנים להגדרה דרך משתני סביבה, כדי שאפשר יהיה
+לכייל אותם מול ה-HTML האמיתי בלי לשנות קוד. ראה FIELD_CANDIDATES ו-README.
 """
-from dataclasses import dataclass, asdict
+import os
+from dataclasses import asdict, dataclass
 
 import httpx
 from bs4 import BeautifulSoup
@@ -14,26 +18,41 @@ from thefuzz import fuzz
 
 from search import clean_artist_name, clean_track_title
 
-FEDERATION_URL = "https://www.federation.co.il/Index.asp"
-CATEGORY_ID = "94"
+FEDERATION_URL = os.environ.get("IFPI_SEARCH_URL", "https://www.ifpi.co.il/search.asp")
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# מועמדים לשמות שדה הטופס. הראשון שנמצא בדף בפועל הוא זה שבשימוש, כך שאין צורך
+# לנחש נכון מראש. אפשר לכפות שם מדויק דרך משתנה סביבה.
+ARTIST_FIELD_CANDIDATES = [
+    os.environ.get("IFPI_ARTIST_FIELD"),
+    "artName", "artist", "Artist", "txtArtist", "ArtistName", "performer",
+]
+TRACK_FIELD_CANDIDATES = [
+    os.environ.get("IFPI_TRACK_FIELD"),
+    "trkName", "track", "Track", "txtTrack", "TrackName", "song", "SongName",
+]
+SUBMIT_SELECTOR = 'input[type="submit"], input[type="image"], button[type="submit"], input[value="חפש"]'
 
 APPROVED = "APPROVED"
 NOT_FOUND = "NOT_FOUND"
 UNKNOWN = "UNKNOWN"
 
-NO_RESULTS_MARKERS = ("לא נמצאו תוצאות", "לא נמצאו רשומות")
+NO_RESULTS_MARKERS = ("לא נמצאו תוצאות", "לא נמצאו רשומות", "לא נמצאו")
 
 PUBLISHER_HINTS = (
     "יוניברסל", "וורנר", "סוני", "הליקון", "אן.אמ.סי", "מיוצג",
     "nmc", "bmg", "universal", "sony", "warner", "helicon",
 )
-
-PUBLISHER_HEADERS = ("מייצג", "חברה", "מפיץ", "בעל זכויות", "לייבל")
+PUBLISHER_HEADERS = ("מייצג", "חברה", "מפיץ", "בעל זכויות", "לייבל", "יצרן")
 
 ARTIST_MATCH_THRESHOLD = 85
 TRACK_MATCH_THRESHOLD = 80
-PUBLISHER_COLUMN_FALLBACK = 4  # אינדקס העמודה ששימש בגרסה הקודמת
+PUBLISHER_COLUMN_FALLBACK = 4
+
+# פרק זמן קצר בכוונה: שדה שאינו קיים צריך להיכשל בשניות, לא ב-30 שניות כפול
+# שלוש אסטרטגיות כפול כל שיר באצווה.
+FIELD_TIMEOUT_MS = 5000
+NAV_TIMEOUT_MS = 20000
 
 
 @dataclass
@@ -53,8 +72,22 @@ class VerifyResult:
         return asdict(self)
 
 
+def _first_present_field(html: str, candidates) -> str:
+    """בוחר את שם השדה הראשון מבין המועמדים שקיים בפועל בדף."""
+    soup = BeautifulSoup(html, "html.parser")
+    names = {i.get("name") for i in soup.find_all(["input", "select"]) if i.get("name")}
+    lowered = {n.lower(): n for n in names}
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if candidate in names:
+            return candidate
+        if candidate.lower() in lowered:
+            return lowered[candidate.lower()]
+    return ""
+
+
 def _find_publisher_column(table) -> int | None:
-    """מאתר את עמודת המייצג לפי כותרות הטבלה, אם קיימות."""
     if table is None:
         return None
     for row in table.find_all("tr")[:3]:
@@ -81,7 +114,6 @@ def parse_ifpi_table(html_content: str, target_artist: str, target_track: str = 
 
     rows = soup.find_all("tr")
     if not rows:
-        # אין טבלה בכלל — לא ידוע אם החיפוש בכלל רץ
         return VerifyResult(status=UNKNOWN, error="לא נמצאה טבלת תוצאות")
 
     clean_artist = clean_artist_name(target_artist).lower()
@@ -99,7 +131,6 @@ def parse_ifpi_table(html_content: str, target_artist: str, target_track: str = 
         artist_score = fuzz.token_set_ratio(clean_artist, row_text) if clean_artist else 0
         track_score = fuzz.partial_ratio(clean_track, row_text) if clean_track else 0
 
-        # דרישת התאמה כפולה — כאן נחסמות התוצאות השגויות של הגרסה הקודמת
         if artist_score < ARTIST_MATCH_THRESHOLD:
             continue
         if clean_track and track_score < TRACK_MATCH_THRESHOLD:
@@ -131,29 +162,19 @@ def parse_ifpi_table(html_content: str, target_artist: str, target_track: str = 
 
 
 def _looks_like_results_page(html: str) -> bool:
-    """האם התשובה נראית כמו עמוד תוצאות אמיתי ולא כמו שגיאה/עמוד ריק."""
     if not html or len(html) < 500:
         return False
-    lowered = html.lower()
     if any(marker in html for marker in NO_RESULTS_MARKERS):
         return True
-    return "<tr" in lowered and 'name="artname"' in lowered
+    return "<tr" in html.lower()
 
 
-def _http_search(artist: str, track: str, client: httpx.Client) -> str:
-    """ניסיון מהיר ללא דפדפן. מחזיר HTML או מחרוזת ריקה אם לא התאים."""
-    params = {"CategoryID": CATEGORY_ID, "artName": artist, "trkName": track}
-    try:
-        response = client.get(FEDERATION_URL, params=params,
-                              headers={"User-Agent": USER_AGENT}, timeout=10.0)
-        html = response.text
-    except Exception:
-        return ""
-    return html if _looks_like_results_page(html) else ""
+class FormNotFoundError(RuntimeError):
+    """טופס החיפוש לא נמצא בדף — כתובת שגויה או שהמבנה השתנה."""
 
 
 class FederationClient:
-    """מחזיק דפדפן אחד לכל האצווה. שימוש כ-context manager.
+    """דפדפן אחד לכל האצווה, עם preflight שנכשל מהר כשהטופס לא קיים.
 
     with FederationClient() as fed:
         result = fed.verify(track)
@@ -163,6 +184,10 @@ class FederationClient:
         self.use_http_fast_path = use_http_fast_path
         self.debug = debug
         self.last_html = ""
+        self.artist_field = ""
+        self.track_field = ""
+        self.preflight_error = ""
+        self._preflight_done = False
         self._playwright = None
         self._browser = None
         self._page = None
@@ -188,10 +213,58 @@ class FederationClient:
                 pass
         self._page = self._browser = self._playwright = None
 
+    # ---------- preflight ----------
+
+    def preflight(self) -> bool:
+        """טוען את דף החיפוש פעם אחת ומזהה את שמות שדות הטופס.
+
+        נכשל מהר ומסמן את כל האצווה כ-UNKNOWN במקום לבזבז timeout לכל שיר.
+        """
+        if self._preflight_done:
+            return not self.preflight_error
+
+        self._preflight_done = True
+        try:
+            response = self._http.get(FEDERATION_URL, headers={"User-Agent": USER_AGENT})
+            html = response.text
+        except Exception as exc:
+            self.preflight_error = f"לא ניתן לטעון את {FEDERATION_URL}: {exc}"
+            return False
+
+        if self.debug:
+            self.last_html = html
+
+        self.artist_field = _first_present_field(html, ARTIST_FIELD_CANDIDATES)
+        self.track_field = _first_present_field(html, TRACK_FIELD_CANDIDATES)
+
+        if not self.artist_field and not self.track_field:
+            self.preflight_error = (
+                f"טופס החיפוש לא זוהה ב-{FEDERATION_URL}. "
+                "הדף נטען אך לא נמצא בו אף שדה מוכר. "
+                "הגדר IFPI_ARTIST_FIELD ו-IFPI_TRACK_FIELD לשמות האמיתיים."
+            )
+            return False
+        return True
+
+    # ---------- מסלול HTTP ----------
+
+    def _http_search(self, artist: str, track: str) -> str:
+        params = {}
+        if self.artist_field:
+            params[self.artist_field] = artist
+        if self.track_field:
+            params[self.track_field] = track
+        try:
+            response = self._http.get(FEDERATION_URL, params=params,
+                                      headers={"User-Agent": USER_AGENT}, timeout=10.0)
+            html = response.text
+        except Exception:
+            return ""
+        return html if _looks_like_results_page(html) else ""
+
     # ---------- מסלול Playwright ----------
 
     def _ensure_page(self):
-        """מרים דפדפן פעם אחת בלבד, בעצלתיים."""
         if self._page is not None:
             return self._page
         from playwright.sync_api import sync_playwright
@@ -206,20 +279,26 @@ class FederationClient:
 
     def _browser_search(self, artist: str, track: str) -> str:
         page = self._ensure_page()
-        page.goto(f"{FEDERATION_URL}?CategoryID={CATEGORY_ID}",
-                  wait_until="domcontentloaded", timeout=20000)
-        page.fill('input[name="artName"]', artist)
-        page.fill('input[name="trkName"]', track)
-        with page.expect_navigation(wait_until="domcontentloaded", timeout=20000):
-            page.locator(
-                'input[type="submit"], input[value="חפש"], button[type="submit"]'
-            ).first.click()
-        page.wait_for_timeout(1200)
+        page.goto(FEDERATION_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+
+        filled = False
+        if self.artist_field:
+            page.fill(f'[name="{self.artist_field}"]', artist, timeout=FIELD_TIMEOUT_MS)
+            filled = True
+        if self.track_field:
+            page.fill(f'[name="{self.track_field}"]', track, timeout=FIELD_TIMEOUT_MS)
+            filled = True
+        if not filled:
+            raise FormNotFoundError(self.preflight_error or "לא זוהו שדות טופס")
+
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS):
+            page.locator(SUBMIT_SELECTOR).first.click(timeout=FIELD_TIMEOUT_MS)
+        page.wait_for_timeout(1000)
         return page.content()
 
     def _search(self, artist: str, track: str) -> str:
         if self.use_http_fast_path:
-            html = _http_search(artist, track, self._http)
+            html = self._http_search(artist, track)
             if html:
                 return html
         return self._browser_search(artist, track)
@@ -227,13 +306,14 @@ class FederationClient:
     # ---------- API ----------
 
     def verify(self, track: dict) -> VerifyResult:
-        """שלוש אסטרטגיות בסדר יורד של ביטחון."""
+        if not self.preflight():
+            return VerifyResult(status=UNKNOWN, error=self.preflight_error, strategy="preflight")
+
         raw_artist = track.get("artist") or track.get("artistName") or ""
         raw_song = track.get("track") or track.get("trackName") or ""
 
         clean_song = clean_track_title(raw_song)
         clean_artist = clean_artist_name(raw_artist)
-        # חיתוך ל-2 מילים ראשונות — עוקף שינויי כתיב בין iTunes לפדרציה
         short_artist = " ".join(clean_artist.split()[:2])
 
         strategies = [
@@ -248,8 +328,15 @@ class FederationClient:
         for name, artist_param, track_param, penalty in strategies:
             if not artist_param and not track_param:
                 continue
+            # אין טעם באסטרטגיה שדורשת שדה שלא קיים בטופס
+            if artist_param and not self.artist_field:
+                continue
+            if track_param and not self.track_field:
+                continue
             try:
                 html = self._search(artist_param, track_param)
+            except FormNotFoundError as exc:
+                return VerifyResult(status=UNKNOWN, error=str(exc), strategy="preflight")
             except Exception as exc:
                 last_error = str(exc)
                 continue
@@ -258,8 +345,7 @@ class FederationClient:
             if self.debug:
                 self.last_html = html
 
-            # באסטרטגיה "אמן בלבד" אין שם שיר לאמת מולו — ההתאמה חלשה יותר
-            result = parse_ifpi_table(html, raw_artist, "" if not track_param else raw_song)
+            result = parse_ifpi_table(html, raw_artist, raw_song if track_param else "")
             result.strategy = name
             if result.status == APPROVED:
                 result.confidence = max(0, result.confidence - penalty)

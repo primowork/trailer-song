@@ -1,0 +1,4 @@
+# ניתוח אודיו אופציונלי (BPM, אנרגיה). כבד: מושך numba/llvmlite, מאות MB.
+# בלעדיו audio.py מחזיר None בשקט והממשק פשוט לא מציג מדדים.
+-r requirements.txt
+librosa>=0.10.0
