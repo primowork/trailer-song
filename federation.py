@@ -57,6 +57,18 @@ NAV_TIMEOUT_MS = 30000
 PREFLIGHT_TIMEOUT = 20.0
 PREFLIGHT_ATTEMPTS = 2
 
+# אתר הפדרציה אינו נגיש מחלק מספקי הענן: הבקשות פשוט לא מקבלות תשובה
+# (timeout, לא סירוב). IFPI_PROXY מנתב את הבקשות דרך יציאה שכן מגיעה אליו,
+# למשל proxy בישראל. חל גם על httpx וגם על Playwright.
+PROXY = os.environ.get("IFPI_PROXY", "").strip()
+
+
+def _http_client(timeout: float = 10.0) -> httpx.Client:
+    kwargs = {"follow_redirects": True, "timeout": timeout}
+    if PROXY:
+        kwargs["proxy"] = PROXY
+    return httpx.Client(**kwargs)
+
 
 @dataclass
 class VerifyResult:
@@ -194,7 +206,7 @@ class FederationClient:
         self._playwright = None
         self._browser = None
         self._page = None
-        self._http = httpx.Client(follow_redirects=True, timeout=10.0)
+        self._http = _http_client()
 
     def __enter__(self):
         return self
@@ -242,10 +254,21 @@ class FederationClient:
             return page.content(), ""
         except Exception as exc:
             browser_error = str(exc).splitlines()[0] if str(exc) else exc.__class__.__name__
+            both_timed_out = "timed out" in http_error.lower() and "timeout" in browser_error.lower()
+            if both_timed_out and not PROXY:
+                hint = (
+                    "שני המסלולים עשו timeout, כלומר הבקשות לא מקבלות תשובה כלל — "
+                    "האתר אינו נגיש מהרשת של השרת (חומת אש או חסימה גאוגרפית), "
+                    "ולא מדובר בתקלת קוד. הגדר IFPI_PROXY לכתובת proxy שמגיע לאתר, "
+                    "או הרץ את האפליקציה מרשת שממנה האתר נגיש."
+                )
+            elif both_timed_out:
+                hint = f"שני המסלולים עשו timeout גם דרך ה-proxy שהוגדר ({PROXY})."
+            else:
+                hint = "בדוק במסך ההגדרות 'בדוק חיבור לפדרציה'."
             return "", (
                 f"לא ניתן לטעון את {FEDERATION_URL}. "
-                f"HTTP: {http_error[:80]}. דפדפן: {browser_error[:80]}. "
-                "כנראה שאין מהשרת גישה לאתר — בדוק במסך ההגדרות 'בדוק חיבור לפדרציה'."
+                f"HTTP: {http_error[:80]}. דפדפן: {browser_error[:80]}. {hint}"
             )
 
     def preflight(self) -> bool:
@@ -300,9 +323,13 @@ class FederationClient:
         from playwright.sync_api import sync_playwright
 
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(
-            headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"]
-        )
+        launch_kwargs = {
+            "headless": True,
+            "args": ["--no-sandbox", "--disable-setuid-sandbox"],
+        }
+        if PROXY:
+            launch_kwargs["proxy"] = {"server": PROXY}
+        self._browser = self._playwright.chromium.launch(**launch_kwargs)
         context = self._browser.new_context(user_agent=USER_AGENT)
         self._page = context.new_page()
         return self._page
@@ -405,8 +432,9 @@ def diagnose(url: str = FEDERATION_URL) -> dict:
     import time
     from urllib.parse import urlparse
 
-    host = urlparse(url).hostname or ""
-    report = {"url": url, "host": host}
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    report = {"url": url, "host": host, "proxy": PROXY or "לא מוגדר"}
 
     started = time.time()
     try:
@@ -417,9 +445,19 @@ def diagnose(url: str = FEDERATION_URL) -> dict:
         report["elapsed"] = round(time.time() - started, 1)
         return report
 
+    # חיבור TCP ישיר: מפריד בין "האתר לא עונה" ל"שגיאת HTTP"
     started = time.time()
     try:
-        with httpx.Client(follow_redirects=True, timeout=PREFLIGHT_TIMEOUT) as client:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=10):
+            report["tcp"] = "תקין"
+    except Exception as exc:
+        report["tcp"] = f"נכשל: {str(exc)[:80] or exc.__class__.__name__}"
+    report["tcp_seconds"] = round(time.time() - started, 1)
+
+    started = time.time()
+    try:
+        with _http_client(PREFLIGHT_TIMEOUT) as client:
             response = client.get(url, headers={"User-Agent": USER_AGENT})
         report["http_status"] = response.status_code
         report["bytes"] = len(response.content)
