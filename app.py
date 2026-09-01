@@ -46,6 +46,7 @@ def _init_state():
         "debug_mode": False,
         "covers_source": "",
         "work_candidates": [],
+        "trailers_only": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -298,9 +299,9 @@ with tab_covers:
         "אמן מקורי (לא חובה):", placeholder="Eurythmics",
         help="ממלא תפקיד מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955.")
     epic_only = st.checkbox(
-        "העדף גרסאות עם סימן טריילר", value=False,
-        help="מקדם למעלה גרסאות עם סימן טריילר (בית הפקה, אמן קאברים מוכר, "
-             "שיבוץ בפסקול, ז'אנר). לא מסתיר גרסאות אחרות.",
+        "בחיפוש הרגיל: הצג גרסאות טריילר ראשונות", value=False,
+        help="משפיע רק על 'מצא קאברים' — מקדם למעלה גרסאות עם סימן טריילר "
+             "בלי להסתיר את השאר. לסינון מלא השתמש בכפתור 'רק לטריילרים'.",
     )
 
     if st.button("🔎 אילו שירים בשם הזה?"):
@@ -326,15 +327,26 @@ with tab_covers:
         picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
         chosen_work = labels[picked]
 
-    if st.button("🎬 מצא קאברים", type="primary"):
+    col_all, col_trailers = st.columns(2)
+    search_all = col_all.button("🎬 מצא קאברים", type="primary")
+    search_trailers = col_trailers.button(
+        "🎥 חפש קאברים רק לטריילרים",
+        help="מסנן לגרסאות עם סימן טריילר בלבד: בית הפקה, אמן קאברים מוכר, "
+             "שיבוץ בפסקול, ז'אנר, או סמן טריילר בכותרת.",
+    )
+
+    if search_all or search_trailers:
         if not cover_title.strip():
             st.warning("הכנס שם שיר")
         else:
-            with st.spinner("שולף גרסאות מהמאגר..."):
+            trailers_only = bool(search_trailers)
+            spinner_text = ("מחפש גרסאות לטריילרים..." if trailers_only
+                            else "שולף גרסאות מהמאגר...")
+            with st.spinner(spinner_text):
                 results, source_used = covers_module.find_covers(
-                    cover_title, cover_artist, epic_only=False, work_id=chosen_work)
+                    cover_title, cover_artist, epic_only=trailers_only, work_id=chosen_work)
                 results = apply_blacklist(results)
-            if epic_only:
+            if epic_only and not trailers_only:
                 # העדפה ולא סינון: גרסה בלי סימן עדיין מוצגת, רק נמוך יותר
                 results.sort(key=lambda t: (bool(t.get("trailer_signals")), t.get("score", 0)),
                              reverse=True)
@@ -342,7 +354,17 @@ with tab_covers:
             st.session_state["covers_source"] = source_used
             st.session_state["visible_count"] = PAGE_SIZE
             st.session_state["last_query"] = cover_title
-            if not results:
+            st.session_state["trailers_only"] = trailers_only
+
+            if not results and trailers_only:
+                # הסינון צר בכוונה, ולכן חשוב להבחין בין "אין גרסאות" ל"אין
+                # גרסאות שזוהו כטריילר" — הכפתור השני עדיין עשוי להחזיר חומר.
+                st.info(
+                    "לא נמצאה אף גרסה עם סימן טריילר לשיר הזה. "
+                    "לחץ על 'מצא קאברים' כדי לראות את כל הגרסאות — ייתכן שיש שם "
+                    "גרסה מתאימה שהמערכת לא זיהתה כטריילר."
+                )
+            elif not results:
                 st.info(
                     "לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר, או ששני המקורות "
                     "לא היו זמינים. נסה את לשונית החיפוש החופשי."
@@ -409,6 +431,8 @@ if candidates:
         display.sort(key=lambda t: t.get("artist", "").lower())
 
     col_c.metric("סה\"כ במאגר", len(candidates))
+    if st.session_state.get("trailers_only"):
+        st.caption("🎥 מסונן לגרסאות עם סימן טריילר בלבד")
     st.subheader(f"מוצגים {min(st.session_state['visible_count'], len(display))} מתוך {len(display)}")
 
     action_all, action_selected = st.columns([1, 1])

@@ -189,3 +189,53 @@ def test_duplicate_store_matches_get_unique_uids(monkeypatch):
     results, _ = covers.find_covers("Sweet Dreams")
     uids = [t["uid"] for t in results]
     assert len(uids) == len(set(uids)), f"uid כפול: {uids}"
+
+
+# ---------- סינון "רק לטריילרים" ----------
+
+def _covers_with(versions, monkeypatch, enriched=None):
+    monkeypatch.setattr(covers, "shs_search_work", lambda *a, **k: {"uri": "http://x"})
+    monkeypatch.setattr(covers, "shs_list_versions", lambda *a, **k: versions)
+    monkeypatch.setattr(covers, "_enrich_one",
+                        enriched or (lambda v, c: make(v["artist"], v["track"])))
+
+
+def test_trailers_only_keeps_signals_discovered_during_enrichment(monkeypatch):
+    """הסינון חייב לרוץ אחרי ההעשרה.
+
+    במאגר הכותרת היא 'California Dreamin'' בלבד; סמן הפסקול מופיע רק בכותרת
+    מהחנות. סינון מוקדם היה מוחק את הגרסה לפני שהסימן מתגלה.
+    """
+    _covers_with(
+        [{"artist": "Nobody Known", "track": "California Dreamin'"}],
+        monkeypatch,
+        enriched=lambda v, c: make(v["artist"], 'California Dreamin\' (From "San Andreas")'),
+    )
+    results, _ = covers.find_covers("California Dreamin'", epic_only=True)
+    assert [t["artist"] for t in results] == ["Nobody Known"]
+    assert "שיבוץ בפסקול" in results[0]["trailer_signals"]
+
+
+def test_trailers_only_drops_versions_without_any_signal(monkeypatch):
+    _covers_with([
+        {"artist": "Patsy Cline", "track": "Sweet Dreams"},
+        {"artist": "2WEI", "track": "Sweet Dreams"},
+    ], monkeypatch)
+    results, _ = covers.find_covers("Sweet Dreams", epic_only=True)
+    assert [t["artist"] for t in results] == ["2WEI"]
+
+
+def test_default_search_keeps_everything(monkeypatch):
+    _covers_with([
+        {"artist": "Patsy Cline", "track": "Sweet Dreams"},
+        {"artist": "2WEI", "track": "Sweet Dreams"},
+    ], monkeypatch)
+    results, _ = covers.find_covers("Sweet Dreams", epic_only=False)
+    assert {t["artist"] for t in results} == {"Patsy Cline", "2WEI"}
+
+
+def test_trailers_only_can_return_nothing(monkeypatch):
+    _covers_with([{"artist": "Patsy Cline", "track": "Sweet Dreams"}], monkeypatch)
+    results, source = covers.find_covers("Sweet Dreams", epic_only=True)
+    assert results == []
+    assert source == "SecondHandSongs"  # נמצאו גרסאות, פשוט אף אחת אינה טריילר

@@ -323,10 +323,10 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
             versions = [v for v in versions
                         if clean_artist_name(v["artist"]).lower() != original]
 
-        if epic_only:
-            versions = [v for v in versions
-                        if trailer_signal({"artist": v["artist"], "track": v.get("track", "")})]
-
+        # הסינון אינו כאן בכוונה: לפני ההעשרה יש רק אמן וכותרת מהמאגר, ולכן
+        # שלושה מתוך חמשת הסימנים (שיבוץ בפסקול, ז'אנר, סמן בכותרת החנות) אינם
+        # יכולים להתקיים. גרסה כמו 'California Dreamin\' (From "San Andreas")'
+        # הייתה נופלת כאן עוד לפני שהתגלה שיש לה סימן. הסינון מתבצע אחרי ההעשרה.
         versions = versions[:limit]
 
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -347,6 +347,9 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
         item["trailer_signals"] = trailer_signal(item)
         item["is_epic_performer"] = bool(item["trailer_signals"])
         unique.append(item)
+
+    if epic_only:
+        unique = [t for t in unique if t.get("trailer_signals")]
 
     unique.sort(key=lambda t: t.get("score", 0), reverse=True)
     return unique, source_used
