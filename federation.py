@@ -52,7 +52,10 @@ PUBLISHER_COLUMN_FALLBACK = 4
 # פרק זמן קצר בכוונה: שדה שאינו קיים צריך להיכשל בשניות, לא ב-30 שניות כפול
 # שלוש אסטרטגיות כפול כל שיר באצווה.
 FIELD_TIMEOUT_MS = 5000
-NAV_TIMEOUT_MS = 20000
+NAV_TIMEOUT_MS = 30000
+# אתר ASP ותיק שנטען מדאטה-סנטר מחוץ לישראל יכול להיות איטי. 10 שניות היו צרות מדי.
+PREFLIGHT_TIMEOUT = 20.0
+PREFLIGHT_ATTEMPTS = 2
 
 
 @dataclass
@@ -215,6 +218,36 @@ class FederationClient:
 
     # ---------- preflight ----------
 
+    def _fetch_preflight_html(self) -> tuple[str, str]:
+        """מביא את דף החיפוש. מחזיר (html, שגיאה).
+
+        קודם httpx, ואם הוא נכשל — דרך הדפדפן. הדפדפן שולח טביעת TLS וכותרות
+        אמיתיות ומריץ JS, ולכן מצליח לעיתים במקומות ש-httpx נחסם או קורס בהם.
+        כישלון של httpx לבדו אינו סיבה לוותר על כל האצווה.
+        """
+        http_error = ""
+        for attempt in range(PREFLIGHT_ATTEMPTS):
+            try:
+                response = self._http.get(FEDERATION_URL, headers={"User-Agent": USER_AGENT},
+                                          timeout=PREFLIGHT_TIMEOUT)
+                return response.text, ""
+            except Exception as exc:
+                http_error = str(exc) or exc.__class__.__name__
+
+        # httpx לא הצליח: מנסים דרך הדפדפן לפני שמוותרים
+        self.use_http_fast_path = False
+        try:
+            page = self._ensure_page()
+            page.goto(FEDERATION_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+            return page.content(), ""
+        except Exception as exc:
+            browser_error = str(exc).splitlines()[0] if str(exc) else exc.__class__.__name__
+            return "", (
+                f"לא ניתן לטעון את {FEDERATION_URL}. "
+                f"HTTP: {http_error[:80]}. דפדפן: {browser_error[:80]}. "
+                "כנראה שאין מהשרת גישה לאתר — בדוק במסך ההגדרות 'בדוק חיבור לפדרציה'."
+            )
+
     def preflight(self) -> bool:
         """טוען את דף החיפוש פעם אחת ומזהה את שמות שדות הטופס.
 
@@ -224,11 +257,9 @@ class FederationClient:
             return not self.preflight_error
 
         self._preflight_done = True
-        try:
-            response = self._http.get(FEDERATION_URL, headers={"User-Agent": USER_AGENT})
-            html = response.text
-        except Exception as exc:
-            self.preflight_error = f"לא ניתן לטעון את {FEDERATION_URL}: {exc}"
+        html, error = self._fetch_preflight_html()
+        if error:
+            self.preflight_error = error
             return False
 
         if self.debug:
@@ -239,9 +270,8 @@ class FederationClient:
 
         if not self.artist_field and not self.track_field:
             self.preflight_error = (
-                f"טופס החיפוש לא זוהה ב-{FEDERATION_URL}. "
-                "הדף נטען אך לא נמצא בו אף שדה מוכר. "
-                "הגדר IFPI_ARTIST_FIELD ו-IFPI_TRACK_FIELD לשמות האמיתיים."
+                f"הדף {FEDERATION_URL} נטען, אך לא זוהה בו אף שדה חיפוש מוכר. "
+                "הגדר IFPI_ARTIST_FIELD ו-IFPI_TRACK_FIELD לשמות האמיתיים מהטופס."
             )
             return False
         return True
@@ -363,3 +393,41 @@ class FederationClient:
             if progress_cb:
                 progress_cb(index + 1, total, track)
         return results
+
+
+def diagnose(url: str = FEDERATION_URL) -> dict:
+    """אבחון חיבור לאתר הפדרציה, לשימוש הממשק.
+
+    נועד לענות על השאלה שאי אפשר לענות עליה מהקוד: האם השרת שמריץ את
+    האפליקציה בכלל מגיע לאתר, וכמה זמן זה לוקח.
+    """
+    import socket
+    import time
+    from urllib.parse import urlparse
+
+    host = urlparse(url).hostname or ""
+    report = {"url": url, "host": host}
+
+    started = time.time()
+    try:
+        report["ip"] = socket.gethostbyname(host)
+        report["dns"] = "תקין"
+    except Exception as exc:
+        report["dns"] = f"נכשל: {exc}"
+        report["elapsed"] = round(time.time() - started, 1)
+        return report
+
+    started = time.time()
+    try:
+        with httpx.Client(follow_redirects=True, timeout=PREFLIGHT_TIMEOUT) as client:
+            response = client.get(url, headers={"User-Agent": USER_AGENT})
+        report["http_status"] = response.status_code
+        report["bytes"] = len(response.content)
+        html = response.text
+        report["artist_field"] = _first_present_field(html, ARTIST_FIELD_CANDIDATES) or "לא נמצא"
+        report["track_field"] = _first_present_field(html, TRACK_FIELD_CANDIDATES) or "לא נמצא"
+        report["html"] = html
+    except Exception as exc:
+        report["http_status"] = f"נכשל: {str(exc)[:120] or exc.__class__.__name__}"
+    report["elapsed"] = round(time.time() - started, 1)
+    return report
