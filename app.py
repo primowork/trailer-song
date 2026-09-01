@@ -45,6 +45,7 @@ def _init_state():
         "last_query": "",
         "debug_mode": False,
         "covers_source": "",
+        "work_candidates": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -293,12 +294,37 @@ with tab_covers:
 
     col_title, col_artist = st.columns(2)
     cover_title = col_title.text_input("שם השיר המקורי:", placeholder="למשל: Zombie")
-    cover_artist = col_artist.text_input("אמן מקורי (לא חובה):", placeholder="The Cranberries")
+    cover_artist = col_artist.text_input(
+        "אמן מקורי (לא חובה):", placeholder="Eurythmics",
+        help="ממלא תפקיד מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955.")
     epic_only = st.checkbox(
         "העדף גרסאות עם סימן טריילר", value=False,
         help="מקדם למעלה גרסאות עם סימן טריילר (בית הפקה, אמן קאברים מוכר, "
              "שיבוץ בפסקול, ז'אנר). לא מסתיר גרסאות אחרות.",
     )
+
+    if st.button("🔎 אילו שירים בשם הזה?"):
+        if not cover_title.strip():
+            st.warning("הכנס שם שיר")
+        else:
+            with st.spinner("מחפש יצירות..."):
+                st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
+                    cover_title, cover_artist)
+            if not st.session_state["work_candidates"]:
+                st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתור למטה.")
+
+    chosen_work = ""
+    candidates = st.session_state.get("work_candidates") or []
+    if candidates:
+        # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
+        # בלי בחירה מפורשת המערכת לקחה את הראשון והחזירה עשרים גרסאות קאנטרי.
+        labels = {
+            f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
+            + (f" ({c['writers']})" if c["writers"] else ""): c["id"]
+            for c in candidates
+        }
+        picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
+        chosen_work = labels[picked]
 
     if st.button("🎬 מצא קאברים", type="primary"):
         if not cover_title.strip():
@@ -306,7 +332,7 @@ with tab_covers:
         else:
             with st.spinner("שולף גרסאות מהמאגר..."):
                 results, source_used = covers_module.find_covers(
-                    cover_title, cover_artist, epic_only=False)
+                    cover_title, cover_artist, epic_only=False, work_id=chosen_work)
                 results = apply_blacklist(results)
             if epic_only:
                 # העדפה ולא סינון: גרסה בלי סימן עדיין מוצגת, רק נמוך יותר

@@ -119,20 +119,58 @@ def _mb_get(path: str, params: dict, client: httpx.Client | None = None):
         return None
 
 
-def musicbrainz_versions(title: str, artist: str = "", limit: int = 100,
-                         client: httpx.Client | None = None) -> list[dict]:
-    """כל ההקלטות הנושאות את שם היצירה, דרך ה-work של MusicBrainz."""
-    query = f'work:"{title}"'
+MAX_WORK_CANDIDATES = 6
+
+
+def musicbrainz_work_candidates(title: str, artist: str = "",
+                                client: httpx.Client | None = None) -> list[dict]:
+    """יצירות אפשריות לשם שהוקלד, לבחירת המשתמש.
+
+    השאילתה אינה ביטוי מדויק בכוונה: "Sweet Dreams" חייב להחזיר גם את
+    "Sweet Dreams (Are Made of This)" של Eurythmics ולא רק את סטנדרט הקאנטרי
+    מ-1955. לקיחת התוצאה הראשונה בעיוורון היא שהחזירה עשרים גרסאות קאנטרי.
+    """
+    words = " AND ".join(f"work:{w}" for w in re.findall(r"\w+", title))
+    if not words:
+        return []
+    query = words
     if artist:
         query += f' AND artist:"{artist}"'
-    payload = _mb_get("work", {"query": query, "limit": 5}, client)
-    works = (payload or {}).get("works") or []
-    if not works:
-        return []
 
-    work_id = works[0].get("id")
+    payload = _mb_get("work", {"query": query, "limit": 25}, client)
+    works = (payload or {}).get("works") or []
+
+    candidates = []
+    for work in works:
+        work_id, work_title = work.get("id"), work.get("title") or ""
+        if not work_id or not work_title:
+            continue
+        candidates.append({
+            "id": work_id,
+            "title": work_title,
+            "disambiguation": work.get("disambiguation") or "",
+            "score": fuzz.token_set_ratio(normalize_title(title), normalize_title(work_title)),
+            "writers": ", ".join(
+                rel.get("artist", {}).get("name", "")
+                for rel in (work.get("relations") or [])
+                if rel.get("artist")
+            )[:80],
+        })
+
+    # התאמת שם קודם, ואז וריאציות ארוכות יותר של אותו שם
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    return candidates[:MAX_WORK_CANDIDATES]
+
+
+def musicbrainz_versions(title: str, artist: str = "", limit: int = 100,
+                         client: httpx.Client | None = None,
+                         work_id: str = "") -> list[dict]:
+    """כל ההקלטות של היצירה. work_id עוקף את זיהוי היצירה האוטומטי."""
     if not work_id:
-        return []
+        candidates = musicbrainz_work_candidates(title, artist, client)
+        if not candidates:
+            return []
+        work_id = candidates[0]["id"]
 
     payload = _mb_get("recording", {"work": work_id, "limit": limit, "inc": "artist-credits+isrcs"}, client)
     recordings = (payload or {}).get("recordings") or []
@@ -200,6 +238,20 @@ def _enrich_one(version: dict, client: httpx.Client) -> dict:
     }
 
 
+# סמנים בכותרת שמעידים באמת על גרסת טריילר. רשימה צרה בכוונה מ-EPIC_KEYWORDS,
+# שמשמשת לדירוג חיפוש: שם אלבום כמו "Expanded Version" או "Hits Covered By Snow"
+# הפעיל שם את הסימן על שירי קאנטרי מ-1960. נבדק על גבול מילה כדי ש-"Covered"
+# לא ייחשב "cover", ורק בכותרת השיר — לא באלבום.
+TRAILER_TITLE_MARKERS = (
+    "trailer", "cinematic", "epic", "orchestral cover", "trailer version",
+)
+
+
+def _has_trailer_marker(title: str) -> bool:
+    lowered = (title or "").lower()
+    return any(re.search(rf"\b{re.escape(m)}\b", lowered) for m in TRAILER_TITLE_MARKERS)
+
+
 def trailer_signal(track: dict) -> list[str]:
     """אילו סימנים מקשרים את ההקלטה לעולם הטריילרים.
 
@@ -223,7 +275,7 @@ def trailer_signal(track: dict) -> list[str]:
         signals.append("שיבוץ בפסקול")
     if any(g in (genre or "").lower() for g in EPIC_GENRES):
         signals.append("ז'אנר")
-    if any(kw in f"{title} {album}".lower() for kw in EPIC_KEYWORDS):
+    if _has_trailer_marker(title):
         signals.append("מילת מפתח")
 
     return signals
@@ -236,7 +288,7 @@ def is_epic_performer(artist: str) -> bool:
 
 
 def find_covers(title: str, artist: str = "", epic_only: bool = False,
-                limit: int = 80) -> tuple[list[dict], str]:
+                limit: int = 80, work_id: str = "") -> tuple[list[dict], str]:
     """מחזיר (גרסאות, שם המקור ששימש בפועל).
 
     מנסה SecondHandSongs, ונופל ל-MusicBrainz אם הוא לא זמין או לא החזיר דבר.
@@ -245,13 +297,19 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
     versions, source_used = [], ""
 
     with httpx.Client(timeout=15.0, follow_redirects=True) as client:
-        work = shs_search_work(clean_title, artist, client)
+        if work_id:
+            # המשתמש בחר יצירה מפורשות — מדלגים על הזיהוי האוטומטי
+            versions = musicbrainz_versions(clean_title, artist, client=client, work_id=work_id)
+            source_used = "MusicBrainz" if versions else ""
+            work = None
+        else:
+            work = shs_search_work(clean_title, artist, client)
         if work:
             versions = shs_list_versions(work, client)
             if versions:
                 source_used = "SecondHandSongs"
 
-        if not versions:
+        if not versions and not work_id:
             versions = musicbrainz_versions(clean_title, artist, client=client)
             if versions:
                 source_used = "MusicBrainz"
@@ -274,12 +332,17 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
         with ThreadPoolExecutor(max_workers=8) as pool:
             enriched = list(pool.map(lambda v: _enrich_one(v, client), versions))
 
-    seen, unique = set(), []
+    # שתי גרסאות שונות מהמאגר יכולות להתאים לאותה תוצאה בחנות ולקבל אותו uid.
+    # Streamlit קורס על מפתח widget כפול, ולכן הייחודיות נאכפת על שניהם.
+    seen, seen_uids, unique = set(), set(), []
     for item in enriched:
         key = track_key(item["artist"], item["track"])
         if key in seen:
             continue
         seen.add(key)
+        if item.get("uid") in seen_uids:
+            item["uid"] = f"{item['uid']}-{len(seen_uids)}"
+        seen_uids.add(item["uid"])
         item["score"] = score_track(item, clean_title)
         item["trailer_signals"] = trailer_signal(item)
         item["is_epic_performer"] = bool(item["trailer_signals"])

@@ -6,9 +6,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import covers
 
 
-def make(artist, track, uid="1", preview="http://p", duration=200):
+def make(artist, track, uid="1", preview="http://p", duration=200, album=""):
     return {
-        "source": "iTunes", "uid": uid, "artist": artist, "track": track, "album": "",
+        "source": "iTunes", "uid": uid, "artist": artist, "track": track, "album": album,
         "duration_sec": duration, "preview_url": preview, "artwork": "", "genre": "",
     }
 
@@ -110,3 +110,82 @@ def test_enrich_falls_back_when_track_not_in_stores(monkeypatch):
     enriched = covers._enrich_one(version, None)
     assert enriched["artist"] == "Obscure Artist"
     assert enriched["preview_url"] == ""
+
+
+# ---------- רגרסיה: חיפוש "Sweet Dreams" החזיר קאנטרי מ-1960 ----------
+
+def test_album_words_do_not_create_a_false_trailer_signal():
+    """'Expanded Version' ו-'Hits Covered By Snow' סימנו שירי קאנטרי כטריילר."""
+    assert covers.trailer_signal(
+        make("The Pioneers", "Sweet Dreams", album="Greetings from the Pioneers (Expanded Version)")
+    ) == []
+    assert covers.trailer_signal(
+        make("Hank Snow", "Sweet Dreams", album="Hits Covered By Snow")
+    ) == []
+
+
+def test_covered_does_not_match_the_word_cover():
+    assert not covers._has_trailer_marker("Hits Covered By Snow")
+    assert not covers._has_trailer_marker("Expanded Version")
+
+
+def test_real_trailer_title_still_signals():
+    assert covers._has_trailer_marker("Sweet Dreams (Epic Trailer Version)")
+    assert covers._has_trailer_marker("Zombie - Cinematic Cover")
+
+
+def test_work_query_is_not_an_exact_phrase(monkeypatch):
+    """'Sweet Dreams' חייב להגיע גם ל-'Sweet Dreams (Are Made of This)'."""
+    captured = {}
+
+    def fake_get(path, params, client=None):
+        captured["params"] = params
+        return {"works": [
+            {"id": "w1", "title": "Sweet Dreams", "disambiguation": "1955 country song"},
+            {"id": "w2", "title": "Sweet Dreams (Are Made of This)", "disambiguation": "Eurythmics"},
+        ]}
+
+    monkeypatch.setattr(covers, "_mb_get", fake_get)
+    results = covers.musicbrainz_work_candidates("Sweet Dreams")
+    assert '"Sweet Dreams"' not in captured["params"]["query"]
+    assert {c["id"] for c in results} == {"w1", "w2"}
+
+
+def test_explicit_work_id_skips_auto_resolution(monkeypatch):
+    called = []
+    monkeypatch.setattr(covers, "musicbrainz_work_candidates",
+                        lambda *a, **k: called.append(1) or [])
+    monkeypatch.setattr(covers, "_mb_get", lambda *a, **k: {"recordings": [
+        {"title": "Sweet Dreams", "artist-credit": [{"name": "Eurythmics"}]},
+    ]})
+    versions = covers.musicbrainz_versions("Sweet Dreams", work_id="w2")
+    assert not called  # לא מזהים יצירה כשכבר נבחרה אחת
+    assert versions[0]["artist"] == "Eurythmics"
+
+
+def test_shs_is_skipped_when_a_work_was_chosen(monkeypatch):
+    shs_calls = []
+    monkeypatch.setattr(covers, "shs_search_work", lambda *a, **k: shs_calls.append(1) or None)
+    monkeypatch.setattr(covers, "musicbrainz_versions", lambda *a, **k: [
+        {"artist": "Eurythmics", "track": "Sweet Dreams (Are Made of This)"},
+    ])
+    monkeypatch.setattr(covers, "_enrich_one", lambda v, c: make(v["artist"], v["track"]))
+    results, source = covers.find_covers("Sweet Dreams", work_id="w2")
+    assert not shs_calls
+    assert source == "MusicBrainz"
+    assert results[0]["artist"] == "Eurythmics"
+
+
+def test_duplicate_store_matches_get_unique_uids(monkeypatch):
+    """הקריסה: StreamlitDuplicateElementKey על chk_itunes-322093141."""
+    monkeypatch.setattr(covers, "shs_search_work", lambda *a, **k: {"uri": "http://x"})
+    monkeypatch.setattr(covers, "shs_list_versions", lambda *a, **k: [
+        {"artist": "Patsy Cline", "track": "Sweet Dreams"},
+        {"artist": "Patsy Cline & Friends", "track": "Sweet Dreams"},
+    ])
+    # שתי הגרסאות נפתרות לאותה תוצאה בחנות, ולכן לאותו uid
+    monkeypatch.setattr(covers, "_enrich_one",
+                        lambda v, c: {**make(v["artist"], v["track"]), "uid": "itunes-322093141"})
+    results, _ = covers.find_covers("Sweet Dreams")
+    uids = [t["uid"] for t in results]
+    assert len(uids) == len(set(uids)), f"uid כפול: {uids}"
