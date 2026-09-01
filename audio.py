@@ -120,6 +120,74 @@ def features_for(track: dict, use_cache: bool = True) -> AudioFeatures:
     return result
 
 
+@dataclass
+class ImpactMetrics:
+    """כמה הקאבר "נותן בראש" ביחס למקור.
+
+    זה המדד שהחליף את ניחוש הרשימות: קאבר לטריילר לוקח שיר מקורי קטן והופך
+    אותו לענק — איטי יותר, עם קשת חדה מהשקט לדרופ ועם שיא חזק בהרבה.
+    """
+    tempo_ratio: float = 0.0    # מקור חלקי קאבר. מעל 1: הקאבר איטי יותר
+    peak_delta: float = 0.0     # שיא הקאבר פחות שיא המקור
+    buildup_ratio: float = 0.0  # קשת הקאבר חלקי קשת המקור
+    impact: int = 0             # 0..100
+    analyzed: bool = False      # False = לא נמדד, לא "אפס"
+    reason: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+# משקלים: הקשת והשיא הם התרגום הישיר של "מקור קטן, קאבר ענק".
+# הטמפו משני — קאבר לטריילר כמעט תמיד איטי מהמקור, אבל זה מלווה ולא מגדיר.
+W_BUILDUP, W_PEAK, W_TEMPO = 45, 35, 20
+
+
+def _scaled(value: float, full_credit: float) -> float:
+    """0..1 ליניארי עד לערך שמזכה בניקוד מלא."""
+    if full_credit <= 0:
+        return 0.0
+    return max(0.0, min(value / full_credit, 1.0))
+
+
+def compare_to_original(cover: AudioFeatures, original: AudioFeatures) -> ImpactMetrics:
+    """משווה קאבר למקור. לא מחזיר אפס כשאי אפשר למדוד — מחזיר analyzed=False."""
+    if cover.error or original.error:
+        return ImpactMetrics(reason=cover.error or original.error)
+    if not cover.bpm or not original.bpm:
+        return ImpactMetrics(reason="חסר ניתוח לאחד הצדדים")
+
+    tempo_ratio = round(original.bpm / cover.bpm, 2) if cover.bpm else 0.0
+    peak_delta = round(cover.peak_energy - original.peak_energy, 3)
+    buildup_ratio = (round(cover.buildup / original.buildup, 2)
+                     if original.buildup else 0.0)
+
+    # קאבר עם קשת גדולה פי 2 מהמקור מקבל ניקוד מלא על הקשת;
+    # שיא גבוה ב-0.3 מקבל ניקוד מלא; האטה של פי 1.6 מקבלת ניקוד מלא.
+    score = (
+        W_BUILDUP * _scaled(buildup_ratio - 1, 1.0)
+        + W_PEAK * _scaled(peak_delta, 0.3)
+        + W_TEMPO * _scaled(tempo_ratio - 1, 0.6)
+    )
+
+    return ImpactMetrics(
+        tempo_ratio=tempo_ratio,
+        peak_delta=peak_delta,
+        buildup_ratio=buildup_ratio,
+        impact=int(round(score)),
+        analyzed=True,
+    )
+
+
+def impact_for(cover: dict, original: dict) -> ImpactMetrics:
+    """נוחות: מנתח את שני הצדדים (מהקאש כשאפשר) ומשווה."""
+    if not cover.get("preview_url"):
+        return ImpactMetrics(reason="אין preview לקאבר")
+    if not original or not original.get("preview_url"):
+        return ImpactMetrics(reason="אין preview לגרסה המקורית")
+    return compare_to_original(features_for(cover), features_for(original))
+
+
 def matches_tempo(features: AudioFeatures, tempo_filter: str) -> bool:
     """סינון לפי BPM נמדד במקום לפי מילה שנדחפה לשאילתה."""
     if not tempo_filter or tempo_filter == "הכל" or not features.bpm:

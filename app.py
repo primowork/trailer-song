@@ -7,6 +7,7 @@ import streamlit as st
 
 import audio
 import covers as covers_module
+import youtube as youtube_module
 import federation
 import storage
 from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT,
@@ -46,7 +47,9 @@ def _init_state():
         "debug_mode": False,
         "covers_source": "",
         "work_candidates": [],
-        "trailers_only": False,
+        "impact": {},
+        "evidence": {},
+        "original": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -198,11 +201,21 @@ def render_track(track: dict, index: int):
     selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
 
     with col_title:
-        signals = track.get("trailer_signals") or []
-        badge = " 🎬" if signals else ""
+        metrics = st.session_state.get("impact", {}).get(uid)
+        evidence = st.session_state.get("evidence", {}).get(uid) or []
+        badge = " 🎬" if evidence else ""
         st.markdown(f"**{track['artist']}**{badge} - {track['track']}")
-        if signals:
-            st.caption("סימני טריילר: " + " · ".join(signals))
+        if metrics and metrics.get("analyzed"):
+            st.caption(
+                f"💥 impact {metrics['impact']}/100 · "
+                f"איטי פי {metrics['tempo_ratio']} · "
+                f"שיא {metrics['peak_delta']:+.2f} · "
+                f"קשת פי {metrics['buildup_ratio']}"
+            )
+        elif metrics:
+            st.caption(f"לא נותח: {metrics.get('reason', '')}")
+        for item in evidence[:2]:
+            st.caption(f"🎬 [{item['title'][:70]}]({item['url']}) — {item['channel']}")
         parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
         if track.get("year"):
             parts.append(f"שנה: {track['year']}")
@@ -298,11 +311,6 @@ with tab_covers:
     cover_artist = col_artist.text_input(
         "אמן מקורי (לא חובה):", placeholder="Eurythmics",
         help="ממלא תפקיד מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955.")
-    epic_only = st.checkbox(
-        "בחיפוש הרגיל: הצג גרסאות טריילר ראשונות", value=False,
-        help="משפיע רק על 'מצא קאברים' — מקדם למעלה גרסאות עם סימן טריילר "
-             "בלי להסתיר את השאר. לסינון מלא השתמש בכפתור 'רק לטריילרים'.",
-    )
 
     if st.button("🔎 אילו שירים בשם הזה?"):
         if not cover_title.strip():
@@ -327,48 +335,29 @@ with tab_covers:
         picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
         chosen_work = labels[picked]
 
-    col_all, col_trailers = st.columns(2)
-    search_all = col_all.button("🎬 מצא קאברים", type="primary")
-    search_trailers = col_trailers.button(
-        "🎥 חפש קאברים רק לטריילרים",
-        help="מסנן לגרסאות עם סימן טריילר בלבד: בית הפקה, אמן קאברים מוכר, "
-             "שיבוץ בפסקול, ז'אנר, או סמן טריילר בכותרת.",
-    )
-
-    if search_all or search_trailers:
+    if st.button("🎬 מצא קאברים", type="primary"):
         if not cover_title.strip():
             st.warning("הכנס שם שיר")
         else:
-            trailers_only = bool(search_trailers)
-            spinner_text = ("מחפש גרסאות לטריילרים..." if trailers_only
-                            else "שולף גרסאות מהמאגר...")
-            with st.spinner(spinner_text):
-                results, source_used = covers_module.find_covers(
-                    cover_title, cover_artist, epic_only=trailers_only, work_id=chosen_work)
+            with st.spinner("שולף גרסאות מהמאגר..."):
+                results, source_used, original = covers_module.find_covers(
+                    cover_title, cover_artist, work_id=chosen_work)
                 results = apply_blacklist(results)
-            if epic_only and not trailers_only:
-                # העדפה ולא סינון: גרסה בלי סימן עדיין מוצגת, רק נמוך יותר
-                results.sort(key=lambda t: (bool(t.get("trailer_signals")), t.get("score", 0)),
-                             reverse=True)
             st.session_state["candidates"] = results
             st.session_state["covers_source"] = source_used
+            st.session_state["original"] = original
             st.session_state["visible_count"] = PAGE_SIZE
             st.session_state["last_query"] = cover_title
-            st.session_state["trailers_only"] = trailers_only
-
-            if not results and trailers_only:
-                # הסינון צר בכוונה, ולכן חשוב להבחין בין "אין גרסאות" ל"אין
-                # גרסאות שזוהו כטריילר" — הכפתור השני עדיין עשוי להחזיר חומר.
-                st.info(
-                    "לא נמצאה אף גרסה עם סימן טריילר לשיר הזה. "
-                    "לחץ על 'מצא קאברים' כדי לראות את כל הגרסאות — ייתכן שיש שם "
-                    "גרסה מתאימה שהמערכת לא זיהתה כטריילר."
-                )
-            elif not results:
+            if not results:
                 st.info(
                     "לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר, או ששני המקורות "
                     "לא היו זמינים. נסה את לשונית החיפוש החופשי."
                 )
+
+    original = st.session_state.get("original")
+    if original:
+        st.caption(f"גרסת ייחוס להשוואה: **{original['artist']}** — {original['track']}"
+                   + (f" ({original['year']})" if original.get("year") else ""))
 
     if st.session_state["covers_source"]:
         st.caption(f"מקור הנתונים: {st.session_state['covers_source']}")
@@ -418,12 +407,16 @@ if candidates:
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", ["רלוונטיות", "אורך (עולה)", "אורך (יורד)", "אמן"])
+    sort_by = col_b.selectbox("מיון:", ["impact (עוצמה מול המקור)", "רלוונטיות",
+                                       "אורך (עולה)", "אורך (יורד)", "אמן"])
 
     display = list(candidates)
     if only_approved:
         display = [t for t in display if (status_of(t) or {}).get("status") == federation.APPROVED]
-    if sort_by == "אורך (עולה)":
+    if sort_by == "impact (עוצמה מול המקור)":
+        display.sort(key=lambda t: st.session_state.get("impact", {})
+                     .get(t["uid"], {}).get("impact", -1), reverse=True)
+    elif sort_by == "אורך (עולה)":
         display.sort(key=lambda t: t.get("duration_sec", 0))
     elif sort_by == "אורך (יורד)":
         display.sort(key=lambda t: t.get("duration_sec", 0), reverse=True)
@@ -431,8 +424,7 @@ if candidates:
         display.sort(key=lambda t: t.get("artist", "").lower())
 
     col_c.metric("סה\"כ במאגר", len(candidates))
-    if st.session_state.get("trailers_only"):
-        st.caption("🎥 מסונן לגרסאות עם סימן טריילר בלבד")
+
     st.subheader(f"מוצגים {min(st.session_state['visible_count'], len(display))} מתוך {len(display)}")
 
     action_all, action_selected = st.columns([1, 1])
@@ -441,6 +433,26 @@ if candidates:
     if action_all.button("🔍 בדוק את כל התוצאות המוצגות בפדרציה"):
         verify_tracks(visible)
         st.rerun()
+
+    if st.session_state.get("original") and st.button(
+            "💥 מדוד עוצמה מול המקור (לכל המוצגים)"):
+        original_track = st.session_state["original"]
+        progress = st.progress(0.0, text="מנתח...")
+        for index, track in enumerate(visible):
+            progress.progress(index / max(len(visible), 1),
+                              text=f"מנתח {index + 1}/{len(visible)}: {track['artist']}")
+            st.session_state["impact"][track["uid"]] = audio.impact_for(
+                track, original_track).to_dict()
+            if youtube_module.available():
+                st.session_state["evidence"][track["uid"]] = (
+                    youtube_module.search_trailer_evidence(track["artist"], track["track"]))
+        progress.empty()
+        st.rerun()
+
+    if not audio.librosa_available():
+        st.caption("⚠️ ניתוח העוצמה כבוי — librosa לא מותקנת")
+    if not youtube_module.available():
+        st.caption("⚠️ אין אישור שימוש בטריילר — הגדר YOUTUBE_API_KEY")
 
     selected = [t for t in (render_track(track, i) for i, track in enumerate(visible)) if t]
 
