@@ -4,3 +4,7 @@ __pycache__/
 .streamlit/secrets.toml
 venv/
 .venv/
+
+.data/
+.pytest_cache/
+tests/__pycache__/
