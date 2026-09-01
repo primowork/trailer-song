@@ -8,6 +8,5 @@ RUN playwright install chromium
 
 COPY . .
 
-EXPOSE 8501
-
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# הרצה על הפורט הדינמי של Railway
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0.0.0"]
