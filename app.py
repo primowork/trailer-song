@@ -181,8 +181,11 @@ def render_track(track: dict, index: int):
     selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
 
     with col_title:
-        badge = " 🎬" if track.get("is_epic_performer") else ""
+        signals = track.get("trailer_signals") or []
+        badge = " 🎬" if signals else ""
         st.markdown(f"**{track['artist']}**{badge} - {track['track']}")
+        if signals:
+            st.caption("סימני טריילר: " + " · ".join(signals))
         parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
         if track.get("year"):
             parts.append(f"שנה: {track['year']}")
@@ -276,8 +279,11 @@ with tab_covers:
     col_title, col_artist = st.columns(2)
     cover_title = col_title.text_input("שם השיר המקורי:", placeholder="למשל: Zombie")
     cover_artist = col_artist.text_input("אמן מקורי (לא חובה):", placeholder="The Cranberries")
-    epic_only = st.checkbox("רק מבצעים מעולם הטריילרים", value=False,
-                            help="מסנן לפי רשימת EPIC_SEEDS. מצמצם מאוד.")
+    epic_only = st.checkbox(
+        "העדף גרסאות עם סימן טריילר", value=False,
+        help="מקדם למעלה גרסאות עם סימן טריילר (בית הפקה, אמן קאברים מוכר, "
+             "שיבוץ בפסקול, ז'אנר). לא מסתיר גרסאות אחרות.",
+    )
 
     if st.button("🎬 מצא קאברים", type="primary"):
         if not cover_title.strip():
@@ -285,8 +291,12 @@ with tab_covers:
         else:
             with st.spinner("שולף גרסאות מהמאגר..."):
                 results, source_used = covers_module.find_covers(
-                    cover_title, cover_artist, epic_only=epic_only)
+                    cover_title, cover_artist, epic_only=False)
                 results = apply_blacklist(results)
+            if epic_only:
+                # העדפה ולא סינון: גרסה בלי סימן עדיין מוצגת, רק נמוך יותר
+                results.sort(key=lambda t: (bool(t.get("trailer_signals")), t.get("score", 0)),
+                             reverse=True)
             st.session_state["candidates"] = results
             st.session_state["covers_source"] = source_used
             st.session_state["visible_count"] = PAGE_SIZE

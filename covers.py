@@ -8,6 +8,7 @@
 נפילה לאחור: MusicBrainz, שפתוח לגמרי ללא מפתח אך עם כיסוי נמוך יותר.
 """
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,7 +16,9 @@ import httpx
 from thefuzz import fuzz
 
 import search as search_module
-from search import EPIC_SEEDS, clean_artist_name, clean_track_title, score_track, track_key
+from search import (EPIC_GENRES, EPIC_KEYWORDS, EPIC_SEEDS, TRAILER_COVER_ARTISTS,
+                    clean_artist_name, clean_track_title, normalize_artist,
+                    normalize_title, score_track, track_key)
 
 SHS_BASE = os.environ.get("SHS_API_URL", "https://secondhandsongs.com/api")
 SHS_TOKEN = os.environ.get("SHS_API_TOKEN", "")
@@ -153,22 +156,39 @@ def musicbrainz_versions(title: str, artist: str = "", limit: int = 100,
 
 # ---------- העשרה ודירוג ----------
 
+ENRICH_MATCH_THRESHOLD = 85
+
+
+def _match_score(version: dict, candidate: dict) -> int:
+    """קרבה בין ביצוע מהמאגר לתוצאה מהחנות, על מחרוזות מנורמלות."""
+    artist = fuzz.token_set_ratio(normalize_artist(version["artist"]),
+                                  normalize_artist(candidate["artist"]))
+    title = fuzz.token_set_ratio(normalize_title(version["track"]),
+                                 normalize_title(candidate["track"]))
+    return min(artist, title)
+
+
 def _enrich_one(version: dict, client: httpx.Client) -> dict:
-    """משלים preview, אורך ואלבום מ-iTunes/Deezer עבור ביצוע שהגיע מהמאגר."""
+    """משלים preview, אורך ואלבום מ-iTunes/Deezer עבור ביצוע שהגיע מהמאגר.
+
+    ההתאמה מטושטשת ולא לפי שוויון מפתח: כותרות חנות כמו
+    'California Dreamin\' - From "San Andreas"' לא זהות לשם במאגר, והשוואה מדויקת
+    הפילה אותן לרשומה ללא preview.
+    """
     term = f"{version['artist']} {version['track']}"
     candidates = search_module.itunes_search(term, limit=10, client=client)
     if not candidates:
         candidates = search_module.deezer_search(term, limit=10, client=client)
 
-    target = track_key(version["artist"], version["track"])
-    for candidate in candidates:
-        if track_key(candidate["artist"], candidate["track"]) == target:
-            return {**candidate, **{k: v for k, v in version.items() if v}}
+    if candidates:
+        best = max(candidates, key=lambda c: _match_score(version, c))
+        if _match_score(version, best) >= ENRICH_MATCH_THRESHOLD:
+            return {**best, **{k: v for k, v in version.items() if v}}
 
     # לא נמצא בחנויות: הביצוע עדיין רלוונטי כרפרנס, בלי preview
     return {
         "source": version.get("source_db", ""),
-        "uid": f"db-{target}",
+        "uid": f"db-{track_key(version['artist'], version['track'])}",
         "artist": version["artist"],
         "track": version["track"],
         "album": "",
@@ -180,10 +200,39 @@ def _enrich_one(version: dict, client: httpx.Client) -> dict:
     }
 
 
+def trailer_signal(track: dict) -> list[str]:
+    """אילו סימנים מקשרים את ההקלטה לעולם הטריילרים.
+
+    מחליף את is_epic_performer, שבדק רק חברות מוזיקת טריילרים ולכן החזיר False
+    לארכיטיפ הנפוץ ביותר: אמן מיינסטרים שעשה קאבר לשיר ישן עבור טריילר
+    (Sia - California Dreamin' ב-San Andreas).
+    """
+    artist = track.get("artist", "") if isinstance(track, dict) else str(track)
+    title = track.get("track", "") if isinstance(track, dict) else ""
+    album = track.get("album", "") if isinstance(track, dict) else ""
+    genre = track.get("genre", "") if isinstance(track, dict) else ""
+
+    normalized_artist = normalize_artist(artist)
+    signals = []
+
+    if any(fuzz.partial_ratio(seed.lower(), normalized_artist) > 90 for seed in EPIC_SEEDS):
+        signals.append("בית הפקה")
+    if any(fuzz.ratio(seed.lower(), normalized_artist) > 90 for seed in TRAILER_COVER_ARTISTS):
+        signals.append("אמן קאברים לטריילרים")
+    if re.search(r'from\s+["“]', f"{title} {album}", re.IGNORECASE):
+        signals.append("שיבוץ בפסקול")
+    if any(g in (genre or "").lower() for g in EPIC_GENRES):
+        signals.append("ז'אנר")
+    if any(kw in f"{title} {album}".lower() for kw in EPIC_KEYWORDS):
+        signals.append("מילת מפתח")
+
+    return signals
+
+
 def is_epic_performer(artist: str) -> bool:
-    """האם המבצע מזוהה עם עולם מוזיקת הטריילרים."""
-    lowered = clean_artist_name(artist).lower()
-    return any(fuzz.partial_ratio(seed.lower(), lowered) > 90 for seed in EPIC_SEEDS)
+    """נשמר לתאימות לאחור: האם המבצע הוא חברת מוזיקת טריילרים."""
+    normalized = normalize_artist(artist)
+    return any(fuzz.partial_ratio(seed.lower(), normalized) > 90 for seed in EPIC_SEEDS)
 
 
 def find_covers(title: str, artist: str = "", epic_only: bool = False,
@@ -217,7 +266,8 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
                         if clean_artist_name(v["artist"]).lower() != original]
 
         if epic_only:
-            versions = [v for v in versions if is_epic_performer(v["artist"])]
+            versions = [v for v in versions
+                        if trailer_signal({"artist": v["artist"], "track": v.get("track", "")})]
 
         versions = versions[:limit]
 
@@ -231,9 +281,8 @@ def find_covers(title: str, artist: str = "", epic_only: bool = False,
             continue
         seen.add(key)
         item["score"] = score_track(item, clean_title)
-        item["is_epic_performer"] = is_epic_performer(item["artist"])
-        if item["is_epic_performer"]:
-            item["score"] += 30
+        item["trailer_signals"] = trailer_signal(item)
+        item["is_epic_performer"] = bool(item["trailer_signals"])
         unique.append(item)
 
     unique.sort(key=lambda t: t.get("score", 0), reverse=True)

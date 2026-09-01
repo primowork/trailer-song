@@ -43,6 +43,16 @@ EPIC_SEEDS = (
     "J2", "Judge & Jury", "Colossal Trailer Music", "Cover Killer", "Violet Orlandi",
 )
 
+# אמנים מיינסטרים שהקאברים שלהם שימשו בטריילרים. קטגוריה נפרדת מ-EPIC_SEEDS
+# בכוונה: אלה לא חברות מוזיקת טריילרים אלא זמרים מוכרים שעשו קאבר לשיר ישן.
+# הדוגמה המכוננת: Sia - California Dreamin' בטריילר של San Andreas.
+TRAILER_COVER_ARTISTS = (
+    "Sia", "Jasmine Thompson", "Ruelle", "Fleurie", "Aurora", "Birdy",
+    "Lorde", "Gary Clark Jr", "Hozier", "Chris Cornell", "Halsey",
+    "Billie Eilish", "Lana Del Rey", "Gabrielle Aplin", "Alice Merton",
+    "Zayde Wolf", "Nathan Wagner", "Beth Crowley", "Karen O",
+)
+
 ALL = "הכל"
 LENGTH_SHORT = "קצר (< 3 דק')"
 LENGTH_MEDIUM = "בינוני (3-4 דק')"
@@ -69,11 +79,31 @@ def clean_track_title(title: str) -> str:
     return cleaned.strip()
 
 
+def normalize_title(title: str) -> str:
+    """מנרמל כותרת כך שווריאציות ניסוח של אותו שיר נופלות על אותה מחרוזת.
+
+    נדרש כי "California Dreaming" שהמשתמש מקליד ו-"California Dreamin\'" שהוא השם
+    האמיתי הפיקו עד היום מפתחות שונים, וכל שרשרת ההתאמה נשברה בגללם.
+    """
+    s = (title or "").lower()
+    # סמן שיבוץ בפסקול: 'Song - From "Movie"' או 'Song (From "Movie")'
+    s = re.sub(r'\s*[-–—]?\s*\(?from\s+["“].*$', "", s)
+    # Dreamin' -> Dreaming. מוסיף g רק אחרי אפוסטרוף, לעולם לא מוריד g קיים,
+    # ולכן "Sing" ו-"Bring" אינם נפגעים.
+    s = re.sub(r"(?<=\w)in'(?=\s|$)", "ing", s)
+    s = re.sub(r"[^\w\s]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def normalize_artist(artist: str) -> str:
+    s = clean_artist_name(artist).lower()
+    s = re.sub(r"[^\w\s]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def track_key(artist: str, track: str) -> str:
     """מפתח זהות לשיר — הבסיס לניפוי כפילויות בין אלבומים ובין מקורות."""
-    a = re.sub(r"[^\w\s]", "", clean_artist_name(artist).lower()).strip()
-    t = re.sub(r"[^\w\s]", "", clean_track_title(track).lower()).strip()
-    return f"{a}|{t}"
+    return f"{normalize_artist(artist)}|{normalize_title(clean_track_title(track))}"
 
 
 # ---------- שאילתות ----------
@@ -169,29 +199,47 @@ def deezer_search(term: str, limit: int = 100,
 
 # ---------- דירוג וניפוי ----------
 
-def score_track(track: dict, query: str) -> int:
-    """ציון רלוונטיות: כמה השיר תואם לשאילתה וכמה הוא 'קאבר אפי'."""
-    artist = track.get("artist", "")
-    title = track.get("track", "")
-    album = track.get("album", "")
-    haystack = f"{artist} {title} {album}".lower()
+# תקרה לבונוס ה"אפיות". בלעדיה טראק שמתאים גרוע לשאילתה אבל דחוס במילות מפתח
+# ניצח התאמה מדויקת: "California Dreaming (Epic Cinematic Trailer Cover Version)"
+# קיבל 140 מול 97 של הגרסה האמיתית של Sia.
+MAX_EPIC_BONUS = 30
+RELEVANCE_FLOOR = 60
 
-    score = max(
-        fuzz.token_set_ratio(query.lower(), title.lower()),
-        fuzz.token_set_ratio(query.lower(), artist.lower()),
+
+def relevance(track: dict, query: str) -> int:
+    """כמה השיר תואם למה שהמשתמש חיפש, על מחרוזות מנורמלות."""
+    if not query:
+        return 100
+    q = normalize_title(query)
+    return max(
+        fuzz.token_set_ratio(q, normalize_title(track.get("track", ""))),
+        fuzz.token_set_ratio(q, normalize_artist(track.get("artist", ""))),
     )
 
-    score += 8 * sum(1 for kw in EPIC_KEYWORDS if kw in haystack)
 
+def epic_bonus(track: dict) -> int:
+    """בונוס על סימני 'קאבר אפי'. כל סימן נספר פעם אחת, והסכום חסום."""
+    artist = track.get("artist", "")
+    haystack = f"{artist} {track.get('track', '')} {track.get('album', '')}".lower()
+
+    bonus = 0
+    if any(kw in haystack for kw in EPIC_KEYWORDS):
+        bonus += 8
     if any(g in (track.get("genre", "") or "").lower() for g in EPIC_GENRES):
-        score += 15
-
+        bonus += 10
     if any(fuzz.partial_ratio(seed.lower(), artist.lower()) > 90 for seed in EPIC_SEEDS):
-        score += 40
+        bonus += 15
+    if any(fuzz.ratio(seed.lower(), normalize_artist(artist)) > 90
+           for seed in TRAILER_COVER_ARTISTS):
+        bonus += 15
+    return min(bonus, MAX_EPIC_BONUS)
 
+
+def score_track(track: dict, query: str) -> int:
+    """רלוונטיות ראשית, אפיות כתוספת חסומה — לא להפך."""
+    score = relevance(track, query) + epic_bonus(track)
     if not track.get("preview_url"):
         score -= 25  # אי אפשר להאזין — פחות שימושי
-
     return int(score)
 
 
