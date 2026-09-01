@@ -155,6 +155,21 @@ with st.sidebar:
         st.caption(f"נשמר: `{st.session_state['debug_path']}`")
 
     st.caption(f"רפרטואר: `{federation.FEDERATION_URL}`")
+
+    if st.button("🩺 בדוק חיבור לפדרציה"):
+        with st.spinner("בודק..."):
+            report = federation.diagnose()
+        html = report.pop("html", "")
+        st.json(report)
+        if html:
+            path = storage.save_debug_html(html, "diagnose")
+            if path:
+                st.caption(f"HTML נשמר: `{path}`")
+                st.download_button("⬇️ הורד את ה-HTML", data=html.encode("utf-8"),
+                                   file_name="ifpi_search.html", mime="text/html")
+        else:
+            st.error("השרת לא הצליח להגיע לאתר הפדרציה. "
+                     "אם זה עובד מהדפדפן שלך אבל לא מכאן, החסימה היא ברשת של השרת.")
     st.caption(f"תיקיית נתונים: `{storage.DATA_DIR or 'לא זמינה'}`")
     if not audio.librosa_available():
         st.caption("ניתוח אודיו כבוי (librosa לא מותקנת)")

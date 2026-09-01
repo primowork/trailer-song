@@ -215,3 +215,92 @@ def test_target_is_the_record_federation_not_the_anti_counterfeiting_one():
     """רגרסיה: federation.co.il הוא ארגון אחר לגמרי."""
     assert "ifpi.co.il" in federation.FEDERATION_URL
     assert "federation.co.il" not in federation.FEDERATION_URL
+
+
+# ---------- נפילה לאחור בטעינת דף ה-preflight ----------
+
+def _bare_client():
+    client = federation.FederationClient.__new__(federation.FederationClient)
+    client.use_http_fast_path = True
+    client.debug = False
+    client.last_html = ""
+    client._preflight_done = False
+    client.artist_field = client.track_field = ""
+    client.preflight_error = ""
+    return client
+
+
+class _FailingHttp:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, *a, **k):
+        self.calls += 1
+        raise RuntimeError("timed out")
+
+
+def test_http_timeout_falls_back_to_the_browser(monkeypatch):
+    """הבאג: timeout של httpx ביטל את כל האצווה בלי לנסות את הדפדפן."""
+    client = _bare_client()
+    client._http = _FailingHttp()
+
+    class FakePage:
+        def goto(self, *a, **k):
+            return None
+
+        def content(self):
+            return FORM_HTML
+
+    client._ensure_page = lambda: FakePage()
+
+    assert client.preflight() is True
+    assert client.artist_field == "artName"
+    assert client.use_http_fast_path is False  # אין טעם לנסות שוב HTTP לכל שיר
+
+
+def test_http_preflight_is_retried_before_giving_up():
+    client = _bare_client()
+    http = _FailingHttp()
+    client._http = http
+
+    def no_browser():
+        raise RuntimeError("no browser")
+
+    client._ensure_page = no_browser
+    client.preflight()
+    assert http.calls == federation.PREFLIGHT_ATTEMPTS
+
+
+def test_unreachable_from_both_paths_names_both_errors():
+    client = _bare_client()
+    client._http = _FailingHttp()
+
+    def no_browser():
+        raise RuntimeError("Executable doesn't exist")
+
+    client._ensure_page = no_browser
+    assert client.preflight() is False
+    assert "timed out" in client.preflight_error
+    assert "Executable" in client.preflight_error
+
+
+def test_loaded_page_without_form_is_a_different_message():
+    """'נטען אך אין טופס' חייב להיראות אחרת מ'לא ניתן לטעון'."""
+    client = _bare_client()
+
+    class OkHttp:
+        def get(self, *a, **k):
+            class R:
+                text = NO_FORM_HTML
+            return R()
+
+    client._http = OkHttp()
+    assert client.preflight() is False
+    assert "נטען" in client.preflight_error
+    assert "לא ניתן לטעון" not in client.preflight_error
+
+
+def test_diagnose_reports_dns_failure():
+    report = federation.diagnose("https://nonexistent.invalid/search.asp")
+    assert report["host"] == "nonexistent.invalid"
+    assert "נכשל" in report["dns"]
