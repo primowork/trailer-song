@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font: 12px system-ui, sans-serif; direction: rtl; color: #666; }
+  #status { padding: 2px 4px; }
+</style>
+<div id="status">ממתין למדידה…</div>
+<script>
+// רכיב Streamlit ללא שלב build: פרוטוקול ה-postMessage ממומש כאן ידנית.
+const send = (type, data) =>
+  window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+
+const setValue = (value) =>
+  send("streamlit:setComponentValue", { value, dataType: "json" });
+
+const status = document.getElementById("status");
+const setStatus = (text) => {
+  status.textContent = text;
+  send("streamlit:setFrameHeight", { height: 24 });
+};
+
+const WINDOW_SEC = 0.05;   // חלון לחישוב צפיפות המכות
+const LOW_HZ = 200;        // הגבול שמתחתיו יושבים התופים וה-braam
+
+function rms(data) {
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+  return Math.sqrt(sum / (data.length || 1));
+}
+
+function toMono(buffer) {
+  const left = buffer.getChannelData(0);
+  if (buffer.numberOfChannels < 2) return left;
+  const right = buffer.getChannelData(1);
+  const out = new Float32Array(left.length);
+  for (let i = 0; i < left.length; i++) out[i] = (left[i] + right[i]) / 2;
+  return out;
+}
+
+async function lowEndRatio(buffer, fullRms) {
+  if (!fullRms) return 0;
+  const offline = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
+  const source = offline.createBufferSource();
+  source.buffer = buffer;
+  // שני פילטרים בטור: שיפוע חד מספיק כדי שהגיטרה לא תיספר כבס
+  const first = offline.createBiquadFilter();
+  const second = offline.createBiquadFilter();
+  first.type = second.type = "lowpass";
+  first.frequency.value = second.frequency.value = LOW_HZ;
+  source.connect(first);
+  first.connect(second);
+  second.connect(offline.destination);
+  source.start();
+  const filtered = await offline.startRendering();
+  return Math.min(rms(filtered.getChannelData(0)) / fullRms, 1);
+}
+
+function onsetRate(mono, sampleRate) {
+  const size = Math.max(1, Math.round(sampleRate * WINDOW_SEC));
+  const frames = [];
+  for (let i = 0; i + size <= mono.length; i += size) {
+    frames.push(rms(mono.subarray(i, i + size)));
+  }
+  if (frames.length < 3) return 0;
+  const mean = frames.reduce((a, b) => a + b, 0) / frames.length;
+  let onsets = 0;
+  for (let i = 1; i < frames.length; i++) {
+    // קפיצה משמעותית מעל הממוצע נחשבת מכה, לא כל עלייה קטנה
+    if (frames[i] - frames[i - 1] > mean * 0.3 && frames[i] > mean) onsets++;
+  }
+  return onsets / (mono.length / sampleRate);
+}
+
+async function measure(url) {
+  const response = await fetch(url, { mode: "cors" });
+  if (!response.ok) throw new Error("http " + response.status);
+  const bytes = await response.arrayBuffer();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const buffer = await ctx.decodeAudioData(bytes);
+  ctx.close();
+
+  const mono = toMono(buffer);
+  const loudness = rms(mono);
+  let peak = 0;
+  for (let i = 0; i < mono.length; i++) {
+    const value = Math.abs(mono[i]);
+    if (value > peak) peak = value;
+  }
+  return {
+    loudness: Math.round(loudness * 1000) / 1000,
+    low_end: Math.round((await lowEndRatio(buffer, loudness)) * 1000) / 1000,
+    crest: Math.round((loudness ? peak / loudness : 0) * 100) / 100,
+    onset_rate: Math.round(onsetRate(mono, buffer.sampleRate) * 100) / 100,
+  };
+}
+
+let running = false;
+let lastBatch = "";
+
+async function run(tracks) {
+  running = true;
+  const results = {};
+  // סדרתי בכוונה: 20 הורדות במקביל מציפות את הרשת של המשתמש
+  for (let i = 0; i < tracks.length; i++) {
+    const track = tracks[i];
+    setStatus(`מודד ${i + 1}/${tracks.length}…`);
+    try {
+      results[track.uid] = await measure(track.url);
+    } catch (err) {
+      // הפרדה מפורשת: חסימת CORS ניתנת לעקיפה דרך השרת, שאר השגיאות לא
+      const cors = err instanceof TypeError || /cors|fetch/i.test(String(err));
+      results[track.uid] = { error: cors ? "cors_failed" : String(err).slice(0, 120) };
+    }
+  }
+  setStatus(`נמדדו ${tracks.length} טראקים`);
+  setValue(results);
+  running = false;
+}
+
+window.addEventListener("message", (event) => {
+  if (!event.data || event.data.type !== "streamlit:render") return;
+  const tracks = (event.data.args && event.data.args.tracks) || [];
+  // החתימה על ה-uid בלבד: במסלול המעקף ה-url הוא data URI במגה-בייטים
+  const signature = JSON.stringify(tracks.map((t) => t.uid));
+  // Streamlit שולח render בכל rerun; בלי החתימה נמדוד שוב את אותם טראקים
+  if (running || signature === lastBatch) return;
+  lastBatch = signature;
+  if (!tracks.length) {
+    setStatus("אין מה למדוד");
+    return;
+  }
+  run(tracks);
+});
+
+send("streamlit:componentReady", { apiVersion: 1 });
+send("streamlit:setFrameHeight", { height: 24 });
+</script>

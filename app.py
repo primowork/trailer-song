@@ -1,5 +1,6 @@
 """ממשק Streamlit: גילוי קאברים אפיים לטריילרים, עם בדיקת רפרטואר הפדרציה."""
 import csv
+import os
 import datetime as _dt
 import io
 import time
@@ -11,8 +12,10 @@ import audio
 import covers as covers_module
 import youtube as youtube_module
 import federation
+import preview as preview_module
 import storage
 import search as search_module
+import suggest as suggest_module
 from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
 
@@ -91,11 +94,14 @@ def _init_state():
         "debug_mode": False,
         "covers_source": "",
         "work_candidates": [],
-        "impact": {},
+        "bigness": {},
         "evidence": {},
         "original": None,
         "federation_blocked": False,
         "all_inputs": [],
+        "suggest_query": "",
+        "suggestions": [],
+        "cors_retried": set(),
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -261,9 +267,6 @@ with st.sidebar:
             st.error("השרת לא הצליח להגיע לאתר הפדרציה. "
                      "אם זה עובד מהדפדפן שלך אבל לא מכאן, החסימה היא ברשת של השרת.")
     st.caption(f"תיקיית נתונים: `{storage.DATA_DIR or 'לא זמינה'}`")
-    if not audio.librosa_available():
-        st.caption("ניתוח אודיו כבוי (librosa לא מותקנת)")
-
     if st.button("🧹 נקה קאש בדיקות"):
         st.session_state["cache"] = {}
         storage.save_cache({})
@@ -271,6 +274,110 @@ with st.sidebar:
 
     for warning in storage.warnings:
         st.warning(warning)
+
+
+# ---------- מדידת גודל בדפדפן ----------
+
+_MEASURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "components", "audio_meter")
+_audio_meter = components.declare_component("audio_meter", path=_MEASURE_DIR)
+# מופע שני לאותו רכיב: המסלול הישיר והמעקף רצים באותו rerun וצריכים key נפרד
+_audio_meter_proxy = components.declare_component("audio_meter_proxy", path=_MEASURE_DIR)
+
+# כמה טראקים לעקוף בכל סבב. ה-data URI הוא מגה-בייטים, וכולם עוברים דרך הדף
+CORS_FALLBACK_BATCH = 4
+
+
+def measure_visible(tracks: list):
+    """מודד את כל המוצגים אוטומטית, בדפדפן של המשתמש.
+
+    המדידה חייבת לרוץ בצד הלקוח: פענוח אודיו בשרת דורש תלות כבדה, והשרת הזה
+    ממילא חסום לחלק מהחנויות. מה שכבר נמדד נשמר לקאש לפי track_key ולא נמדד שוב.
+    """
+    cache = storage.load_bigness()
+    pending = []
+    for track in tracks:
+        uid = track["uid"]
+        if uid in st.session_state["bigness"]:
+            continue
+        key = track_key(track["artist"], track["track"])
+        if key in cache:
+            st.session_state["bigness"][uid] = cache[key]
+        elif track.get("preview_url"):
+            pending.append({"uid": uid, "url": track["preview_url"]})
+
+    if not pending:
+        return
+
+    results = _audio_meter(tracks=pending, key="audio_meter", default=None)
+    if not results:
+        st.caption("🎚️ מודד את עוצמת הטראקים בדפדפן…")
+        return
+
+    _merge_results(results, tracks, cache, overwrite=False)
+
+
+def _merge_results(results: dict, tracks: list, cache: dict, overwrite: bool):
+    """מכניס מדידות ל-session_state ולקאש, ומרענן כדי שהשורות יתעדכנו."""
+    by_uid = {t["uid"]: t for t in tracks}
+    fresh, cacheable = False, False
+    for uid, features in results.items():
+        if not overwrite and uid in st.session_state["bigness"]:
+            continue
+        st.session_state["bigness"][uid] = features
+        fresh = True
+        track = by_uid.get(uid)
+        # שגיאה לא נכנסת לקאש: היא עשויה להיות זמנית, ו"לא נמדד" אינו תוצאה
+        if track and not features.get("error"):
+            cache[track_key(track["artist"], track["track"])] = features
+            cacheable = True
+    if cacheable:
+        storage.save_bigness(cache)
+    if fresh:
+        # גם כשהכל נכשל: השורות כבר רונדרו, בלי rerun ה-⚪ לא יופיע עד הקליק הבא
+        st.rerun()
+
+
+def measure_via_server(tracks: list):
+    """מעקף לחסימת CORS: השרת מושך את הבייטים, הדפדפן עדיין מפענח ומודד.
+
+    רץ רק על מה שנכשל במסלול הישיר, בקבוצות קטנות — כל preview עובר דרך הדף
+    כ-data URI. כל טראק מנוסה פעם אחת בלבד, אחרת סבב שנכשל היה חוזר בלולאה.
+    """
+    blocked = [t for t in tracks
+               if st.session_state["bigness"].get(t["uid"], {}).get("error") == "cors_failed"
+               and t["uid"] not in st.session_state["cors_retried"]]
+    if not blocked:
+        return
+
+    batch = blocked[:CORS_FALLBACK_BATCH]
+    payload, failures = [], {}
+    with st.spinner("מושך את ה-preview דרך השרת (החנות חוסמת מדידה ישירה)…"):
+        for track in batch:
+            data_uri, error = preview_module.fetch_data_uri(track.get("preview_url", ""))
+            if error:
+                failures[track["uid"]] = {"error": error}
+            else:
+                payload.append({"uid": track["uid"], "url": data_uri})
+
+    cache = storage.load_bigness()
+    if failures:
+        st.session_state["cors_retried"].update(failures.keys())
+        _merge_results(failures, tracks, cache, overwrite=True)
+    if not payload:
+        return
+
+    results = _audio_meter_proxy(tracks=payload, key="audio_meter_proxy", default=None) or {}
+    # הרכיב מחזיק את הערך של הסבב הקודם עד שה-JS שולח חדש. בלי הסינון הזה היינו
+    # ממזגים שוב את אותן תוצאות בכל rerun, ועם overwrite זו לולאה אינסופית
+    sent = {item["uid"] for item in payload}
+    measured_now = {uid: features for uid, features in results.items() if uid in sent}
+    if not measured_now:
+        st.caption(f"🎚️ מודד {len(payload)} טראקים דרך השרת…")
+        return
+
+    st.session_state["cors_retried"].update(measured_now.keys())
+    _merge_results(measured_now, tracks, cache, overwrite=True)
 
 
 # ---------- הצגת שיר בודד ----------
@@ -286,27 +393,29 @@ def render_track(track: dict, index: int):
     selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
 
     with col_title:
-        metrics = st.session_state.get("impact", {}).get(uid)
+        features = st.session_state.get("bigness", {}).get(uid)
         evidence = st.session_state.get("evidence", {}).get(uid) or []
         badge = " 🎬" if evidence else ""
-        if audio.is_big_version(metrics):
+        if audio.is_big_version(features):
             badge += " 🔊"          # נמדדה כגרסה גדולה, לא משנה מה הכותרת אומרת
         indicators = search_module.trailer_indicators(track)
-        if indicators and not audio.is_big_version(metrics):
+        if indicators and not audio.is_big_version(features):
             badge += " 📣"
         st.markdown(f"**{track['artist']}**{badge} - {track['track']}")
         if indicators:
             # להראות איזה סימן תפס, לא רק שתפס משהו
             st.caption("סימן: " + " · ".join(indicators))
-        if metrics and metrics.get("analyzed"):
-            st.caption(
-                f"💥 impact {metrics['impact']}/100 · "
-                f"איטי פי {metrics['tempo_ratio']} · "
-                f"שיא {metrics['peak_delta']:+.2f} · "
-                f"קשת פי {metrics['buildup_ratio']}"
-            )
-        elif metrics:
-            st.caption(f"לא נותח: {metrics.get('reason', '')}")
+        if audio.measured(features):
+            score = audio.bigness(features)
+            label = "🔊 גדול" if score >= audio.BIG_VERSION_THRESHOLD else "🌙 רגוע"
+            st.caption(f"{label} {score}/100 · {audio.describe(features)}")
+        elif features:
+            reason = ("החנות חוסמת מדידה ישירה (CORS) — נמדד דרך השרת"
+                      if features.get("error") == "cors_failed"
+                      else features.get("error", ""))
+            st.caption(f"⚪ טרם נמדד — {reason}")
+        elif track.get("preview_url"):
+            st.caption("⚪ טרם נמדד")
         for item in evidence[:2]:
             st.caption(f"🎬 [{item['title'][:70]}]({item['url']}) — {item['channel']}")
         parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
@@ -315,19 +424,6 @@ def render_track(track: dict, index: int):
         if track.get("album"):
             parts.append(f"אלבום: {track['album']}")
         st.caption(" · ".join(parts))
-
-        features_key = f"feat_{uid}"
-        if st.session_state.get(features_key):
-            f = st.session_state[features_key]
-            if f.error:
-                st.caption(f"ניתוח אודיו נכשל: {f.error}")
-            else:
-                st.caption(f"🥁 {f.bpm} BPM · אנרגיה {f.energy} · build-up ×{f.buildup}")
-        elif track.get("preview_url") and audio.librosa_available():
-            if st.button("📊 נתח אודיו", key=f"btn_audio_{uid}"):
-                with st.spinner("מנתח..."):
-                    st.session_state[features_key] = audio.features_for(track)
-                st.rerun()
 
     with col_audio:
         if track.get("preview_url"):
@@ -411,11 +507,52 @@ st.write(
 )
 
 col_title, col_artist = st.columns(2)
-cover_title = col_title.text_input("שם השיר:", placeholder="למשל: Bitter Sweet Symphony")
+cover_title = col_title.text_input(
+    "שם השיר:", key="cover_title", placeholder="למשל: Bitter Sweet Symphony")
 cover_artist = col_artist.text_input(
-    "אמן מקורי (לא חובה):", placeholder="The Verve",
+    "אמן מקורי (לא חובה):", key="cover_artist", placeholder="The Verve",
     help="מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955 "
-         "וגם Eurythmics 1983. גם משמש כבסיס להשוואת עוצמה.")
+         "וגם Eurythmics 1983.")
+
+
+def suggestion_row(query: str):
+    """השלמת שם השיר ותיקון שגיאת כתיב, מול שמות אמיתיים מהקטלוג.
+
+    שם חלקי או משובש מחזיר מעט מאוד תוצאות, והמשתמש לא יודע אם השיר לא קיים או
+    שהוא פשוט טעה. ההצעות כאן הן שירים שקיימים במאגר שבו נחפש בפועל, ולכן לחיצה
+    עליהן מבטיחה שאילתה שתחזיר משהו.
+    """
+    query = (query or "").strip()
+    if len(query) < suggest_module.MIN_QUERY_LEN:
+        return
+    # ההצעות נשמרות לפי הטקסט: בלי זה כל rerun (סימון checkbox, מדידה) פונה שוב
+    # ל-iTunes על אותו שם בדיוק
+    if st.session_state["suggest_query"] != query:
+        st.session_state["suggest_query"] = query
+        with st.spinner("מחפש שמות דומים..."):
+            st.session_state["suggestions"] = suggest_module.suggest(query)
+
+    items = st.session_state["suggestions"]
+    if not items:
+        return
+
+    correction = suggest_module.did_you_mean(query, items)
+    if correction:
+        st.warning(f"נראה שהתכוונת ל: **{correction['label']}**")
+    else:
+        st.caption("השלמות מהקטלוג:")
+
+    columns = st.columns(4)
+    for index, item in enumerate(items[:4]):
+        if columns[index].button(f"🎵 {item['label'][:38]}", key=f"sug_{index}",
+                                 help=item["label"], use_container_width=True):
+            st.session_state["cover_title"] = item["track"]
+            st.session_state["cover_artist"] = item["artist"]
+            st.session_state["suggest_query"] = ""
+            st.rerun()
+
+
+suggestion_row(cover_title)
 
 with st.expander("🎛️ פילטרים", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -431,7 +568,6 @@ with st.expander("🎛️ פילטרים", expanded=False):
     fresh_only = col6.checkbox(
         "רק מה שלא ראיתי", value=False,
         help="בחיפוש החופשי: מדלג על תוצאות שכבר הוצגו, כדי להביא חומר חדש.")
-    st.caption("הקצב נמדד מה-preview בכפתור 'נתח אודיו', לא מנוחש מהכותרת.")
 
 filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
@@ -492,9 +628,9 @@ elif search_epic:
         st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
     else:
         st.caption(
-            f"📣 {declared} גרסאות עם סימן טריילר מופיעות ראשונות. השאר נשארות "
-            "ברשימה — רמיקס יכול להיות ענק בלי לכתוב זאת. לחץ '💥 מדוד עוצמה "
-            "מול המקור' וכל מי שיימדד כגדול יסומן 🔊."
+            f"📣 {declared} גרסאות עם סימן טריילר. השאר נשארות ברשימה — רמיקס "
+            "יכול להיות ענק בלי לכתוב זאת. כל המוצגים נמדדים אוטומטית בדפדפן, "
+            "ומי שנמדד כגדול מסומן 🔊."
         )
 
 elif search_all:
@@ -523,9 +659,6 @@ original = st.session_state.get("original")
 if original:
     st.caption(f"גרסת ייחוס להשוואה: **{original['artist']}** — {original['track']}"
                + (f" ({original['year']})" if original.get("year") else ""))
-    if not original.get("preview_url"):
-        st.warning("לגרסת הייחוס אין preview — אי אפשר למדוד עוצמה מולה. "
-                   "מלא 'אמן מקורי' כדי לבחור בסיס השוואה אחר.")
 
 if st.session_state["covers_source"]:
     st.caption(f"מקור הנתונים: {st.session_state['covers_source']}")
@@ -541,7 +674,7 @@ if candidates:
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", ["ציון", "impact (עוצמה מול המקור)", "חדשים קודם",
+    sort_by = col_b.selectbox("מיון:", ["גודל (נמדד)", "ציון", "חדשים קודם",
                                        "אורך (עולה)", "אורך (יורד)", "אמן"])
 
     display = list(candidates)
@@ -551,9 +684,13 @@ if candidates:
         display.sort(key=lambda t: t.get("score", 0), reverse=True)
     elif sort_by == "חדשים קודם":
         display.sort(key=lambda t: search_module.release_year(t), reverse=True)
-    elif sort_by == "impact (עוצמה מול המקור)":
-        display.sort(key=lambda t: st.session_state.get("impact", {})
-                     .get(t["uid"], {}).get("impact", -1), reverse=True)
+    elif sort_by == "גודל (נמדד)":
+        # מי שטרם נמדד יורד לתחתית ולא מתחזה ל"קטן": מפתח שני הוא הציון,
+        # כדי שהסדר יישאר יציב עד שהמדידה בדפדפן חוזרת
+        measurements = st.session_state.get("bigness", {})
+        display.sort(key=lambda t: (audio.bigness(measurements.get(t["uid"]))
+                                    if audio.measured(measurements.get(t["uid"])) else -1,
+                                    t.get("score", 0)), reverse=True)
     elif sort_by == "אורך (עולה)":
         display.sort(key=lambda t: t.get("duration_sec", 0))
     elif sort_by == "אורך (יורד)":
@@ -574,23 +711,19 @@ if candidates:
         verify_tracks(visible)
         st.rerun()
 
-    if st.session_state.get("original") and st.button(
-            "💥 מדוד עוצמה מול המקור (לכל המוצגים)"):
-        original_track = st.session_state["original"]
-        progress = st.progress(0.0, text="מנתח...")
+    measure_visible(visible)
+    measure_via_server(visible)
+
+    if youtube_module.available() and st.button("🎬 חפש אישור שימוש בטריילר (למוצגים)"):
+        progress = st.progress(0.0, text="מחפש...")
         for index, track in enumerate(visible):
             progress.progress(index / max(len(visible), 1),
-                              text=f"מנתח {index + 1}/{len(visible)}: {track['artist']}")
-            st.session_state["impact"][track["uid"]] = audio.impact_for(
-                track, original_track).to_dict()
-            if youtube_module.available():
-                st.session_state["evidence"][track["uid"]] = (
-                    youtube_module.search_trailer_evidence(track["artist"], track["track"]))
+                              text=f"{index + 1}/{len(visible)}: {track['artist']}")
+            st.session_state["evidence"][track["uid"]] = (
+                youtube_module.search_trailer_evidence(track["artist"], track["track"]))
         progress.empty()
         st.rerun()
 
-    if not audio.librosa_available():
-        st.caption("⚠️ ניתוח העוצמה כבוי — librosa לא מותקנת")
     if not youtube_module.available():
         st.caption("⚠️ אין אישור שימוש בטריילר — הגדר YOUTUBE_API_KEY")
 
