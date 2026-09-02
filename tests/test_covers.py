@@ -269,3 +269,65 @@ def test_find_artist_covers_tags_and_dedupes(monkeypatch):
 def test_find_artist_covers_without_titles_returns_empty(monkeypatch):
     monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: [])
     assert covers.find_artist_covers("Nobody") == ([], "", [])
+
+
+# ---------- "עוד כמו זה" ובורר היצירות ----------
+
+def test_famous_recording_picks_the_most_repeated_performer(monkeypatch):
+    catalog = ([_song("Rihanna", "Umbrella", f"r{i}") for i in range(5)]
+               + [_song("Karaoke Band", "Umbrella", "k1")]
+               + [_song("Someone", "Umbrella (Epic Trailer Version)", "e1")])
+    monkeypatch.setattr(covers.search_module, "itunes_search",
+                        lambda *a, **k: [dict(i) for i in catalog])
+    hit = covers.famous_recording("umbrella")
+    assert hit["artist"] == "Rihanna"
+
+
+def test_famous_recording_without_a_match_is_none(monkeypatch):
+    monkeypatch.setattr(covers.search_module, "itunes_search", lambda *a, **k: [])
+    assert covers.famous_recording("nothing here") is None
+    assert covers.famous_recording("  ") is None
+
+
+def test_more_covers_of_uses_the_origin_title(monkeypatch):
+    seen = {}
+
+    def fake(title, artist="", limit=40):
+        seen["title"] = title
+        return [_song("Other", "Yellow (Cinematic)", "o1"),
+                _song("Self", "Yellow (Epic)", "self")], "x"
+
+    monkeypatch.setattr(covers, "find_epic_versions", fake)
+    track = _song("Self", "Yellow (Epic Trailer Version)", "self")
+    results, _ = covers.more_covers_of(track)
+    # הכותרת מנוקה לשם השיר המקורי, והטראק עצמו אינו חוזר כהצעה לעצמו
+    assert seen["title"] == "Yellow"
+    assert [t["uid"] for t in results] == ["itunes-o1"]
+    assert results[0]["origin_track"] == "Yellow"
+
+
+def test_more_covers_of_prefers_the_declared_origin(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(covers, "find_epic_versions",
+                        lambda title, artist="", limit=40: (seen.update(title=title) or [], "x"))
+    covers.more_covers_of({**_song("A", "Something Else", "z"), "origin_track": "Clocks"})
+    assert seen["title"] == "Clocks"
+
+
+def test_more_like_style_without_genre_or_artist_is_empty():
+    assert covers.more_like_style({"uid": "x", "artist": "", "genre": ""}) == ([], "")
+
+
+def test_more_like_style_searches_genre_and_artist(monkeypatch):
+    terms = []
+
+    def fake_search(term, **kwargs):
+        terms.append(term)
+        return [_song("Neighbour", f"Track {term}", term)]
+
+    monkeypatch.setattr(covers.search_module, "search_covers", fake_search)
+    track = {**_song("2WEI", "Survivor", "src"), "genre": "Soundtrack"}
+    results, source = covers.more_like_style(track)
+    assert terms == ["Soundtrack", "2WEI"]
+    assert source and len(results) == 2
+    assert "itunes-src" not in {t["uid"] for t in results}

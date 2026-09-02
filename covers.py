@@ -106,17 +106,11 @@ def _mb_get(path: str, params: dict, client: httpx.Client | None = None):
         time.sleep(MB_MIN_INTERVAL - elapsed)
     _last_mb_call = time.time()
 
-    params = {**params, "fmt": "json"}
-    try:
-        response = (client or httpx).get(
-            f"{MUSICBRAINZ_BASE}/{path}", params=params,
-            headers={"User-Agent": MB_USER_AGENT}, timeout=15.0,
-        )
-        if response.status_code != 200:
-            return None
-        return response.json()
-    except Exception:
-        return None
+    # 503 מ-MusicBrainz על חריגת קצב הוא שכיח ורגעי. בלי ניסיון חוזר הוא נראה
+    # בדיוק כמו "היצירה לא במאגר", וזה מה שגרם ל"לחיצה ראשונה לא מוצאת".
+    return search_module.get_json(
+        f"{MUSICBRAINZ_BASE}/{path}", client=client, timeout=15.0,
+        headers={"User-Agent": MB_USER_AGENT}, params={**params, "fmt": "json"})
 
 
 MAX_WORK_CANDIDATES = 6
@@ -432,3 +426,82 @@ def find_artist_covers(artist: str, limit: int = 80) -> tuple[list[dict], str, l
         seen.add(track["uid"])
         unique.append(track)
     return unique[:limit], "חיפוש בחנויות לפי אמן", titles
+
+
+# ---------- "עוד כמו זה" ----------
+
+SIMILAR_LIMIT = 40
+
+
+def more_covers_of(track: dict, limit: int = SIMILAR_LIMIT) -> tuple[list[dict], str]:
+    """עוד קאברים לאותו שיר מקור שהטראק הזה מכסה.
+
+    שם השיר המקורי מתקבל מ-`origin_track` כשהוא ידוע (חיפוש לפי אמן), ואחרת
+    מניקוי הכותרת עצמה: "Yellow (Epic Trailer Version)" ← "Yellow".
+    """
+    title = track.get("origin_track") or clean_track_title(track.get("track", ""))
+    if not title.strip():
+        return [], ""
+    found, source = find_epic_versions(title, limit=limit)
+    found = [t for t in found if t.get("uid") != track.get("uid")]
+    for item in found:
+        item["origin_track"] = title
+    return found, source
+
+
+def more_like_style(track: dict, limit: int = SIMILAR_LIMIT) -> tuple[list[dict], str]:
+    """עוד טראקים באותו סגנון — לפי הז'אנר והאמן של הטראק שאהב.
+
+    זו שכנות ולא "המלצה": אין כאן מודל טעם. הז'אנר מגיע מ-iTunes, האמן מביא את
+    שאר הקטלוג שלו, והמדידה בדפדפן ממיינת את מה שחוזר לפי גודל — כך ש"עוד כמו
+    זה" מתכנס למה שנשמע גדול, ולא רק למה שמתויג דומה.
+    """
+    genre = (track.get("genre") or "").strip()
+    artist = clean_artist_name(track.get("artist", ""))
+    terms = [term for term in (genre, artist) if term]
+    if not terms:
+        return [], ""
+
+    merged: list[dict] = []
+    for term in terms:
+        merged.extend(search_module.search_covers(
+            term, include_seeds=False,
+            extra_modifiers=search_module.EPIC_SEARCH_MODIFIERS))
+
+    results = [t for t in search_module.dedupe(merged) if t.get("uid") != track.get("uid")]
+    for item in results:
+        item["trailer_indicator"] = is_trailer_indicator(item)
+    results.sort(key=lambda t: (t["trailer_indicator"], t.get("score", 0)), reverse=True)
+
+    unique, seen = [], set()
+    for item in results:
+        if item["uid"] in seen:
+            continue
+        seen.add(item["uid"])
+        unique.append(item)
+    return unique[:limit], "שכנים לפי ז'אנר ואמן"
+
+
+def famous_recording(title: str) -> dict | None:
+    """ההקלטה המוכרת ביותר בשם הזה, לתיוג בורר היצירות.
+
+    בורר היצירות של MusicBrainz מציג מלחינים, ומשתמש שמקליד "Umbrella" מזהה את
+    השיר לפי המבצע — ולכן נראה לו שהיצירה הנכונה חסרה, גם כשהיא ראשונה ברשימה.
+    ההקלטה שחוזרת על הכי הרבה אלבומים היא המוכרת.
+    """
+    if not title.strip():
+        return None
+
+    target = normalize_title(title)
+    counts: dict[str, dict] = {}
+    for item in search_module.itunes_search(title, limit=50):
+        if normalize_title(clean_track_title(item.get("track", ""))) != target:
+            continue
+        key = normalize_artist(item.get("artist", ""))
+        entry = counts.setdefault(key, {"track": item["track"], "artist": item["artist"],
+                                        "year": item.get("year", ""), "count": 0})
+        entry["count"] += 1
+
+    if not counts:
+        return None
+    return max(counts.values(), key=lambda entry: entry["count"])

@@ -177,3 +177,66 @@ def test_itunes_normalization_carries_the_release_year():
 def test_style_list_is_substantially_wider():
     assert len(search.STYLES) >= 20
     assert len(set(search.STYLES)) == len(search.STYLES)
+
+
+# ---------- שכבת ה-HTTP: כישלון אינו "אין תוצאות" ----------
+
+def test_get_json_retries_transient_failures(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, status):
+            self.status_code = status
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return Response(200 if len(calls) == 3 else 503)
+
+    monkeypatch.setattr(search.httpx, "get", fake_get)
+    monkeypatch.setattr(search.time, "sleep", lambda seconds: None)
+    search.reset_errors()
+
+    assert search.get_json("http://store/x") == {"ok": True}
+    assert len(calls) == 3
+    assert search.last_errors() == []
+
+
+def test_get_json_gives_up_and_records_the_reason(monkeypatch):
+    monkeypatch.setattr(search.httpx, "get",
+                        lambda url, **kwargs: (_ for _ in ()).throw(OSError("boom")))
+    monkeypatch.setattr(search.time, "sleep", lambda seconds: None)
+    search.reset_errors()
+
+    assert search.get_json("http://itunes.apple.com/search") is None
+    errors = search.last_errors()
+    assert len(errors) == 1 and "itunes.apple.com" in errors[0] and "boom" in errors[0]
+
+
+def test_get_json_does_not_retry_a_permanent_status(monkeypatch):
+    calls = []
+
+    class Response:
+        status_code = 404
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(search.httpx, "get",
+                        lambda url, **kwargs: calls.append(url) or Response())
+    monkeypatch.setattr(search.time, "sleep", lambda seconds: None)
+    search.reset_errors()
+
+    assert search.get_json("http://store/x") is None
+    assert len(calls) == 1
+
+
+def test_a_failed_store_lookup_is_not_an_empty_result(monkeypatch):
+    """iTunes שנפל מחזיר [] כמו חיפוש ריק — ההבדל נשמר ב-last_errors."""
+    monkeypatch.setattr(search, "get_json", lambda *a, **k: None)
+    search.reset_errors()
+    search._record_error("itunes.apple.com — HTTP 503")
+    assert search.itunes_search("anything") == []
+    assert search.last_errors()

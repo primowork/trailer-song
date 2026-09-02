@@ -103,6 +103,7 @@ def _init_state():
         "suggestions": [],
         "cors_retried": set(),
         "federation_probed": False,
+        "similar_of": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -489,6 +490,19 @@ def render_track(track: dict, index: int):
             verify_tracks([track])
         st.rerun()
 
+    with col_btn_block.popover("🔁 עוד"):
+        st.caption(f"עוד כמו **{track['track']}**")
+        if st.button("🎼 עוד קאברים לשיר הזה", key=f"more_covers_{uid}",
+                     use_container_width=True):
+            st.session_state["similar_of"] = ("covers", track)
+            st.rerun()
+        if st.button("🎨 עוד באותו סגנון", key=f"more_style_{uid}",
+                     use_container_width=True,
+                     help="לפי הז'אנר והאמן של הטראק הזה. המדידה בדפדפן ממיינת "
+                          "את מה שחוזר לפי גודל."):
+            st.session_state["similar_of"] = ("style", track)
+            st.rerun()
+
     if col_btn_block.button("🚫 חסום אמן", key=f"btn_block_{uid}"):
         st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
         storage.save_blacklist(st.session_state["blacklist"])
@@ -631,24 +645,48 @@ with st.expander("🎛️ פילטרים", expanded=False):
 
 filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
+def _lookup_failed() -> str:
+    """הודעה כשהחיפוש נכשל, במקום להציג 'לא נמצאו תוצאות'.
+
+    חנות שהחזירה 429/503 נראתה בדיוק כמו חיפוש שלא מצא כלום, ולכן הלחיצה
+    השנייה "עבדה". עכשיו יש ניסיונות חוזרים, ומה שנכשל בכל זאת נאמר במפורש.
+    """
+    errors = search_module.last_errors()
+    if not errors:
+        return ""
+    unique = list(dict.fromkeys(errors))
+    return "החיפוש לא הושלם: " + " · ".join(unique[:3])
+
+
 if st.button("🔎 אילו שירים בשם הזה?"):
     if not cover_title.strip():
         st.warning("הכנס שם שיר")
     else:
+        search_module.reset_errors()
         with st.spinner("מחפש יצירות..."):
             st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
                 cover_title, cover_artist)
         if not st.session_state["work_candidates"]:
-            st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתורים למטה.")
+            failure = _lookup_failed()
+            if failure:
+                st.error(failure + " — נסה שוב")
+            else:
+                st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתורים למטה.")
 
 chosen_work = ""
 work_candidates = st.session_state.get("work_candidates") or []
 if work_candidates:
     # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
     # בלי בחירה מפורשת נלקחה הראשונה והוחזרו עשרים גרסאות קאנטרי.
+    hint = covers_module.famous_recording(cover_title)
+    if hint:
+        # הבורר מציג מלחינים, ומשתמש שמחפש "Umbrella" מזהה את השיר לפי המבצע.
+        # בלי השורה הזאת נראה שהיצירה הנכונה חסרה, בעוד שהיא ראשונה ברשימה.
+        st.caption(f"🎧 השיר המוכר בשם הזה: **{hint['artist']}** — {hint['track']}"
+                   + (f" ({hint['year']})" if hint.get("year") else ""))
     labels = {
         f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
-        + (f" ({c['writers']})" if c["writers"] else ""): c["id"]
+        + (f" · מלחינים: {c['writers']}" if c["writers"] else ""): c["id"]
         for c in work_candidates
     }
     picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
@@ -670,6 +708,39 @@ search_free = col_free.button(
     help="חיפוש רחב בחנויות עם הפילטרים למעלה, בלי להיצמד ליצירה מסוימת.")
 
 
+def _run_similar():
+    """מבצע בקשת "עוד כמו זה" שנרשמה משורה, ומחליף את התוצאות המוצגות."""
+    request = st.session_state.get("similar_of")
+    if not request:
+        return
+    st.session_state["similar_of"] = None
+    kind, track = request
+    search_module.reset_errors()
+
+    with st.spinner("מחפש עוד כמו זה..."):
+        if kind == "covers":
+            results, source = covers_module.more_covers_of(track)
+            # אותו ניקוי שהחיפוש עצמו עשה, אחרת התווית אומרת "Yellow (Epic)"
+            origin = track.get("origin_track") or search_module.clean_track_title(
+                track["track"]) or track["track"]
+            label = f"עוד קאברים ל: {origin}"
+        else:
+            results, source = covers_module.more_like_style(track)
+            label = f"באותו סגנון כמו: {track['artist']} — {track['track']}"
+        results = apply_blacklist(results)
+
+    st.session_state["candidates"] = results
+    st.session_state["covers_source"] = f"{source} · {label}" if source else label
+    st.session_state["original"] = None
+    st.session_state["visible_count"] = PAGE_SIZE
+    if not results:
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצא חומר דומה.")
+
+
 def _store_results(results, source, original=None):
     st.session_state["candidates"] = results
     st.session_state["covers_source"] = source
@@ -677,6 +748,11 @@ def _store_results(results, source, original=None):
     st.session_state["visible_count"] = PAGE_SIZE
     st.session_state["last_query"] = cover_title or cover_artist
 
+
+_run_similar()
+
+if search_all or search_epic or search_free or search_artist:
+    search_module.reset_errors()
 
 if (search_all or search_epic or search_free) and not (
         cover_title.strip() or cover_artist.strip()):
@@ -691,7 +767,11 @@ elif search_artist:
         results = apply_blacklist(results)
     _store_results(results, source_used)
     if not results:
-        st.info("לא נמצאו קאברים לאמן הזה. בדוק את איות השם, או נסה שיר ספציפי.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו קאברים לאמן הזה. בדוק את איות השם, או נסה שיר ספציפי.")
     else:
         st.caption("🎤 נסרקו השירים: " + " · ".join(titles))
 
@@ -702,7 +782,11 @@ elif search_epic:
     _store_results(results, source_used)
     declared = sum(1 for t in results if t.get("trailer_indicator"))
     if not results:
-        st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
     else:
         st.caption(
             f"📣 {declared} גרסאות עם סימן טריילר. השאר נשארות ברשימה — רמיקס "
@@ -717,7 +801,11 @@ elif search_all:
         results = apply_blacklist(results)
     _store_results(results, source_used, original)
     if not results:
-        st.info("לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר. נסה 'חיפוש חופשי'.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר. נסה 'חיפוש חופשי'.")
 
 elif search_free:
     with st.spinner("סורק את iTunes ו-Deezer..."):
@@ -730,7 +818,11 @@ elif search_free:
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
     if not results:
-        st.info("לא נמצאו תוצאות. נסה לבטל את 'רק מה שלא ראיתי' או להרחיב פילטרים.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו תוצאות. נסה לבטל את 'רק מה שלא ראיתי' או להרחיב פילטרים.")
 
 original = st.session_state.get("original")
 if original:
