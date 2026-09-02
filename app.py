@@ -14,6 +14,7 @@ import youtube as youtube_module
 import federation
 import storage
 import search as search_module
+import suggest as suggest_module
 from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
 
@@ -97,6 +98,8 @@ def _init_state():
         "original": None,
         "federation_blocked": False,
         "all_inputs": [],
+        "suggest_query": "",
+        "suggestions": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -450,11 +453,52 @@ st.write(
 )
 
 col_title, col_artist = st.columns(2)
-cover_title = col_title.text_input("שם השיר:", placeholder="למשל: Bitter Sweet Symphony")
+cover_title = col_title.text_input(
+    "שם השיר:", key="cover_title", placeholder="למשל: Bitter Sweet Symphony")
 cover_artist = col_artist.text_input(
-    "אמן מקורי (לא חובה):", placeholder="The Verve",
+    "אמן מקורי (לא חובה):", key="cover_artist", placeholder="The Verve",
     help="מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955 "
          "וגם Eurythmics 1983.")
+
+
+def suggestion_row(query: str):
+    """השלמת שם השיר ותיקון שגיאת כתיב, מול שמות אמיתיים מהקטלוג.
+
+    שם חלקי או משובש מחזיר מעט מאוד תוצאות, והמשתמש לא יודע אם השיר לא קיים או
+    שהוא פשוט טעה. ההצעות כאן הן שירים שקיימים במאגר שבו נחפש בפועל, ולכן לחיצה
+    עליהן מבטיחה שאילתה שתחזיר משהו.
+    """
+    query = (query or "").strip()
+    if len(query) < suggest_module.MIN_QUERY_LEN:
+        return
+    # ההצעות נשמרות לפי הטקסט: בלי זה כל rerun (סימון checkbox, מדידה) פונה שוב
+    # ל-iTunes על אותו שם בדיוק
+    if st.session_state["suggest_query"] != query:
+        st.session_state["suggest_query"] = query
+        with st.spinner("מחפש שמות דומים..."):
+            st.session_state["suggestions"] = suggest_module.suggest(query)
+
+    items = st.session_state["suggestions"]
+    if not items:
+        return
+
+    correction = suggest_module.did_you_mean(query, items)
+    if correction:
+        st.warning(f"נראה שהתכוונת ל: **{correction['label']}**")
+    else:
+        st.caption("השלמות מהקטלוג:")
+
+    columns = st.columns(4)
+    for index, item in enumerate(items[:4]):
+        if columns[index].button(f"🎵 {item['label'][:38]}", key=f"sug_{index}",
+                                 help=item["label"], use_container_width=True):
+            st.session_state["cover_title"] = item["track"]
+            st.session_state["cover_artist"] = item["artist"]
+            st.session_state["suggest_query"] = ""
+            st.rerun()
+
+
+suggestion_row(cover_title)
 
 with st.expander("🎛️ פילטרים", expanded=False):
     col1, col2, col3 = st.columns(3)
