@@ -110,3 +110,70 @@ def test_search_covers_survives_failing_source(monkeypatch):
 def test_normalize_itunes_skips_incomplete():
     assert search._normalize_itunes({"artistName": "", "trackName": "X"}) is None
     assert search._normalize_itunes({"artistName": "A", "trackName": "B", "trackTimeMillis": 200000})["duration_sec"] == 200
+
+
+# ---------- טריות, אמן מקור, ז'אנרים ----------
+
+def test_freshness_decays_over_five_years():
+    assert search.freshness_bonus({"year": "2026"}, 2026) == 25
+    assert search.freshness_bonus({"year": "2024"}, 2026) == 15
+    assert search.freshness_bonus({"year": "2021"}, 2026) == 0
+    assert search.freshness_bonus({"year": ""}, 2026) == 0
+
+
+def test_new_and_good_outranks_old_and_equally_good():
+    """הבקשה: כל מה שחדש עם ציון גבוה מקבל קדימות."""
+    new = make("A", "Victory", uid="n")
+    new["year"] = str(search._dt.date.today().year)
+    old = make("B", "Victory", uid="o")
+    old["year"] = "2005"
+    assert (search.score_track(new, "Victory", prefer_new=True)
+            > search.score_track(old, "Victory", prefer_new=True))
+
+
+def test_freshness_is_off_by_default():
+    fresh = make("A", "Victory")
+    fresh["year"] = str(search._dt.date.today().year)
+    assert search.score_track(fresh, "Victory") == search.score_track(
+        {**fresh, "year": "2005"}, "Victory")
+
+
+def test_origin_artist_adds_cover_queries():
+    queries = search.build_queries("Zombie", None, "The Cranberries")
+    assert "The Cranberries cover" in queries
+    assert "Zombie The Cranberries cover" in queries
+
+
+def test_origin_artist_is_optional():
+    assert search.build_queries("Zombie") == search.build_queries("Zombie", None, "")
+
+
+def test_min_year_filters_old_releases(monkeypatch):
+    recent = make("A", "Victory", uid="a")
+    recent["year"] = "2025"
+    ancient = make("B", "Victory", uid="b")
+    ancient["year"] = "1999"
+    monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [recent, ancient])
+    monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
+    results = search.search_covers("Victory", include_seeds=False, min_year=2020)
+    assert [t["artist"] for t in results] == ["A"]
+
+
+def test_tracks_without_a_year_survive_the_recency_filter(monkeypatch):
+    """שנה לא ידועה אינה סיבה למחוק תוצאה."""
+    undated = make("A", "Victory")
+    monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [undated])
+    monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
+    assert search.search_covers("Victory", include_seeds=False, min_year=2020)
+
+
+def test_itunes_normalization_carries_the_release_year():
+    track = search._normalize_itunes({
+        "artistName": "A", "trackName": "B", "releaseDate": "2024-03-15T12:00:00Z"})
+    assert track["year"] == "2024"
+    assert track["release_date"] == "2024-03-15"
+
+
+def test_style_list_is_substantially_wider():
+    assert len(search.STYLES) >= 20
+    assert len(set(search.STYLES)) == len(search.STYLES)

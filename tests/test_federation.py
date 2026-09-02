@@ -391,3 +391,86 @@ def test_diagnose_separates_tcp_from_http():
     report = federation.diagnose("https://nonexistent.invalid/search.asp")
     assert "proxy" in report
     assert "נכשל" in report["dns"]
+
+
+# ---------- מסלול ידני דרך הדפדפן (האתר חוסם את השרת) ----------
+
+def test_learning_fields_from_a_real_form():
+    learned = federation.learn_fields_from_html(FORM_HTML)
+    assert learned["artist_field"] == "artName"
+    assert learned["track_field"] == "trkName"
+
+
+def test_hidden_inputs_are_not_offered_for_manual_choice():
+    html = ('<form><input type="hidden" name="CategoryID" value="94">'
+            '<input type="text" name="weird_a"><input type="text" name="weird_b"></form>')
+    assert federation.all_input_names(html) == ["weird_a", "weird_b"]
+
+
+def test_unknown_field_names_are_listed_for_the_user(monkeypatch):
+    monkeypatch.setattr(federation.storage, "save_federation_fields", lambda f: True)
+    html = '<form><input type="text" name="zzz1"><input type="text" name="zzz2"></form>'
+    learned = federation.learn_fields_from_html(html)
+    assert learned["artist_field"] == ""
+    assert learned["all_inputs"] == ["zzz1", "zzz2"]
+
+
+def test_page_without_inputs_learns_nothing():
+    learned = federation.learn_fields_from_html(NO_FORM_HTML)
+    assert learned["all_inputs"] == []
+
+
+def test_search_url_uses_the_learned_field_names(monkeypatch):
+    monkeypatch.setattr(federation, "learned_fields",
+                        lambda: {"artist_field": "artName", "track_field": "trkName"})
+    url = federation.build_search_url("2WEI feat. Edda Hayes",
+                                      "Survivor (Epic Trailer Version)")
+    assert "artName=2WEI" in url
+    assert "trkName=Survivor" in url
+
+
+def test_search_url_encodes_spaces_and_specials(monkeypatch):
+    monkeypatch.setattr(federation, "learned_fields",
+                        lambda: {"artist_field": "a", "track_field": "t"})
+    url = federation.build_search_url("Guns N' Roses", "Sweet Child")
+    assert " " not in url
+    assert "%27" in url or "%26" in url or "+" in url
+
+
+def test_search_url_without_learned_fields_is_the_plain_page(monkeypatch):
+    """עדיף כתובת בסיסית מקישור עם פרמטרים שהומצאו."""
+    monkeypatch.setattr(federation, "learned_fields",
+                        lambda: {"artist_field": "", "track_field": ""})
+    assert federation.build_search_url("A", "B") == federation.FEDERATION_URL
+
+
+def test_pasted_results_produce_a_verdict():
+    result = federation.verify_from_html(RESULTS_HTML, "2WEI", "Survivor")
+    assert result.status == federation.APPROVED
+    assert result.publisher == "יוניברסל"
+    assert result.strategy == "הדבקה ידנית"
+
+
+def test_pasted_results_still_reject_the_wrong_song():
+    result = federation.verify_from_html(RESULTS_HTML, "2WEI", "Some Other Song")
+    assert result.status == federation.NOT_FOUND
+
+
+def test_pasted_garbage_is_unknown_not_a_verdict():
+    assert federation.verify_from_html("<p>hi</p>", "2WEI", "Survivor").status == federation.UNKNOWN
+
+
+def test_learned_fields_are_a_fallback_not_an_override(monkeypatch):
+    """דף שגיאה לא אמור 'להצליח' preflight רק כי פעם נלמדו שמות."""
+    monkeypatch.setattr(federation, "learned_fields",
+                        lambda: {"artist_field": "artName", "track_field": "trkName"})
+    client = _bare_client()
+
+    class OkHttp:
+        def get(self, *a, **k):
+            class R:
+                text = NO_FORM_HTML
+            return R()
+
+    client._http = OkHttp()
+    assert client.preflight() is False

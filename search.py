@@ -4,6 +4,7 @@
 הדרך: כמה וריאציות שאילתה x כמה מקורות x כמה קטלוגים, ואז מיזוג, ניפוי
 כפילויות ודירוג רלוונטיות.
 """
+import datetime as _dt
 import re
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +52,17 @@ TRAILER_COVER_ARTISTS = (
     "Lorde", "Gary Clark Jr", "Hozier", "Chris Cornell", "Halsey",
     "Billie Eilish", "Lana Del Rey", "Gabrielle Aplin", "Alice Merton",
     "Zayde Wolf", "Nathan Wagner", "Beth Crowley", "Karen O",
+)
+
+# סגנונות לחיפוש. הרשימה הקודמת הכילה ארבעה; אלה מונחים שבאמת מחזירים חומר שונה
+# כשהם נוספים לשאילתה, ולא וריאציות של אותו דבר.
+STYLES = (
+    "Epic Orchestral", "Dark Orchestral", "Hybrid Orchestral",
+    "Rock Hybrid", "Metal Cover", "Industrial",
+    "Dark Electronic", "Synthwave", "Dubstep Drop", "Trap Hybrid",
+    "Dramatic Piano", "Solo Piano", "Female Vocal", "Male Vocal", "Choir",
+    "Strings Only", "Percussion Heavy", "Ambient Build", "Horror", "Western",
+    "Gospel Soul", "Acoustic Stripped", "Lo-fi", "Retro 80s",
 )
 
 ALL = "הכל"
@@ -108,7 +120,8 @@ def track_key(artist: str, track: str) -> str:
 
 # ---------- שאילתות ----------
 
-def build_queries(query: str, filters: dict | None = None) -> list[str]:
+def build_queries(query: str, filters: dict | None = None,
+                  origin_artist: str = "") -> list[str]:
     """בונה כמה וריאציות שאילתה במקום אחת — זה שורש ההרחבה של המאגר."""
     base = (query or "").strip()
     if not base:
@@ -116,6 +129,12 @@ def build_queries(query: str, filters: dict | None = None) -> list[str]:
 
     queries = [base]
     queries += [f"{base} {modifier}" for modifier in EPIC_MODIFIERS]
+
+    # חיפוש לפי אמן המקור: "cover of <artist>" מוצא גרסאות לשירים שלו
+    if origin_artist:
+        queries.append(f"{origin_artist} {base}")
+        queries.append(f"{origin_artist} cover")
+        queries.append(f"{base} {origin_artist} cover")
 
     if filters:
         for key in ("style", "tempo"):
@@ -150,6 +169,8 @@ def _normalize_itunes(item: dict) -> dict | None:
         "preview_url": item.get("previewUrl") or "",
         "artwork": item.get("artworkUrl100") or "",
         "genre": item.get("primaryGenreName") or "",
+        "release_date": (item.get("releaseDate") or "")[:10],
+        "year": (item.get("releaseDate") or "")[:4],
     }
 
 
@@ -168,6 +189,8 @@ def _normalize_deezer(item: dict) -> dict | None:
         "preview_url": item.get("preview") or "",
         "artwork": (item.get("album") or {}).get("cover_medium") or "",
         "genre": "",
+        "release_date": "",
+        "year": "",
     }
 
 
@@ -235,9 +258,32 @@ def epic_bonus(track: dict) -> int:
     return min(bonus, MAX_EPIC_BONUS)
 
 
-def score_track(track: dict, query: str) -> int:
-    """רלוונטיות ראשית, אפיות כתוספת חסומה — לא להפך."""
+def release_year(track: dict) -> int:
+    """שנת יציאה כמספר, או 0 כשלא ידועה."""
+    raw = str(track.get("year") or track.get("release_date") or "")[:4]
+    return int(raw) if raw.isdigit() else 0
+
+
+def freshness_bonus(track: dict, now_year: int | None = None) -> int:
+    """בונוס לחומר חדש. יורד מ-25 לאפס על פני חמש שנים."""
+    year = release_year(track)
+    if not year:
+        return 0
+    now_year = now_year or _dt.date.today().year
+    age = now_year - year
+    if age < 0:
+        return 0
+    return int(round(max(0.0, 25 * (1 - age / 5))))
+
+
+def score_track(track: dict, query: str, prefer_new: bool = False) -> int:
+    """רלוונטיות ראשית, אפיות כתוספת חסומה — לא להפך.
+
+    prefer_new מוסיף בונוס טריות, כך ש"חדש עם ציון גבוה" עולה מעל ישן עם אותו ציון.
+    """
     score = relevance(track, query) + epic_bonus(track)
+    if prefer_new:
+        score += freshness_bonus(track)
     if not track.get("preview_url"):
         score -= 25  # אי אפשר להאזין — פחות שימושי
     return int(score)
@@ -278,12 +324,13 @@ def dedupe(tracks: list[dict]) -> list[dict]:
 
 def search_covers(query: str, filters: dict | None = None,
                   exclude_keys: frozenset | set = frozenset(),
-                  include_seeds: bool = True) -> list[dict]:
+                  include_seeds: bool = True, origin_artist: str = "",
+                  prefer_new: bool = False, min_year: int = 0) -> list[dict]:
     """מחזיר מאגר קאברים ממוין לפי רלוונטיות, ללא כפילויות.
 
     exclude_keys — שירים שהמשתמש כבר ראה, כדי שחיפוש חוזר יביא חומר חדש.
     """
-    queries = build_queries(query, filters)
+    queries = build_queries(query, filters, origin_artist)
     if not queries:
         return []
 
@@ -321,7 +368,9 @@ def search_covers(query: str, filters: dict | None = None,
             continue
         if track_key(track.get("artist", ""), track.get("track", "")) in exclude_keys:
             continue
-        track["score"] = score_track(track, query)
+        if min_year and release_year(track) and release_year(track) < min_year:
+            continue
+        track["score"] = score_track(track, query, prefer_new=prefer_new)
         scored.append(track)
 
     unique = dedupe(scored)
