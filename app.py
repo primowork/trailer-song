@@ -8,6 +8,7 @@ import time
 import streamlit as st
 import streamlit.components.v1 as components
 
+import artists as artists_module
 import audio
 import covers as covers_module
 import youtube as youtube_module
@@ -104,6 +105,8 @@ def _init_state():
         "cors_retried": set(),
         "federation_probed": False,
         "similar_of": None,
+        "run_artist_search": False,
+        "pending_fields": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -580,6 +583,21 @@ st.write(
     "האפיות מהחנויות, או חיפוש חופשי רחב."
 )
 
+def queue_fields(title: str = "", artist: str = ""):
+    """קובע את שדות החיפוש מכפתור, ומרענן.
+
+    Streamlit אוסר על שינוי session_state של widget אחרי שהוא נוצר, ולכן אי אפשר
+    לכתוב לשדה מתוך כפתור שמצויר מתחתיו. הערך נשמר כאן ומוחל בתחילת הריצה הבאה,
+    לפני שהשדות נוצרים.
+    """
+    st.session_state["pending_fields"] = (title, artist)
+    st.rerun()
+
+
+_pending = st.session_state.pop("pending_fields", None)
+if _pending:
+    st.session_state["cover_title"], st.session_state["cover_artist"] = _pending
+
 col_title, col_artist = st.columns(2)
 cover_title = col_title.text_input(
     "שם השיר:", key="cover_title", placeholder="למשל: Bitter Sweet Symphony")
@@ -620,13 +638,32 @@ def suggestion_row(query: str):
     for index, item in enumerate(items[:4]):
         if columns[index].button(f"🎵 {item['label'][:38]}", key=f"sug_{index}",
                                  help=item["label"], use_container_width=True):
-            st.session_state["cover_title"] = item["track"]
-            st.session_state["cover_artist"] = item["artist"]
             st.session_state["suggest_query"] = ""
-            st.rerun()
+            queue_fields(item["track"], item["artist"])
 
 
 suggestion_row(cover_title)
+
+with st.expander(f"🏆 האמנים הגדולים בכל הזמנים ({len(artists_module.GREATEST_ARTISTS)})",
+                 expanded=False):
+    st.caption("דירוג בילבורד, כנקודת פתיחה לחיפוש. לחיצה ממלאת את שדה האמן "
+               "ומריצה חיפוש קאברים. מה שקובע בסוף הוא מה שנמדד מהאודיו, "
+               "לא המיקום ברשימה.")
+    artist_filter = st.text_input("סנן ברשימה:", key="artist_filter",
+                                  placeholder="beatles")
+    matches = artists_module.search_artists(artist_filter)
+    if not matches:
+        st.caption("אין אמן בשם הזה ברשימה. אפשר להקליד ידנית בשדה האמן.")
+    else:
+        ranks = {name: index + 1 for index, name in
+                 enumerate(artists_module.GREATEST_ARTISTS)}
+        for row_start in range(0, len(matches), 4):
+            columns = st.columns(4)
+            for column, name in zip(columns, matches[row_start:row_start + 4]):
+                if column.button(f"{ranks[name]}. {name}", key=f"goat_{ranks[name]}",
+                                 use_container_width=True):
+                    st.session_state["run_artist_search"] = True
+                    queue_fields(artist=name)
 
 with st.expander("🎛️ פילטרים", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -699,7 +736,7 @@ search_epic = col_epic.button(
     "🎥 גרסאות טריילר אפיות",
     help="חיפוש בחנויות אחרי טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic, "
          "או שיושבים על אלבום של סדרה או סרט. זה חיפוש ולא סיווג.")
-search_artist = col_artist_btn.button(
+search_artist = st.session_state.pop("run_artist_search", False) or col_artist_btn.button(
     "🎤 קאברים לאמן",
     help="שם אמן או להקה בלבד: מזהה את השירים המזוהים איתם ביותר, ומביא את "
          "הקאברים הגדולים לכל אחד מהם.")
