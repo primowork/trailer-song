@@ -72,7 +72,8 @@ def _only_one_audio_at_a_time():
         })();
         </script>
         """,
-        height=0,
+        # st.iframe דורש גובה חיובי, בניגוד ל-components.html שקיבל 0
+        height=1,
     )
 
 
