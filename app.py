@@ -12,6 +12,7 @@ import audio
 import covers as covers_module
 import youtube as youtube_module
 import federation
+import preview as preview_module
 import storage
 import search as search_module
 import suggest as suggest_module
@@ -100,6 +101,7 @@ def _init_state():
         "all_inputs": [],
         "suggest_query": "",
         "suggestions": [],
+        "cors_retried": set(),
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -279,6 +281,11 @@ with st.sidebar:
 _MEASURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "components", "audio_meter")
 _audio_meter = components.declare_component("audio_meter", path=_MEASURE_DIR)
+# מופע שני לאותו רכיב: המסלול הישיר והמעקף רצים באותו rerun וצריכים key נפרד
+_audio_meter_proxy = components.declare_component("audio_meter_proxy", path=_MEASURE_DIR)
+
+# כמה טראקים לעקוף בכל סבב. ה-data URI הוא מגה-בייטים, וכולם עוברים דרך הדף
+CORS_FALLBACK_BATCH = 4
 
 
 def measure_visible(tracks: list):
@@ -307,10 +314,15 @@ def measure_visible(tracks: list):
         st.caption("🎚️ מודד את עוצמת הטראקים בדפדפן…")
         return
 
+    _merge_results(results, tracks, cache, overwrite=False)
+
+
+def _merge_results(results: dict, tracks: list, cache: dict, overwrite: bool):
+    """מכניס מדידות ל-session_state ולקאש, ומרענן כדי שהשורות יתעדכנו."""
     by_uid = {t["uid"]: t for t in tracks}
     fresh, cacheable = False, False
     for uid, features in results.items():
-        if uid in st.session_state["bigness"]:
+        if not overwrite and uid in st.session_state["bigness"]:
             continue
         st.session_state["bigness"][uid] = features
         fresh = True
@@ -324,6 +336,48 @@ def measure_visible(tracks: list):
     if fresh:
         # גם כשהכל נכשל: השורות כבר רונדרו, בלי rerun ה-⚪ לא יופיע עד הקליק הבא
         st.rerun()
+
+
+def measure_via_server(tracks: list):
+    """מעקף לחסימת CORS: השרת מושך את הבייטים, הדפדפן עדיין מפענח ומודד.
+
+    רץ רק על מה שנכשל במסלול הישיר, בקבוצות קטנות — כל preview עובר דרך הדף
+    כ-data URI. כל טראק מנוסה פעם אחת בלבד, אחרת סבב שנכשל היה חוזר בלולאה.
+    """
+    blocked = [t for t in tracks
+               if st.session_state["bigness"].get(t["uid"], {}).get("error") == "cors_failed"
+               and t["uid"] not in st.session_state["cors_retried"]]
+    if not blocked:
+        return
+
+    batch = blocked[:CORS_FALLBACK_BATCH]
+    payload, failures = [], {}
+    with st.spinner("מושך את ה-preview דרך השרת (החנות חוסמת מדידה ישירה)…"):
+        for track in batch:
+            data_uri, error = preview_module.fetch_data_uri(track.get("preview_url", ""))
+            if error:
+                failures[track["uid"]] = {"error": error}
+            else:
+                payload.append({"uid": track["uid"], "url": data_uri})
+
+    cache = storage.load_bigness()
+    if failures:
+        st.session_state["cors_retried"].update(failures.keys())
+        _merge_results(failures, tracks, cache, overwrite=True)
+    if not payload:
+        return
+
+    results = _audio_meter_proxy(tracks=payload, key="audio_meter_proxy", default=None) or {}
+    # הרכיב מחזיק את הערך של הסבב הקודם עד שה-JS שולח חדש. בלי הסינון הזה היינו
+    # ממזגים שוב את אותן תוצאות בכל rerun, ועם overwrite זו לולאה אינסופית
+    sent = {item["uid"] for item in payload}
+    measured_now = {uid: features for uid, features in results.items() if uid in sent}
+    if not measured_now:
+        st.caption(f"🎚️ מודד {len(payload)} טראקים דרך השרת…")
+        return
+
+    st.session_state["cors_retried"].update(measured_now.keys())
+    _merge_results(measured_now, tracks, cache, overwrite=True)
 
 
 # ---------- הצגת שיר בודד ----------
@@ -356,7 +410,7 @@ def render_track(track: dict, index: int):
             label = "🔊 גדול" if score >= audio.BIG_VERSION_THRESHOLD else "🌙 רגוע"
             st.caption(f"{label} {score}/100 · {audio.describe(features)}")
         elif features:
-            reason = ("האתר של ה-preview חוסם מדידה (CORS)"
+            reason = ("החנות חוסמת מדידה ישירה (CORS) — נמדד דרך השרת"
                       if features.get("error") == "cors_failed"
                       else features.get("error", ""))
             st.caption(f"⚪ טרם נמדד — {reason}")
@@ -658,6 +712,7 @@ if candidates:
         st.rerun()
 
     measure_visible(visible)
+    measure_via_server(visible)
 
     if youtube_module.available() and st.button("🎬 חפש אישור שימוש בטריילר (למוצגים)"):
         progress = st.progress(0.0, text="מחפש...")

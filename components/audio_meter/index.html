@@ -120,7 +120,8 @@ async function run(tracks) {
 window.addEventListener("message", (event) => {
   if (!event.data || event.data.type !== "streamlit:render") return;
   const tracks = (event.data.args && event.data.args.tracks) || [];
-  const signature = JSON.stringify(tracks);
+  // החתימה על ה-uid בלבד: במסלול המעקף ה-url הוא data URI במגה-בייטים
+  const signature = JSON.stringify(tracks.map((t) => t.uid));
   // Streamlit שולח render בכל rerun; בלי החתימה נמדוד שוב את אותם טראקים
   if (running || signature === lastBatch) return;
   lastBatch = signature;
