@@ -16,6 +16,7 @@ import httpx
 from thefuzz import fuzz
 
 import search as search_module
+from search import has_epic_title
 from search import (clean_artist_name, clean_track_title, normalize_artist,
                     normalize_title, score_track, track_key)
 
@@ -249,10 +250,36 @@ def pick_original(versions: list[dict], artist: str = "") -> dict | None:
         for version in versions:
             if fuzz.ratio(target, normalize_artist(version.get("artist", ""))) > 90:
                 return version
-    dated = [v for v in versions if str(v.get("year", "")).strip().isdigit()]
+    # גרסה בלי preview חסרת ערך כבסיס השוואה: אי אפשר למדוד מולה כלום
+    playable = [v for v in versions if v.get("preview_url")]
+    pool = playable or versions
+
+    dated = [v for v in pool if str(v.get("year", "")).strip().isdigit()]
     if dated:
         return min(dated, key=lambda v: int(str(v["year"])[:4]))
-    return versions[0]
+    return pool[0]
+
+
+def find_epic_versions(title: str, artist: str = "",
+                       limit: int = 60) -> tuple[list[dict], str]:
+    """גרסאות שמציגות את עצמן כטריילר אפי, ישירות מהחנויות.
+
+    לשונית הקאברים מושכת את *כל* הגרסאות של היצירה מהמאגר, ולכן היא מחזירה
+    בעיקר קאברים נעימים. גרסאות טריילר נקראות בפועל "Epic Trailer Version"
+    בכותרת, ולכן מוצאים אותן בחיפוש בחנויות ולא בסינון רשימת היצירה.
+    """
+    clean = clean_track_title(title) or title
+    results = search_module.search_covers(clean, origin_artist=artist,
+                                          include_seeds=True, prefer_new=False)
+    epic = [t for t in results if has_epic_title(t)]
+
+    # לא לכלול את הביצוע המקורי עצמו
+    if artist:
+        original = normalize_artist(artist)
+        epic = [t for t in epic if normalize_artist(t.get("artist", "")) != original]
+
+    epic.sort(key=lambda t: t.get("score", 0), reverse=True)
+    return epic[:limit], "חיפוש בחנויות"
 
 
 def find_covers(title: str, artist: str = "",

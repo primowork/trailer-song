@@ -399,7 +399,33 @@ with tab_covers:
         picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
         chosen_work = labels[picked]
 
-    if st.button("🎬 מצא קאברים", type="primary"):
+    col_all, col_epic = st.columns(2)
+    search_all = col_all.button("🎬 מצא קאברים", type="primary")
+    search_epic = col_epic.button(
+        "🎥 רק גרסאות טריילר אפיות",
+        help="מחפש בחנויות טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic "
+             "בכותרת. זה חיפוש ולא סיווג: אין כאן טענה שהם שימשו בטריילר.")
+
+    if search_epic:
+        if not cover_title.strip():
+            st.warning("הכנס שם שיר")
+        else:
+            with st.spinner("מחפש גרסאות אפיות..."):
+                results, source_used = covers_module.find_epic_versions(
+                    cover_title, cover_artist)
+                results = apply_blacklist(results)
+            st.session_state["candidates"] = results
+            st.session_state["covers_source"] = source_used
+            st.session_state["original"] = None
+            st.session_state["visible_count"] = PAGE_SIZE
+            st.session_state["last_query"] = cover_title
+            if not results:
+                st.info(
+                    "לא נמצאה אף גרסה שמציגה את עצמה כאפית/טריילר לשיר הזה. "
+                    "נסה 'מצא קאברים' לרשימה המלאה."
+                )
+
+    if search_all:
         if not cover_title.strip():
             st.warning("הכנס שם שיר")
         else:
@@ -422,6 +448,9 @@ with tab_covers:
     if original:
         st.caption(f"גרסת ייחוס להשוואה: **{original['artist']}** — {original['track']}"
                    + (f" ({original['year']})" if original.get("year") else ""))
+        if not original.get("preview_url"):
+            st.warning("לגרסת הייחוס אין preview — אי אפשר למדוד עוצמה מולה. "
+                       "מלא 'אמן מקורי' כדי לבחור בסיס השוואה אחר.")
 
     if st.session_state["covers_source"]:
         st.caption(f"מקור הנתונים: {st.session_state['covers_source']}")

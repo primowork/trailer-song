@@ -65,6 +65,20 @@ STYLES = (
     "Gospel Soul", "Acoustic Stripped", "Lo-fi", "Retro 80s",
 )
 
+# סמנים שאמנים כותבים בכותרת של גרסת טריילר אפית בפועל. זה חיפוש, לא סיווג:
+# אנחנו מוצאים טראקים שקוראים לעצמם כך, ולא טוענים שהם שימשו בטריילר.
+EPIC_TITLE_MARKERS = (
+    "trailer", "epic", "cinematic", "orchestral", "dramatic", "dark",
+    "cover version", "remake", "reimagined",
+)
+
+
+def has_epic_title(track: dict) -> bool:
+    """האם הטראק עצמו מציג את עצמו כגרסה אפית/טריילרית."""
+    haystack = f"{track.get('track', '')} {track.get('album', '')}".lower()
+    return any(re.search(rf"\b{re.escape(m)}", haystack) for m in EPIC_TITLE_MARKERS)
+
+
 ALL = "הכל"
 LENGTH_SHORT = "קצר (< 3 דק')"
 LENGTH_MEDIUM = "בינוני (3-4 דק')"
