@@ -147,3 +147,12 @@ def save_debug_html(html: str, label: str) -> str:
         return path
     except Exception:
         return ""
+
+
+# מדדי הגודל שנמדדו בדפדפן, לפי cache_key. נשמרים כדי שרענון עמוד לא ימדוד שוב.
+def load_bigness() -> dict:
+    return _load_json("bigness.json", {}) or {}
+
+
+def save_bigness(measurements: dict) -> bool:
+    return _save_json("bigness.json", measurements)
