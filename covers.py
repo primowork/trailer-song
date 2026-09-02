@@ -269,8 +269,9 @@ def find_epic_versions(title: str, artist: str = "",
     בכותרת, ולכן מוצאים אותן בחיפוש בחנויות ולא בסינון רשימת היצירה.
     """
     clean = clean_track_title(title) or title
-    results = search_module.search_covers(clean, origin_artist=artist,
-                                          include_seeds=True, prefer_new=False)
+    results = search_module.search_covers(
+        clean, origin_artist=artist, include_seeds=True, prefer_new=False,
+        extra_modifiers=search_module.EPIC_SEARCH_MODIFIERS)
 
     # לא לכלול את הביצוע המקורי עצמו
     if artist:

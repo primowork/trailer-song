@@ -159,3 +159,91 @@ def test_show_album_outranks_the_original():
              "album": "Urban Hymns", "genre": "Alternative",
              "preview_url": "http://p", "uid": "v"}
     assert search.score_track(crown, QUERY) > search.score_track(verve, QUERY)
+
+
+# ---------- trailerized ----------
+
+def test_trailerized_in_the_track_title():
+    assert search.has_epic_title(
+        {"track": "Zombie (Trailerized Version)", "album": "Covers"})
+
+
+def test_trailerized_in_the_album_name():
+    """הפער: דפוס האלבום היה \\btrailer\\b סגור משני הצדדים ולכן פספס אותו."""
+    assert search.has_production_album(_album("Trailerized Covers"))
+    assert search.has_production_album(_album("Trailerized"))
+
+
+def test_trailerized_is_an_indicator_from_either_field():
+    assert search.is_trailer_indicator(
+        {"track": "Zombie (Trailerized Version)", "album": "Covers", "genre": "Pop"})
+    assert search.is_trailer_indicator(
+        {"track": "Zombie", "album": "Trailerized Covers", "genre": "Pop"})
+
+
+def test_trailerized_does_not_loosen_ordinary_albums():
+    for name in ["Greatest Hits", "Urban Hymns", "Trail of Dead"]:
+        assert not search.has_production_album(_album(name)), name
+
+
+# ---------- כתיב מאוחד מול מופרד ----------
+
+def test_spacing_variants_bridge_the_two_spellings():
+    """הסיבה שגרסת The Crown לא הוחזרה כלל: היא כתובה במילה אחת."""
+    variants = search.spacing_variants("Bitter Sweet Symphony")
+    assert "BitterSweet Symphony" in variants
+    assert search.spacing_variants("Zombie") == []
+
+
+def test_the_joined_spelling_is_actually_queried():
+    queries = search.build_queries("Bitter Sweet Symphony")
+    assert "BitterSweet Symphony" in queries
+    assert "BitterSweet Symphony soundtrack" in queries
+
+
+def test_relevance_survives_the_spacing_difference():
+    crown = {"artist": "Fort Nowhere", "track": "Bittersweet Symphony",
+             "album": "The Crown S5 (OST)", "genre": "Pop", "preview_url": "http://p"}
+    assert search.relevance(crown, "Bitter Sweet Symphony") >= 95
+
+
+# ---------- "from the" צומצם ----------
+
+def test_bare_from_the_no_longer_fires():
+    """הרעש שנצפה: "Songs From The Bottom" סומן כאלבום של סדרה."""
+    assert not search.has_production_album(_album("Songs From The Bottom, Vol. 1"))
+    assert not search.has_production_album(_album("Notes From The Underground"))
+
+
+def test_apples_quoted_from_pattern_still_fires():
+    assert search.has_production_album(
+        _album('Bitter Sweet Symphony (From "Reasonable Doubt Season 3 ")'))
+    assert search.has_production_album(_album("Bittersweet Symphony (From the Motion Picture)"))
+    assert search.has_production_album(_album("Theme (From the Series)"))
+
+
+# ---------- הרחבת שאילתות בכפתור האפי ----------
+
+def test_epic_button_sends_the_extra_store_queries():
+    queries = search.build_queries(QUERY, extra_modifiers=search.EPIC_SEARCH_MODIFIERS)
+    for term in ["trailerized", "ost", "season", "series", "from the"]:
+        assert f"{QUERY} {term}" in queries, term
+
+
+def test_ordinary_search_stays_lean():
+    """המונחים הרחבים לא נשלחים בחיפוש רגיל."""
+    queries = search.build_queries(QUERY)
+    assert f"{QUERY} ost" not in queries
+    assert f"{QUERY} season" not in queries
+
+
+def test_find_epic_versions_passes_the_extra_modifiers(monkeypatch):
+    captured = {}
+
+    def fake_search(query, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(covers.search_module, "search_covers", fake_search)
+    covers.find_epic_versions(QUERY)
+    assert captured["extra_modifiers"] == search.EPIC_SEARCH_MODIFIERS

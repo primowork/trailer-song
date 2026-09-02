@@ -70,7 +70,10 @@ STYLES = (
 # סמנים שאמנים כותבים בכותרת של גרסת טריילר אפית בפועל. זה חיפוש, לא סיווג:
 # אנחנו מוצאים טראקים שקוראים לעצמם כך, ולא טוענים שהם שימשו בטריילר.
 EPIC_TITLE_MARKERS = (
-    "trailer", "epic", "cinematic", "orchestral", "dramatic", "dark",
+    "trailer",
+    # trailerized: מונח מקצועי לגרסה שעובדה מחדש לשימוש בטריילר
+    "trailerized",
+    "epic", "cinematic", "orchestral", "dramatic", "dark",
     "cover version", "remake", "reimagined",
 )
 
@@ -91,8 +94,12 @@ PRODUCTION_ALBUM_MARKERS = (
     r"\bseries\b",
     r"\bmotion picture\b",
     r"\boriginal score\b",
-    r"\bfrom the\b",       # "(From the Motion Picture)", "From the Netflix Series"
+    # אפל כותבת 'From "שם ההפקה"' עם מרכאות — זה הדפוס האמיתי.
+    # "from the" חשוף תפס גם "Songs From The Bottom", ולכן צומצם.
+    r"\bfrom\s+[\"“']",
+    r"\bfrom the\s+(film|movie|motion picture|series|show|soundtrack)\b",
     r"\btrailer\b",
+    r"\btrailerized\b",
 )
 
 
@@ -131,6 +138,12 @@ def is_trailer_indicator(track: dict) -> bool:
     """
     return has_epic_title(track) or is_soundtrack(track) or has_production_album(track)
 
+
+# מונחים שנשלחים לחנויות רק בכפתור "גרסאות טריילר אפיות". הם רחבים מדי
+# לחיפוש רגיל, אבל בדיוק הם שמוציאים גרסאות של סדרות וסרטים.
+EPIC_SEARCH_MODIFIERS = (
+    "trailerized", "trailer version", "ost", "season", "series", "from the",
+)
 
 ALL = "הכל"
 LENGTH_SHORT = "קצר (< 3 דק')"
@@ -187,8 +200,30 @@ def track_key(artist: str, track: str) -> str:
 
 # ---------- שאילתות ----------
 
+MAX_SPACING_VARIANTS = 3
+
+
+def spacing_variants(text: str) -> list[str]:
+    """כתיב מאוחד מול מופרד: "Bitter Sweet Symphony" מול "Bittersweet Symphony".
+
+    בלי זה הגרסה של The Crown, ששמה מילה אחת, לא הוחזרה כלל מהחנויות כשהוקלד
+    הכתיב של The Verve בשתי מילים.
+    """
+    words = text.split()
+    if len(words) < 2:
+        return []
+    variants = []
+    for i in range(len(words) - 1):
+        joined = words[:i] + [words[i] + words[i + 1]] + words[i + 2:]
+        candidate = " ".join(joined)
+        if candidate.lower() != text.lower():
+            variants.append(candidate)
+    return variants[:MAX_SPACING_VARIANTS]
+
+
 def build_queries(query: str, filters: dict | None = None,
-                  origin_artist: str = "") -> list[str]:
+                  origin_artist: str = "",
+                  extra_modifiers: tuple = ()) -> list[str]:
     """בונה כמה וריאציות שאילתה במקום אחת — זה שורש ההרחבה של המאגר."""
     base = (query or "").strip()
     if not base:
@@ -196,6 +231,12 @@ def build_queries(query: str, filters: dict | None = None,
 
     queries = [base]
     queries += [f"{base} {modifier}" for modifier in EPIC_MODIFIERS]
+    queries += [f"{base} {modifier}" for modifier in extra_modifiers]
+
+    # כתיב חלופי, וגם עם "soundtrack" כי שם מתחבאות גרסאות של סדרות
+    for variant in spacing_variants(base):
+        queries.append(variant)
+        queries.append(f"{variant} soundtrack")
 
     # חיפוש לפי אמן המקור: "cover of <artist>" מוצא גרסאות לשירים שלו
     if origin_artist:
@@ -301,8 +342,13 @@ def relevance(track: dict, query: str) -> int:
     if not query:
         return 100
     q = normalize_title(query)
+    title = normalize_title(track.get("track", ""))
+    # השוואה נוספת בלי רווחים, שההבדל בין "bitter sweet" ל-"bittersweet"
+    # לא יוריד את הציון של הגרסה הנכונה
+    squeeze = lambda s: s.replace(" ", "")
     return max(
-        fuzz.token_set_ratio(q, normalize_title(track.get("track", ""))),
+        fuzz.token_set_ratio(q, title),
+        fuzz.ratio(squeeze(q), squeeze(title)),
         fuzz.token_set_ratio(q, normalize_artist(track.get("artist", ""))),
     )
 
@@ -398,12 +444,13 @@ def dedupe(tracks: list[dict]) -> list[dict]:
 def search_covers(query: str, filters: dict | None = None,
                   exclude_keys: frozenset | set = frozenset(),
                   include_seeds: bool = True, origin_artist: str = "",
-                  prefer_new: bool = False, min_year: int = 0) -> list[dict]:
+                  prefer_new: bool = False, min_year: int = 0,
+                  extra_modifiers: tuple = ()) -> list[dict]:
     """מחזיר מאגר קאברים ממוין לפי רלוונטיות, ללא כפילויות.
 
     exclude_keys — שירים שהמשתמש כבר ראה, כדי שחיפוש חוזר יביא חומר חדש.
     """
-    queries = build_queries(query, filters, origin_artist)
+    queries = build_queries(query, filters, origin_artist, extra_modifiers)
     if not queries:
         return []
 
