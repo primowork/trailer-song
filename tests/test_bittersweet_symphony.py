@@ -93,3 +93,69 @@ def test_a_plain_official_video_is_not_evidence():
         "The Verve - Bitter Sweet Symphony (Official Video)")
     assert not youtube.looks_like_trailer_use(
         "Provided to YouTube by Universal Music Group\nBitter Sweet Symphony · The Verve")
+
+
+# ---------- סמני שם אלבום: season / series / ost / from the / trailer ----------
+
+def _album(name, genre="Pop"):
+    return {"artist": "X", "track": "Bittersweet Symphony", "album": name,
+            "genre": genre, "preview_url": "http://p", "uid": "u"}
+
+
+def test_apple_album_names_are_recognized():
+    for name in [
+        "The Crown: Season 5 (Soundtrack from the Netflix Series)",
+        "The Crown S5 (OST)",
+        "Bittersweet Symphony (From the Motion Picture)",
+        "Wednesday (Original Series Soundtrack)",
+        "Epic Trailer Covers Vol 3",
+    ]:
+        assert search.has_production_album(_album(name)), name
+
+
+def test_ordinary_albums_are_not_recognized():
+    for name in ["Urban Hymns", "Greatest Hits", "Ghost Stories",
+                 "Frost and Fire", "Lost Highway", "Four Seasons"]:
+        assert not search.has_production_album(_album(name)), name
+
+
+def test_ost_needs_a_full_word_boundary():
+    """הטעות שכבר נעשתה פעם עם 'cover' בתוך 'Covered'."""
+    for name in ["Ghost Stories", "Frost and Fire", "Lost Highway", "Costello Live"]:
+        assert not search.has_production_album(_album(name)), name
+    assert search.has_production_album(_album("The Crown (OST)"))
+
+
+def test_season_does_not_match_seasons():
+    assert not search.has_production_album(_album("Four Seasons"))
+    assert search.has_production_album(_album("Bridgerton Season 3"))
+
+
+def test_markers_are_checked_on_the_album_not_the_song_title():
+    """שיר בשם 'Season' אינו מוזיקה של סדרה; אלבום בשם כזה כן."""
+    song_named_season = {"artist": "X", "track": "Season", "album": "Debut",
+                         "genre": "Pop", "preview_url": "http://p", "uid": "u"}
+    assert not search.has_production_album(song_named_season)
+
+
+def test_show_album_is_detected_without_a_soundtrack_genre():
+    """הפער שנסגר: קודם הזיהוי היה תלוי בז'אנר בלבד."""
+    crown = _album("The Crown S5 (OST)", genre="Pop")
+    assert not search.is_soundtrack(crown)
+    assert search.is_trailer_indicator(crown)
+
+
+def test_indicators_name_which_signal_matched():
+    assert search.trailer_indicators(_album("The Crown S5 (OST)")) == ["אלבום של סדרה/סרט"]
+    assert search.trailer_indicators(_album("Urban Hymns", genre="Alternative")) == []
+    both = search.trailer_indicators(
+        _album("Epic Trailer Covers Vol 3", genre="Soundtrack"))
+    assert "כותרת אפית" in both and "ז'אנר פסקול" in both
+
+
+def test_show_album_outranks_the_original():
+    crown = _album("The Crown S5 (OST)", genre="Pop")
+    verve = {"artist": "The Verve", "track": "Bitter Sweet Symphony",
+             "album": "Urban Hymns", "genre": "Alternative",
+             "preview_url": "http://p", "uid": "v"}
+    assert search.score_track(crown, QUERY) > search.score_track(verve, QUERY)

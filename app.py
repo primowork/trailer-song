@@ -257,9 +257,13 @@ def render_track(track: dict, index: int):
         badge = " 🎬" if evidence else ""
         if audio.is_big_version(metrics):
             badge += " 🔊"          # נמדדה כגרסה גדולה, לא משנה מה הכותרת אומרת
-        elif track.get("trailer_indicator"):
-            badge += " 📣"          # מכריזה על עצמה כאפית, טרם נמדדה
+        indicators = search_module.trailer_indicators(track)
+        if indicators and not audio.is_big_version(metrics):
+            badge += " 📣"
         st.markdown(f"**{track['artist']}**{badge} - {track['track']}")
+        if indicators:
+            # להראות איזה סימן תפס, לא רק שתפס משהו
+            st.caption("סימן: " + " · ".join(indicators))
         if metrics and metrics.get("analyzed"):
             st.caption(
                 f"💥 impact {metrics['impact']}/100 · "
