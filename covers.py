@@ -271,15 +271,20 @@ def find_epic_versions(title: str, artist: str = "",
     clean = clean_track_title(title) or title
     results = search_module.search_covers(clean, origin_artist=artist,
                                           include_seeds=True, prefer_new=False)
-    epic = [t for t in results if has_epic_title(t)]
 
     # לא לכלול את הביצוע המקורי עצמו
     if artist:
         original = normalize_artist(artist)
-        epic = [t for t in epic if normalize_artist(t.get("artist", "")) != original]
+        results = [t for t in results
+                   if normalize_artist(t.get("artist", "")) != original]
 
-    epic.sort(key=lambda t: t.get("score", 0), reverse=True)
-    return epic[:limit], "חיפוש בחנויות"
+    # הכותרת מכניסה, אבל אינה מוציאה: רמיקס יכול להיות גרסה ענקית גם אם לא
+    # כתוב בו "epic". מי שלא הכריז על עצמו נשאר ברשימה ונמדד לפי גודל.
+    for track in results:
+        track["epic_by_title"] = has_epic_title(track)
+
+    results.sort(key=lambda t: (t["epic_by_title"], t.get("score", 0)), reverse=True)
+    return results[:limit], "חיפוש בחנויות"
 
 
 def find_covers(title: str, artist: str = "",
