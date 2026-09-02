@@ -102,6 +102,8 @@ def _init_state():
         "suggest_query": "",
         "suggestions": [],
         "cors_retried": set(),
+        "federation_probed": False,
+        "similar_of": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -267,6 +269,9 @@ with st.sidebar:
             st.error("השרת לא הצליח להגיע לאתר הפדרציה. "
                      "אם זה עובד מהדפדפן שלך אבל לא מכאן, החסימה היא ברשת של השרת.")
     st.caption(f"תיקיית נתונים: `{storage.DATA_DIR or 'לא זמינה'}`")
+    if not youtube_module.available():
+        # מידע על פיצ'ר כבוי, לא שלב במסלול — ולכן כאן ולא בין התוצאות
+        st.caption("אימות שימוש בטריילר כבוי (הגדר YOUTUBE_API_KEY)")
     if st.button("🧹 נקה קאש בדיקות"):
         st.session_state["cache"] = {}
         storage.save_cache({})
@@ -274,6 +279,20 @@ with st.sidebar:
 
     for warning in storage.warnings:
         st.warning(warning)
+
+
+def probe_federation():
+    """בודק פעם אחת לסשן אם השרת בכלל מגיע לאתר הפדרציה.
+
+    בלי זה המשתמש מגלה את החסימה רק אחרי שהוא לוחץ "בדוק את כל התוצאות" ומחכה,
+    ומקבל שגיאה אדומה. הבדיקה היא חיבור TCP קצר ולא preflight מלא, כדי שהיא לא
+    תעכב את הצגת התוצאות.
+    """
+    if st.session_state["federation_probed"]:
+        return
+    st.session_state["federation_probed"] = True
+    if not federation.reachable():
+        st.session_state["federation_blocked"] = True
 
 
 # ---------- מדידת גודל בדפדפן ----------
@@ -407,7 +426,14 @@ def render_track(track: dict, index: int):
             st.caption("סימן: " + " · ".join(indicators))
         if audio.measured(features):
             score = audio.bigness(features)
-            label = "🔊 גדול" if score >= audio.BIG_VERSION_THRESHOLD else "🌙 רגוע"
+            # שלוש מדרגות ולא שתיים: הסף כויל על מדגם קטן, ו"רגוע" על ציון 45
+            # הוא קביעה חזקה מכפי שהנתונים מצדיקים
+            if score >= audio.BIG_VERSION_THRESHOLD:
+                label = "🔊 גדול"
+            elif score >= audio.MID_VERSION_THRESHOLD:
+                label = "🎚️ בינוני"
+            else:
+                label = "🌙 רגוע"
             st.caption(f"{label} {score}/100 · {audio.describe(features)}")
         elif features:
             reason = ("החנות חוסמת מדידה ישירה (CORS) — נמדד דרך השרת"
@@ -418,6 +444,8 @@ def render_track(track: dict, index: int):
             st.caption("⚪ טרם נמדד")
         for item in evidence[:2]:
             st.caption(f"🎬 [{item['title'][:70]}]({item['url']}) — {item['channel']}")
+        if track.get("origin_track"):
+            st.caption(f"🎤 קאבר ל: {track['origin_track']}")
         parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
         if track.get("year"):
             parts.append(f"שנה: {track['year']}")
@@ -462,6 +490,19 @@ def render_track(track: dict, index: int):
             verify_tracks([track])
         st.rerun()
 
+    with col_btn_block.popover("🔁 עוד"):
+        st.caption(f"עוד כמו **{track['track']}**")
+        if st.button("🎼 עוד קאברים לשיר הזה", key=f"more_covers_{uid}",
+                     use_container_width=True):
+            st.session_state["similar_of"] = ("covers", track)
+            st.rerun()
+        if st.button("🎨 עוד באותו סגנון", key=f"more_style_{uid}",
+                     use_container_width=True,
+                     help="לפי הז'אנר והאמן של הטראק הזה. המדידה בדפדפן ממיינת "
+                          "את מה שחוזר לפי גודל."):
+            st.session_state["similar_of"] = ("style", track)
+            st.rerun()
+
     if col_btn_block.button("🚫 חסום אמן", key=f"btn_block_{uid}"):
         st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
         storage.save_blacklist(st.session_state["blacklist"])
@@ -493,6 +534,39 @@ def export_button(tracks: list[dict], label_prefix: str):
         data=buffer.getvalue().encode("utf-8-sig"),
         file_name=f"{label_prefix}.csv",
         mime="text/csv",
+    )
+
+
+def metrics_export(tracks: list[dict]):
+    """ייצוא המדדים הגולמיים של המוצגים, לכיול המשקלים על נתונים אמיתיים.
+
+    המשקלים ב-`audio.WEIGHTS` הם הערכה. כדי לכייל אותם צריך תיוג אנושי — אילו
+    מהטראקים האלה באמת "ענקיים" — מול המספרים שנמדדו. העמודה `label` נשארת ריקה
+    בכוונה: היא מיועדת למילוי ידני.
+    """
+    measurements = st.session_state.get("bigness", {})
+    rows = [(track, measurements.get(track["uid"])) for track in tracks]
+    rows = [(track, features) for track, features in rows if audio.measured(features)]
+    if not rows:
+        return
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["artist", "track", "bigness", "loudness", "low_end",
+                     "onset_rate", "dynamic_span", "label"])
+    for track, features in rows:
+        writer.writerow([
+            track["artist"], track["track"], audio.bigness(features),
+            features.get("loudness", ""), features.get("low_end", ""),
+            features.get("onset_rate", ""), features.get("dynamic_span", ""), "",
+        ])
+    st.download_button(
+        f"⬇️ ייצא מדדים של {len(rows)} טראקים (לכיול)",
+        data=buffer.getvalue().encode("utf-8-sig"),
+        file_name="bigness_metrics.csv",
+        mime="text/csv",
+        help="מלא את עמודת label ב'ענק' או 'רגוע' כדי שהמשקלים יכוילו על תיוג "
+             "אמיתי ולא על הערכה.",
     )
 
 
@@ -571,39 +645,100 @@ with st.expander("🎛️ פילטרים", expanded=False):
 
 filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
+def _lookup_failed() -> str:
+    """הודעה כשהחיפוש נכשל, במקום להציג 'לא נמצאו תוצאות'.
+
+    חנות שהחזירה 429/503 נראתה בדיוק כמו חיפוש שלא מצא כלום, ולכן הלחיצה
+    השנייה "עבדה". עכשיו יש ניסיונות חוזרים, ומה שנכשל בכל זאת נאמר במפורש.
+    """
+    errors = search_module.last_errors()
+    if not errors:
+        return ""
+    unique = list(dict.fromkeys(errors))
+    return "החיפוש לא הושלם: " + " · ".join(unique[:3])
+
+
 if st.button("🔎 אילו שירים בשם הזה?"):
     if not cover_title.strip():
         st.warning("הכנס שם שיר")
     else:
+        search_module.reset_errors()
         with st.spinner("מחפש יצירות..."):
             st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
                 cover_title, cover_artist)
         if not st.session_state["work_candidates"]:
-            st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתורים למטה.")
+            failure = _lookup_failed()
+            if failure:
+                st.error(failure + " — נסה שוב")
+            else:
+                st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתורים למטה.")
 
 chosen_work = ""
 work_candidates = st.session_state.get("work_candidates") or []
 if work_candidates:
     # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
     # בלי בחירה מפורשת נלקחה הראשונה והוחזרו עשרים גרסאות קאנטרי.
+    hint = covers_module.famous_recording(cover_title)
+    if hint:
+        # הבורר מציג מלחינים, ומשתמש שמחפש "Umbrella" מזהה את השיר לפי המבצע.
+        # בלי השורה הזאת נראה שהיצירה הנכונה חסרה, בעוד שהיא ראשונה ברשימה.
+        st.caption(f"🎧 השיר המוכר בשם הזה: **{hint['artist']}** — {hint['track']}"
+                   + (f" ({hint['year']})" if hint.get("year") else ""))
     labels = {
         f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
-        + (f" ({c['writers']})" if c["writers"] else ""): c["id"]
+        + (f" · מלחינים: {c['writers']}" if c["writers"] else ""): c["id"]
         for c in work_candidates
     }
     picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
     chosen_work = labels[picked]
 
-col_all, col_epic, col_free = st.columns(3)
+col_all, col_epic, col_artist_btn, col_free = st.columns(4)
 search_all = col_all.button("🎬 כל הגרסאות", type="primary",
                             help="כל גרסאות הכיסוי של היצירה מהמאגר היחסי.")
 search_epic = col_epic.button(
     "🎥 גרסאות טריילר אפיות",
     help="חיפוש בחנויות אחרי טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic, "
          "או שיושבים על אלבום של סדרה או סרט. זה חיפוש ולא סיווג.")
+search_artist = col_artist_btn.button(
+    "🎤 קאברים לאמן",
+    help="שם אמן או להקה בלבד: מזהה את השירים המזוהים איתם ביותר, ומביא את "
+         "הקאברים הגדולים לכל אחד מהם.")
 search_free = col_free.button(
     "🔎 חיפוש חופשי",
     help="חיפוש רחב בחנויות עם הפילטרים למעלה, בלי להיצמד ליצירה מסוימת.")
+
+
+def _run_similar():
+    """מבצע בקשת "עוד כמו זה" שנרשמה משורה, ומחליף את התוצאות המוצגות."""
+    request = st.session_state.get("similar_of")
+    if not request:
+        return
+    st.session_state["similar_of"] = None
+    kind, track = request
+    search_module.reset_errors()
+
+    with st.spinner("מחפש עוד כמו זה..."):
+        if kind == "covers":
+            results, source = covers_module.more_covers_of(track)
+            # אותו ניקוי שהחיפוש עצמו עשה, אחרת התווית אומרת "Yellow (Epic)"
+            origin = track.get("origin_track") or search_module.clean_track_title(
+                track["track"]) or track["track"]
+            label = f"עוד קאברים ל: {origin}"
+        else:
+            results, source = covers_module.more_like_style(track)
+            label = f"באותו סגנון כמו: {track['artist']} — {track['track']}"
+        results = apply_blacklist(results)
+
+    st.session_state["candidates"] = results
+    st.session_state["covers_source"] = f"{source} · {label}" if source else label
+    st.session_state["original"] = None
+    st.session_state["visible_count"] = PAGE_SIZE
+    if not results:
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצא חומר דומה.")
 
 
 def _store_results(results, source, original=None):
@@ -614,9 +749,31 @@ def _store_results(results, source, original=None):
     st.session_state["last_query"] = cover_title or cover_artist
 
 
+_run_similar()
+
+if search_all or search_epic or search_free or search_artist:
+    search_module.reset_errors()
+
 if (search_all or search_epic or search_free) and not (
         cover_title.strip() or cover_artist.strip()):
     st.warning("הכנס שם שיר או אמן")
+
+elif search_artist and not cover_artist.strip():
+    st.warning("החיפוש הזה הוא לפי אמן — מלא את שדה האמן")
+
+elif search_artist:
+    with st.spinner("מזהה את השירים של האמן ומחפש להם קאברים..."):
+        results, source_used, titles = covers_module.find_artist_covers(cover_artist)
+        results = apply_blacklist(results)
+    _store_results(results, source_used)
+    if not results:
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו קאברים לאמן הזה. בדוק את איות השם, או נסה שיר ספציפי.")
+    else:
+        st.caption("🎤 נסרקו השירים: " + " · ".join(titles))
 
 elif search_epic:
     with st.spinner("מחפש גרסאות אפיות..."):
@@ -625,7 +782,11 @@ elif search_epic:
     _store_results(results, source_used)
     declared = sum(1 for t in results if t.get("trailer_indicator"))
     if not results:
-        st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
     else:
         st.caption(
             f"📣 {declared} גרסאות עם סימן טריילר. השאר נשארות ברשימה — רמיקס "
@@ -640,7 +801,11 @@ elif search_all:
         results = apply_blacklist(results)
     _store_results(results, source_used, original)
     if not results:
-        st.info("לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר. נסה 'חיפוש חופשי'.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר. נסה 'חיפוש חופשי'.")
 
 elif search_free:
     with st.spinner("סורק את iTunes ו-Deezer..."):
@@ -653,7 +818,11 @@ elif search_free:
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
     if not results:
-        st.info("לא נמצאו תוצאות. נסה לבטל את 'רק מה שלא ראיתי' או להרחיב פילטרים.")
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.info("לא נמצאו תוצאות. נסה לבטל את 'רק מה שלא ראיתי' או להרחיב פילטרים.")
 
 original = st.session_state.get("original")
 if original:
@@ -705,6 +874,8 @@ if candidates:
     action_all, action_selected = st.columns([1, 1])
     visible = display[: st.session_state["visible_count"]]
 
+    probe_federation()
+
     if st.session_state.get("federation_blocked"):
         action_all.caption("🌉 האתר חסום מהשרת — כל שיר נבדק ידנית בכפתור 🔗 שלו")
     elif action_all.button("🔍 בדוק את כל התוצאות המוצגות בפדרציה"):
@@ -724,8 +895,7 @@ if candidates:
         progress.empty()
         st.rerun()
 
-    if not youtube_module.available():
-        st.caption("⚠️ אין אישור שימוש בטריילר — הגדר YOUTUBE_API_KEY")
+    metrics_export(visible)
 
     selected = [t for t in (render_track(track, i) for i, track in enumerate(visible)) if t]
 

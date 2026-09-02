@@ -6,6 +6,8 @@
 """
 import datetime as _dt
 import re
+import threading
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
@@ -262,6 +264,56 @@ def build_queries(query: str, filters: dict | None = None,
 
 # ---------- מקורות ----------
 
+# ---------- שכבת HTTP: כישלון אינו "אין תוצאות" ----------
+
+HTTP_ATTEMPTS = 3
+HTTP_BACKOFF = 0.6      # שניות, מוכפל בכל ניסיון
+RETRY_STATUSES = (429, 500, 502, 503, 504)
+
+_errors: list[str] = []
+_errors_lock = threading.Lock()
+
+
+def reset_errors():
+    with _errors_lock:
+        _errors.clear()
+
+
+def last_errors() -> list[str]:
+    with _errors_lock:
+        return list(_errors)
+
+
+def _record_error(message: str):
+    with _errors_lock:
+        _errors.append(message[:120])
+
+
+def get_json(url: str, client: httpx.Client | None = None, timeout: float = 10.0,
+             headers: dict | None = None, params: dict | None = None):
+    """GET עם ניסיונות חוזרים. מחזיר None כשהבקשה נכשלה — ולא dict ריק.
+
+    זו ההבחנה שהחסרה שלה גרמה ל"לא נמצאו תוצאות" על כישלון רשת: חנות שהחזירה
+    429 או 503 נראתה בדיוק כמו חיפוש שלא מצא כלום, והלחיצה השנייה "עבדה".
+    """
+    last = ""
+    for attempt in range(HTTP_ATTEMPTS):
+        try:
+            response = (client or httpx).get(url, timeout=timeout,
+                                             headers=headers, params=params)
+            if response.status_code == 200:
+                return response.json()
+            last = f"HTTP {response.status_code}"
+            if response.status_code not in RETRY_STATUSES:
+                break
+        except Exception as exc:
+            last = f"{exc.__class__.__name__}: {exc}"
+        if attempt < HTTP_ATTEMPTS - 1:
+            time.sleep(HTTP_BACKOFF * (attempt + 1))
+    _record_error(f"{urllib.parse.urlsplit(url).netloc} — {last}")
+    return None
+
+
 def _normalize_itunes(item: dict) -> dict | None:
     artist = item.get("artistName") or ""
     track = item.get("trackName") or ""
@@ -309,23 +361,19 @@ def itunes_search(term: str, country: str = "US", limit: int = 200,
         "limit": min(limit, 200), "country": country,
     }
     url = f"{ITUNES_URL}?{urllib.parse.urlencode(params)}"
-    try:
-        response = (client or httpx).get(url, timeout=10.0)
-        results = response.json().get("results", [])
-    except Exception:
+    payload = get_json(url, client=client)
+    if payload is None:
         return []
-    return [t for t in (_normalize_itunes(i) for i in results) if t]
+    return [t for t in (_normalize_itunes(i) for i in payload.get("results", [])) if t]
 
 
 def deezer_search(term: str, limit: int = 100,
                   client: httpx.Client | None = None) -> list[dict]:
     url = f"{DEEZER_URL}?{urllib.parse.urlencode({'q': term, 'limit': min(limit, 100)})}"
-    try:
-        response = (client or httpx).get(url, timeout=10.0)
-        results = response.json().get("data", [])
-    except Exception:
+    payload = get_json(url, client=client)
+    if payload is None:
         return []
-    return [t for t in (_normalize_deezer(i) for i in results) if t]
+    return [t for t in (_normalize_deezer(i) for i in payload.get("data", [])) if t]
 
 
 # ---------- דירוג וניפוי ----------

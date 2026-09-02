@@ -20,7 +20,8 @@ const setStatus = (text) => {
 };
 
 const WINDOW_SEC = 0.05;   // חלון לחישוב צפיפות המכות
-const LOW_HZ = 200;        // הגבול שמתחתיו יושבים התופים וה-braam
+const LOW_HZ = 120;        // מתחת לזה: תופים ו-braam של טריילר
+const MID_HZ = 2000;       // 120–2000: גוף השיר — קול, גיטרה, מיתרים
 
 function rms(data) {
   let sum = 0;
@@ -37,38 +38,69 @@ function toMono(buffer) {
   return out;
 }
 
-async function lowEndRatio(buffer, fullRms) {
-  if (!fullRms) return 0;
+async function bandRms(buffer, filters) {
   const offline = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
   const source = offline.createBufferSource();
   source.buffer = buffer;
-  // שני פילטרים בטור: שיפוע חד מספיק כדי שהגיטרה לא תיספר כבס
-  const first = offline.createBiquadFilter();
-  const second = offline.createBiquadFilter();
-  first.type = second.type = "lowpass";
-  first.frequency.value = second.frequency.value = LOW_HZ;
-  source.connect(first);
-  first.connect(second);
-  second.connect(offline.destination);
+  let node = source;
+  for (const spec of filters) {
+    const filter = offline.createBiquadFilter();
+    filter.type = spec.type;
+    filter.frequency.value = spec.hz;
+    node.connect(filter);
+    node = filter;
+  }
+  node.connect(offline.destination);
   source.start();
-  const filtered = await offline.startRendering();
-  return Math.min(rms(filtered.getChannelData(0)) / fullRms, 1);
+  const rendered = await offline.startRendering();
+  return rms(rendered.getChannelData(0));
 }
 
-function onsetRate(mono, sampleRate) {
+async function lowEndRatio(buffer) {
+  // יחס בין שתי רצועות, לא בין רצועה לסך הכל. ספקטרום המוזיקה נשלט ממילא על ידי
+  // הנמוכים, ולכן low/total נדבק ל-1 לכל טראק ומפסיק להבדיל בין כלום.
+  // כל גבול מסונן פעמיים: שיפוע חד מספיק כדי שהגיטרה לא תיספר כבס.
+  const low = await bandRms(buffer, [
+    { type: "lowpass", hz: LOW_HZ }, { type: "lowpass", hz: LOW_HZ },
+  ]);
+  const mid = await bandRms(buffer, [
+    { type: "highpass", hz: LOW_HZ }, { type: "highpass", hz: LOW_HZ },
+    { type: "lowpass", hz: MID_HZ }, { type: "lowpass", hz: MID_HZ },
+  ]);
+  return mid ? low / mid : 0;
+}
+
+function frameRms(mono, sampleRate) {
   const size = Math.max(1, Math.round(sampleRate * WINDOW_SEC));
   const frames = [];
   for (let i = 0; i + size <= mono.length; i += size) {
     frames.push(rms(mono.subarray(i, i + size)));
   }
-  if (frames.length < 3) return 0;
+  return frames;
+}
+
+function onsetRate(frames, seconds) {
+  if (frames.length < 3 || !seconds) return 0;
   const mean = frames.reduce((a, b) => a + b, 0) / frames.length;
   let onsets = 0;
   for (let i = 1; i < frames.length; i++) {
     // קפיצה משמעותית מעל הממוצע נחשבת מכה, לא כל עלייה קטנה
     if (frames[i] - frames[i - 1] > mean * 0.3 && frames[i] > mean) onsets++;
   }
-  return onsets / (mono.length / sampleRate);
+  return onsets / seconds;
+}
+
+function dynamicSpan(frames) {
+  // הקשת מהשקט לדרופ לאורך הזמן: 10% החלונות החזקים מול 25% החלשים.
+  // max|x|/rms מודד חדות טרנזיינט ונשלט על ידי המאסטרינג, לא על ידי הדרמה.
+  if (frames.length < 8) return 0;
+  const sorted = [...frames].sort((a, b) => a - b);
+  const quietCount = Math.max(1, Math.round(sorted.length * 0.25));
+  const loudCount = Math.max(1, Math.round(sorted.length * 0.10));
+  const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+  const quiet = mean(sorted.slice(0, quietCount));
+  const loud = mean(sorted.slice(-loudCount));
+  return quiet ? loud / quiet : 0;
 }
 
 async function measure(url) {
@@ -80,17 +112,13 @@ async function measure(url) {
   ctx.close();
 
   const mono = toMono(buffer);
-  const loudness = rms(mono);
-  let peak = 0;
-  for (let i = 0; i < mono.length; i++) {
-    const value = Math.abs(mono[i]);
-    if (value > peak) peak = value;
-  }
+  const frames = frameRms(mono, buffer.sampleRate);
+  const seconds = mono.length / buffer.sampleRate;
   return {
-    loudness: Math.round(loudness * 1000) / 1000,
-    low_end: Math.round((await lowEndRatio(buffer, loudness)) * 1000) / 1000,
-    crest: Math.round((loudness ? peak / loudness : 0) * 100) / 100,
-    onset_rate: Math.round(onsetRate(mono, buffer.sampleRate) * 100) / 100,
+    loudness: Math.round(rms(mono) * 1000) / 1000,
+    low_end: Math.round((await lowEndRatio(buffer)) * 100) / 100,
+    dynamic_span: Math.round(dynamicSpan(frames) * 100) / 100,
+    onset_rate: Math.round(onsetRate(frames, seconds) * 100) / 100,
   };
 }
 

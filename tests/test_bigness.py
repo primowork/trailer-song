@@ -1,8 +1,11 @@
 """ציון הגודל נבדק כאן במלואו: הוא פונקציה טהורה על dict, בלי דפדפן ובלי רשת."""
 import audio
 
-TRAILER = {"loudness": 0.25, "low_end": 0.50, "onset_rate": 4.0, "crest": 3.0}
-BALLAD = {"loudness": 0.05, "low_end": 0.10, "onset_rate": 0.5, "crest": 1.5}
+TRAILER = {"loudness": 0.30, "low_end": 3.0, "onset_rate": 4.0, "dynamic_span": 6.0}
+BALLAD = {"loudness": 0.05, "low_end": 0.6, "onset_rate": 0.5, "dynamic_span": 1.4}
+# המספרים האמיתיים משלוש שורות שהמשתמש דיווח עליהן, בסדר שהאוזן קובעת
+LIGHT = {"loudness": 0.10, "low_end": 0.9, "onset_rate": 1.0, "dynamic_span": 2.0}
+EPIC = {"loudness": 0.16, "low_end": 1.5, "onset_rate": 2.0, "dynamic_span": 3.5}
 
 
 def test_trailer_scores_high_and_ballad_low():
@@ -10,17 +13,26 @@ def test_trailer_scores_high_and_ballad_low():
     assert audio.bigness(BALLAD) < 25
 
 
+def test_the_score_spreads_instead_of_saturating():
+    """הכשל שתוקן: כל הטראקים נחתו ב-65..74 כי שני מדדים נתנו ניקוד מלא לכולם."""
+    scores = [audio.bigness(f) for f in (BALLAD, LIGHT, EPIC, TRAILER)]
+    assert scores == sorted(scores), scores
+    assert max(scores) - min(scores) > 50, scores
+    # שתי גרסאות שונות באוזן לא יושבות באותם עשר נקודות
+    assert audio.bigness(EPIC) - audio.bigness(LIGHT) > 10
+
+
 def test_each_component_moves_the_score_alone():
-    for name in ("loudness", "low_end", "onset_rate", "crest"):
+    for name in ("loudness", "low_end", "onset_rate", "dynamic_span"):
         louder = {**BALLAD, name: TRAILER[name]}
         assert audio.bigness(louder) > audio.bigness(BALLAD), name
 
 
 def test_score_is_bounded_on_absurd_input():
     assert audio.bigness({"loudness": 99, "low_end": 99,
-                          "onset_rate": 999, "crest": 99}) == 100
+                          "onset_rate": 999, "dynamic_span": 99}) == 100
     assert audio.bigness({"loudness": -5, "low_end": -5,
-                          "onset_rate": -5, "crest": -5}) == 0
+                          "onset_rate": -5, "dynamic_span": -5}) == 0
     assert audio.bigness({"loudness": "x"}) == 0
 
 
@@ -40,7 +52,7 @@ def test_big_version_uses_the_threshold():
 
 def test_describe_shows_raw_numbers_only_when_measured():
     text = audio.describe(TRAILER)
-    assert "0.25" in text and "0.50" in text
+    assert "0.30" in text and "3.00" in text
     assert audio.describe({"error": "x"}) == ""
 
 

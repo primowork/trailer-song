@@ -10,21 +10,29 @@
 """
 
 # המדדים שהרכיב בדפדפן מחזיר, והערך שמזכה בניקוד מלא:
-#   loudness   RMS על כל הדגימות, בלי חיתוך
-#   low_end    יחס האנרגיה מתחת ל-200Hz — שם יושבים התופים וה-braam
-#   onset_rate קפיצות אנרגיה לשנייה — צפיפות מכות
-#   crest      max|x| חלקי RMS — הקשת מהשקט לדרופ
+#   loudness      RMS על כל הדגימות, בלי חיתוך
+#   low_end       אנרגיה מתחת ל-120Hz חלקי האנרגיה ב-120–2000Hz
+#   onset_rate    קפיצות אנרגיה לשנייה — צפיפות מכות
+#   dynamic_span  10% החלונות החזקים חלקי 25% החלשים — הקשת מהשקט לדרופ
 # (משקל, רצפה, ערך לניקוד מלא). הרצפה קיימת כי לכל טראק ממוסטר יש כבר עוצמה,
 # בס וקשת מסוימים — בלעדיה גם בלדה אקוסטית אוספת ניקוד על עצם היותה מוקלטת.
+#
+# הטווחים כאן כוילו מחדש מול מדידות אמיתיות: הגרסה הראשונה נתנה ניקוד מלא על
+# הבס ועל הקשת לכל טראק (הערכים בשטח היו 0.89–1.00 מול סף 0.45, ו-5.6–7.7 מול
+# סף 3.0), כך ש-45 מ-100 הנקודות היו קבועות ו"light version" קיבל 68 מול 69 של
+# "Epic Trailer Version". מדד שכולם מקבלים עליו ניקוד מלא אינו מדד.
 WEIGHTS = {
-    "loudness": (35, 0.04, 0.22),
-    "low_end": (30, 0.12, 0.45),
+    "loudness": (35, 0.08, 0.30),
+    "low_end": (30, 0.8, 3.0),
     "onset_rate": (20, 0.8, 3.5),
-    "crest": (15, 1.6, 3.0),
+    "dynamic_span": (15, 1.5, 6.0),
 }
 
 # מעל הסף הזה הגרסה נחשבת "גדולה מהחיים" לפי המדידה, בלי קשר לכותרת שלה
 BIG_VERSION_THRESHOLD = 60
+# ומתחת לזה היא באמת רגועה. מה שביניהם מוצג כ"בינוני" ולא מוכרע: הטווחים
+# ב-WEIGHTS כוילו על מדגם קטן, וקביעה נחרצת באמצע היא יותר ממה שהם מצדיקים.
+MID_VERSION_THRESHOLD = 35
 
 
 def _scaled(value: float, floor: float, full_credit: float) -> float:
@@ -63,9 +71,9 @@ def describe(features: "dict | None") -> str:
     if not measured(features):
         return ""
     return (f"עוצמה {features.get('loudness', 0):.2f} · "
-            f"בס {features.get('low_end', 0):.2f} · "
+            f"בס ×{features.get('low_end', 0):.2f} · "
             f"מכות {features.get('onset_rate', 0):.1f}/שנ׳ · "
-            f"קשת ×{features.get('crest', 0):.1f}")
+            f"קשת ×{features.get('dynamic_span', 0):.1f}")
 
 
 def matches_tempo(features: "dict | None", tempo_filter: str) -> bool:
