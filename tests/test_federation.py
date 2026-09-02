@@ -6,7 +6,7 @@ import federation
 RESULTS_HTML = """
 <html><body>
 <table>
-  <tr><th>אמן</th><th>שם השיר</th><th>אלבום</th><th>שנה</th><th>מייצג</th></tr>
+  <tr><th>המבצע</th><th>הקלטה</th><th>אלבום</th><th>הערות</th><th>מיוצג בפדרציה ע"י</th></tr>
   <tr><td>2WEI</td><td>Survivor</td><td>Escalation</td><td>2019</td><td>יוניברסל</td></tr>
   <tr><td>Hidden Citizens</td><td>Paint It Black</td><td>Rise</td><td>2018</td><td>Sony Music</td></tr>
 </table>
@@ -15,7 +15,7 @@ RESULTS_HTML = """
 
 NO_PUBLISHER_HTML = """
 <html><body><table>
-  <tr><th>אמן</th><th>שם השיר</th><th>אלבום</th><th>שנה</th><th>מייצג</th></tr>
+  <tr><th>המבצע</th><th>הקלטה</th><th>אלבום</th><th>הערות</th><th>מיוצג בפדרציה ע"י</th></tr>
   <tr><td>2WEI</td><td>Survivor</td><td>Escalation</td><td>2019</td><td>-</td></tr>
 </table></body></html>
 """
@@ -63,9 +63,8 @@ def test_row_without_publisher_is_not_approved():
 
 
 def test_publisher_column_detected_from_headers():
-    assert federation._find_publisher_column(
-        __import__("bs4").BeautifulSoup(RESULTS_HTML, "html.parser").find("table")
-    ) == 4
+    soup = __import__("bs4").BeautifulSoup(RESULTS_HTML, "html.parser")
+    assert federation._publisher_index(federation._extract_rows(soup)) == 4
 
 
 def test_known_publisher_boosts_confidence():
@@ -474,3 +473,92 @@ def test_learned_fields_are_a_fallback_not_an_override(monkeypatch):
 
     client._http = OkHttp()
     assert client.preflight() is False
+
+
+# ---------- המבנה האמיתי של ifpi.co.il: div-ים צפים, לא <table> ----------
+# נבנה מה-HTML שהמשתמש הדביק מהאתר. לאתר אין אף <table>, ולכן חיפוש <tr>
+# בלבד החזיר "לא נמצאה טבלת תוצאות" על כל דף תוצאות אמיתי.
+
+IFPI_HEADER = '''
+<div style="float:left;width:100%;font-family:OpenSansBold">
+  <div style="float:right;width:13%" onclick="searchBy('performer')">המבצע</div>
+  <div style="float:right;width:15%" onclick="searchBy('name')">הקלטה <br />(שם היצירה)</div>
+  <div style="float:right;width:11%">הערות<br /> (גרסת הקלטה)</div>
+  <div style="float:right;width:15%" onclick="searchBy('album')">אלבום</div>
+  <div style="float:right;width:13%" onclick="searchBy('represent')">מיוצג<br /> בפדרציה ע"י</div>
+  <div style="float:right;width:14%">חובה לבדוק<br />פירוט החרגות</div>
+  <div style="float:right;width:14%">חובה לבדוק<br /> פירוט החרגות</div>
+</div>
+'''
+
+
+def _ifpi_row(performer, recording, notes, album, publisher, row_id="o1"):
+    return f'''
+    <div class="om" id="{row_id}">
+      <div style="float:right;width:13%">{performer}</div>
+      <div style="float:right;width:15%">{recording}</div>
+      <div style="float:right;width:11%">{notes}</div>
+      <div style="float:right;width:15%">{album}</div>
+      <div style="float:right;width:13%">{publisher}</div>
+      <div style="float:right;width:14%">כן</div>
+      <div style="float:right;width:14%">כן</div>
+    </div>
+    '''
+
+
+IFPI_RESULTS = ("<html><body>" + IFPI_HEADER
+                + _ifpi_row("2WEI", "Survivor", "Epic Trailer Version",
+                            "Escalation", "יוניברסל", "o1")
+                + _ifpi_row("Hidden Citizens", "Paint It Black", "", "Rise",
+                            "Sony Music", "o2")
+                + "</body></html>")
+
+
+def test_the_real_site_has_no_table_element():
+    """הנחת היסוד של הפרסור הקודם, שנשברה מול האתר האמיתי."""
+    soup = __import__("bs4").BeautifulSoup(IFPI_RESULTS, "html.parser")
+    assert soup.find("table") is None
+    assert soup.find_all("tr") == []
+
+
+def test_div_rows_are_extracted():
+    soup = __import__("bs4").BeautifulSoup(IFPI_RESULTS, "html.parser")
+    rows = federation._extract_rows(soup)
+    assert any("2WEI" in " ".join(cols) for cols in rows)
+    assert any("Hidden Citizens" in " ".join(cols) for cols in rows)
+
+
+def test_publisher_column_found_in_the_div_layout():
+    soup = __import__("bs4").BeautifulSoup(IFPI_RESULTS, "html.parser")
+    assert federation._publisher_index(federation._extract_rows(soup)) == 4
+
+
+def test_verdict_from_the_real_div_layout():
+    result = federation.parse_ifpi_table(IFPI_RESULTS, "2WEI",
+                                         "Survivor (Epic Trailer Version)")
+    assert result.status == federation.APPROVED
+    assert result.publisher == "יוניברסל"
+
+
+def test_div_layout_still_rejects_the_wrong_song():
+    result = federation.parse_ifpi_table(IFPI_RESULTS, "2WEI", "Totally Other Song")
+    assert result.status == federation.NOT_FOUND
+
+
+def test_header_row_is_never_treated_as_a_result():
+    """שורת הכותרות מכילה 'מיוצג' ואסור שתיחשב להתאמה."""
+    result = federation.parse_ifpi_table("<html><body>" + IFPI_HEADER + "</body></html>",
+                                         "המבצע", "הקלטה")
+    assert result.status != federation.APPROVED
+
+
+def test_real_field_names_are_detected_from_the_live_page():
+    """באתר האמיתי השדות הם artist/song, לא artName/trkName שניחשתי."""
+    live_form = '''<form name="searchForm" method="get" action="search.asp">
+      <input type="hidden" name="searchBy" /><input type="hidden" name="page" />
+      <input class="is" name="artist" /><input class="is" name="song" />
+      <input class="is" name="album" /><input name="exact" type="checkbox" />
+    </form>'''
+    learned = federation.learn_fields_from_html(live_form)
+    assert learned["artist_field"] == "artist"
+    assert learned["track_field"] == "song"
