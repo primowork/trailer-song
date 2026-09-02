@@ -81,8 +81,45 @@ def has_epic_title(track: dict) -> bool:
     return any(re.search(rf"\b{re.escape(m)}", haystack) for m in EPIC_TITLE_MARKERS)
 
 
+# ביטויים שאפל שמה בשם האלבום עצמו כשהגרסה הופקה לסדרה או לסרט. זה שדה
+# מטא-דאטה שתמיד חוזר (collectionName), ולכן סימן אמין יותר מהכותרת.
+# דוגמה: "The Crown: Season 5 (Soundtrack from the Netflix Series)".
+PRODUCTION_ALBUM_MARKERS = (
+    r"\bsoundtrack\b",
+    r"\bost\b",              # גבול מילה מלא, שלא ייתפס ב-Ghost / Frost / Lost
+    r"\bseason\b",
+    r"\bseries\b",
+    r"\bmotion picture\b",
+    r"\boriginal score\b",
+    r"\bfrom the\b",       # "(From the Motion Picture)", "From the Netflix Series"
+    r"\btrailer\b",
+)
+
+
+def has_production_album(track: dict) -> bool:
+    """האם *שם האלבום* מעיד על הפקה לסדרה או לסרט.
+
+    נבדק על האלבום בלבד ולא על שם השיר: שיר שנקרא "Season" או "Series" אינו
+    מוזיקה של סדרה, אלבום שנקרא כך כן.
+    """
+    album = (track.get("album") or "").lower()
+    return any(re.search(marker, album) for marker in PRODUCTION_ALBUM_MARKERS)
+
+
 def is_soundtrack(track: dict) -> bool:
     return any(g in (track.get("genre", "") or "").lower() for g in EPIC_GENRES)
+
+
+def trailer_indicators(track: dict) -> list[str]:
+    """אילו סימנים נמצאו בפועל, להצגה למשתמש במקום תג אטום."""
+    found = []
+    if has_epic_title(track):
+        found.append("כותרת אפית")
+    if is_soundtrack(track):
+        found.append("ז'אנר פסקול")
+    if has_production_album(track):
+        found.append("אלבום של סדרה/סרט")
+    return found
 
 
 def is_trailer_indicator(track: dict) -> bool:
@@ -92,7 +129,7 @@ def is_trailer_indicator(track: dict) -> bool:
     נקראת פשוט "Bittersweet Symphony" ואין בה אף מילת מפתח. מה שכן יש לה
     הוא ז'אנר Soundtrack — עובדה בשדה מטא-דאטה, ולכן סימן אמין יותר.
     """
-    return has_epic_title(track) or is_soundtrack(track)
+    return has_epic_title(track) or is_soundtrack(track) or has_production_album(track)
 
 
 ALL = "הכל"
@@ -281,6 +318,10 @@ def epic_bonus(track: dict) -> int:
     if any(g in (track.get("genre", "") or "").lower() for g in EPIC_GENRES):
         # ז'אנר פסקול על *קאבר* לשיר מוכר הוא הסימן החזק ביותר שיש במטא-דאטה
         # לגרסה שהופקה לסדרה או לסרט. זו עובדה בשדה, לא מילה בכותרת.
+        bonus += 20
+    if has_production_album(track):
+        # שם האלבום שאפל נותנת בפועל: "... Season 5 (Soundtrack from the
+        # Netflix Series)". תופס גם כשהז'אנר לא סומן Soundtrack.
         bonus += 20
     if any(fuzz.partial_ratio(seed.lower(), artist.lower()) > 90 for seed in EPIC_SEEDS):
         bonus += 15
