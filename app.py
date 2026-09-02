@@ -10,6 +10,8 @@ import streamlit.components.v1 as components
 
 import artists as artists_module
 import audio
+import billboard as billboard_module
+import charts as charts_module
 import covers as covers_module
 import youtube as youtube_module
 import federation
@@ -107,6 +109,8 @@ def _init_state():
         "similar_of": None,
         "run_artist_search": False,
         "pending_fields": None,
+        "run_epic_search": False,
+        "index_source": "מצעד Deezer חי",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -275,6 +279,35 @@ with st.sidebar:
     if not youtube_module.available():
         # מידע על פיצ'ר כבוי, לא שלב במסלול — ולכן כאן ולא בין התוצאות
         st.caption("אימות שימוש בטריילר כבוי (הגדר YOUTUBE_API_KEY)")
+    with st.expander("📥 ייבוא מצעד בילבורד"):
+        st.caption("שמור עמוד מצעד מהדפדפן (Ctrl+S / Cmd+S) והעלה אותו כאן. "
+                   "אין ל-billboard.com API ציבורי, והם חוסמים שרתים — לכן הייבוא "
+                   "עובר דרך הדפדפן שלך, שבו העמוד כבר נטען.")
+        uploaded = st.file_uploader("עמוד מצעד שמור:", type=["html", "htm"],
+                                    key="chart_upload")
+        if uploaded is not None and st.button("ייבא"):
+            chart = billboard_module.parse_chart(
+                uploaded.getvalue().decode("utf-8", errors="ignore"))
+            if not chart["entries"]:
+                st.error("לא זוהו שורות מצעד בעמוד הזה.")
+            else:
+                slug = billboard_module.chart_slug(chart["title"])
+                stored = storage.load_charts()
+                stored[slug] = {**chart, "slug": slug}
+                if storage.save_charts(stored):
+                    st.success(f"יובאו {len(chart['entries'])} שורות מ'{chart['title']}'")
+                    st.rerun()
+                else:
+                    st.error("אין תיקיית נתונים לכתיבה — המצעד לא נשמר.")
+
+        stored = storage.load_charts()
+        if stored:
+            to_remove = st.selectbox("הסר מצעד:", [""] + [c["title"] for c in stored.values()])
+            if to_remove and st.button("הסר"):
+                storage.save_charts({slug: chart for slug, chart in stored.items()
+                                     if chart["title"] != to_remove})
+                st.rerun()
+
     if st.button("🧹 נקה קאש בדיקות"):
         st.session_state["cache"] = {}
         storage.save_cache({})
@@ -644,26 +677,76 @@ def suggestion_row(query: str):
 
 suggestion_row(cover_title)
 
-with st.expander(f"🏆 האמנים הגדולים בכל הזמנים ({len(artists_module.GREATEST_ARTISTS)})",
-                 expanded=False):
-    st.caption("דירוג בילבורד, כנקודת פתיחה לחיפוש. לחיצה ממלאת את שדה האמן "
-               "ומריצה חיפוש קאברים. מה שקובע בסוף הוא מה שנמדד מהאודיו, "
-               "לא המיקום ברשימה.")
-    artist_filter = st.text_input("סנן ברשימה:", key="artist_filter",
-                                  placeholder="beatles")
-    matches = artists_module.search_artists(artist_filter)
-    if not matches:
-        st.caption("אין אמן בשם הזה ברשימה. אפשר להקליד ידנית בשדה האמן.")
+def _artist_grid(names: list[str], key_prefix: str, ranks: dict | None = None):
+    """רשת כפתורי אמנים. לחיצה ממלאת את שדה האמן ומריצה חיפוש קאברים."""
+    for row_start in range(0, len(names), 4):
+        columns = st.columns(4)
+        for column, name in zip(columns, names[row_start:row_start + 4]):
+            rank = (ranks or {}).get(name)
+            label = f"{rank}. {name}" if rank else name
+            if column.button(label, key=f"{key_prefix}_{row_start}_{name[:30]}",
+                             use_container_width=True):
+                st.session_state["run_artist_search"] = True
+                queue_fields(artist=name)
+
+
+def _song_grid(entries: list[dict], key_prefix: str):
+    """רשת כפתורי שירים. לחיצה ממלאת שיר+אמן ומריצה חיפוש גרסאות טריילר."""
+    for row_start in range(0, len(entries), 2):
+        columns = st.columns(2)
+        for column, entry in zip(columns, entries[row_start:row_start + 2]):
+            rank = entry.get("rank")
+            label = (f"{rank}. " if rank else "") + f"{entry['track']} — {entry['artist']}"
+            if column.button(label[:60], key=f"{key_prefix}_{row_start}_{entry['track'][:25]}",
+                             help=label, use_container_width=True):
+                st.session_state["run_epic_search"] = True
+                queue_fields(entry["track"], entry["artist"])
+
+
+with st.expander("📇 אינדקס מצעדים", expanded=False):
+    st.caption("נקודת פתיחה לחיפוש: לחיצה על אמן מריצה חיפוש קאברים לשירים שלו, "
+               "ולחיצה על שיר מריצה חיפוש גרסאות טריילר לשיר עצמו. "
+               "המיקום במצעד אינו משפיע על דירוג התוצאות — שם קובע מה שנמדד מהאודיו.")
+
+    imported = storage.load_charts()
+    sources = ["מצעד Deezer חי", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
+    sources += [f"מיובא: {chart['title']}" for chart in imported.values()]
+    source = st.radio("מקור:", sources, horizontal=True, key="index_source")
+
+    if source.startswith("מצעד Deezer"):
+        genre_list = charts_module.genres()
+        if not genre_list:
+            st.caption("המצעד לא נטען מהשרת כרגע. הרשימות האחרות עובדות בלי רשת.")
+        else:
+            names = {genre["name"]: genre["id"] for genre in genre_list}
+            picked = st.selectbox("קטגוריה:", list(names), key="index_genre")
+            kind = st.radio("להציג:", ["שירים", "אמנים"], horizontal=True, key="index_kind")
+            genre_id = names[picked]
+            if kind == "שירים":
+                rows = charts_module.chart_tracks(genre_id)
+                _song_grid([{"rank": index + 1, "track": t["track"], "artist": t["artist"]}
+                            for index, t in enumerate(rows)], "chart_song")
+            else:
+                _artist_grid(charts_module.chart_artists(genre_id), "chart_artist")
+
+    elif source.startswith("בילבורד"):
+        artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")
+        matches = artists_module.search_artists(artist_filter)
+        if not matches:
+            st.caption("אין אמן בשם הזה ברשימה. אפשר להקליד ידנית בשדה האמן.")
+        else:
+            _artist_grid(matches, "goat", {name: index + 1 for index, name
+                                           in enumerate(artists_module.GREATEST_ARTISTS)})
+
     else:
-        ranks = {name: index + 1 for index, name in
-                 enumerate(artists_module.GREATEST_ARTISTS)}
-        for row_start in range(0, len(matches), 4):
-            columns = st.columns(4)
-            for column, name in zip(columns, matches[row_start:row_start + 4]):
-                if column.button(f"{ranks[name]}. {name}", key=f"goat_{ranks[name]}",
-                                 use_container_width=True):
-                    st.session_state["run_artist_search"] = True
-                    queue_fields(artist=name)
+        chart = next((c for c in imported.values() if source.endswith(c["title"])), None)
+        if not chart:
+            st.caption("המצעד לא נמצא. ייבא אותו מחדש מסרגל הצד.")
+        elif chart["kind"] == billboard_module.ARTISTS:
+            _artist_grid([e["artist"] for e in chart["entries"]], f"imp_{chart['slug']}",
+                         {e["artist"]: e["rank"] for e in chart["entries"]})
+        else:
+            _song_grid(chart["entries"], f"imp_{chart['slug']}")
 
 with st.expander("🎛️ פילטרים", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -732,7 +815,7 @@ if work_candidates:
 col_all, col_epic, col_artist_btn, col_free = st.columns(4)
 search_all = col_all.button("🎬 כל הגרסאות", type="primary",
                             help="כל גרסאות הכיסוי של היצירה מהמאגר היחסי.")
-search_epic = col_epic.button(
+search_epic = st.session_state.pop("run_epic_search", False) or col_epic.button(
     "🎥 גרסאות טריילר אפיות",
     help="חיפוש בחנויות אחרי טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic, "
          "או שיושבים על אלבום של סדרה או סרט. זה חיפוש ולא סיווג.")
