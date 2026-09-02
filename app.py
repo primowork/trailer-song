@@ -1,5 +1,6 @@
 """ממשק Streamlit: גילוי קאברים אפיים לטריילרים, עם בדיקת רפרטואר הפדרציה."""
 import csv
+import datetime as _dt
 import io
 import time
 
@@ -10,10 +11,19 @@ import covers as covers_module
 import youtube as youtube_module
 import federation
 import storage
-from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT,
+import search as search_module
+from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
 
 PAGE_SIZE = 20
+
+# פילטר "חדשות": התווית וסף השנה שהיא מייצגת. 0 = בלי סינון.
+RECENCY_OPTIONS = {
+    "הכל": 0,
+    "השנה האחרונה": _dt.date.today().year,
+    "השנתיים האחרונות": _dt.date.today().year - 1,
+    "5 השנים האחרונות": _dt.date.today().year - 4,
+}
 
 st.set_page_config(page_title="סורק קאברים - IFPI Israel", page_icon="🎵", layout="wide")
 
@@ -50,6 +60,8 @@ def _init_state():
         "impact": {},
         "evidence": {},
         "original": None,
+        "federation_blocked": False,
+        "all_inputs": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -111,6 +123,7 @@ def verify_tracks(tracks: list[dict]):
     with federation.FederationClient(debug=st.session_state["debug_mode"]) as client:
         # preflight אחד לכל האצווה: אם הטופס לא זוהה, אין טעם לנסות שיר-שיר
         if not client.preflight():
+            st.session_state["federation_blocked"] = True
             st.error(f"הבדיקה לא יצאה לדרך: {client.preflight_error}")
             for track in pending:
                 record_status(track, federation.VerifyResult(
@@ -160,6 +173,44 @@ with st.sidebar:
         st.caption(f"נשמר: `{st.session_state['debug_path']}`")
 
     st.caption(f"רפרטואר: `{federation.FEDERATION_URL}`")
+
+    with st.expander("🌉 בדיקה ידנית דרך הדפדפן שלך"):
+        st.caption(
+            "האתר חוסם את השרת אבל נטען בדפדפן שלך. המסלול הזה מנתב דרכו: "
+            "פעם אחת מלמדים את שמות השדות, ואז כל שיר נבדק בקליק והדבקה."
+        )
+        fields = federation.learned_fields()
+        if fields["artist_field"] or fields["track_field"]:
+            st.success(f"שדות ידועים: אמן=`{fields['artist_field'] or '—'}` · "
+                       f"שיר=`{fields['track_field'] or '—'}`")
+        else:
+            st.warning("שמות השדות עדיין לא נלמדו")
+
+        st.markdown(f"[פתח את דף החיפוש]({federation.FEDERATION_URL}) ← Ctrl+U ← העתק הכל")
+        page_html = st.text_area("הדבק כאן את ה-HTML של דף החיפוש:", height=100,
+                                 key="learn_html")
+        if st.button("למד שמות שדות") and page_html.strip():
+            learned = federation.learn_fields_from_html(page_html)
+            storage.save_debug_html(page_html, "search_page")
+            if learned["artist_field"] or learned["track_field"]:
+                st.success(f"זוהו: אמן=`{learned['artist_field'] or '—'}` · "
+                           f"שיר=`{learned['track_field'] or '—'}`")
+                st.rerun()
+            elif learned["all_inputs"]:
+                st.session_state["all_inputs"] = learned["all_inputs"]
+                st.warning("אף שדה מוכר לא נמצא — בחר ידנית מהרשימה למטה")
+            else:
+                st.error("לא נמצאו שדות קלט בדף. ודא שהעתקת את כל ה-HTML.")
+
+        options = st.session_state.get("all_inputs") or []
+        if options:
+            col_a, col_t = st.columns(2)
+            picked_artist = col_a.selectbox("שדה האמן:", [""] + options)
+            picked_track = col_t.selectbox("שדה השיר:", [""] + options)
+            if st.button("שמור שדות") and (picked_artist or picked_track):
+                federation.set_fields(picked_artist, picked_track)
+                st.session_state["all_inputs"] = []
+                st.rerun()
 
     if st.button("🩺 בדוק חיבור לפדרציה"):
         with st.spinner("בודק..."):
@@ -255,7 +306,20 @@ def render_track(track: dict, index: int):
         else:
             st.warning(f"🟠 לא ידוע — הבדיקה נכשלה\n\n{status.get('error', '')[:150]}")
 
-    if col_btn_check.button("🔍 בדוק", key=f"btn_check_{uid}"):
+    if st.session_state.get("federation_blocked"):
+        with col_btn_check.popover("🔗 בדוק ידנית"):
+            url = federation.build_search_url(track["artist"], track["track"])
+            st.markdown(f"[פתח חיפוש בפדרציה]({url})")
+            st.caption("אם הטופס לא מולא מראש, העתק:")
+            st.code(f"{clean_artist_name(track['artist'])}\n{track['track']}")
+            pasted = st.text_area("הדבק את ה-HTML של עמוד התוצאות:", height=100,
+                                  key=f"paste_{uid}")
+            if st.button("קבע סטטוס", key=f"apply_{uid}") and pasted.strip():
+                record_status(track, federation.verify_from_html(
+                    pasted, track["artist"], track["track"]))
+                storage.save_debug_html(pasted, "results_page")
+                st.rerun()
+    elif col_btn_check.button("🔍 בדוק", key=f"btn_check_{uid}"):
         with st.spinner("בודק..."):
             verify_tracks([track])
         st.rerun()
@@ -367,26 +431,38 @@ with tab_search:
 
     with st.expander("🎛️ פילטרים", expanded=False):
         col1, col2, col3 = st.columns(3)
-        style_filter = col1.selectbox(
-            "סגנון / ז'אנר:", [ALL, "Epic Orchestral", "Rock Hybrid", "Dark Electronic", "Dramatic Piano"])
+        style_filter = col1.selectbox("סגנון / ז'אנר:", [ALL, *STYLES])
         tempo_filter = col2.selectbox("קצב / טמפו:", [ALL, "Fast Action", "Slow Build-up"])
         length_filter = col3.selectbox("אורך השיר:", [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG])
+
+        col4, col5 = st.columns(2)
+        recency = col4.selectbox("חדשות:", list(RECENCY_OPTIONS))
+        prefer_new = col5.checkbox(
+            "תעדף חדש עם ציון גבוה", value=True,
+            help="מוסיף בונוס טריות לציון, כך שחומר חדש וטוב עולה מעל ישן באותו ציון.")
         st.caption("הקצב נמדד מה-preview בכפתור 'נתח אודיו' שליד כל שיר, לא מנוחש מהכותרת.")
 
     filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
-    query = st.text_input("מילת חיפוש / אמן / שיר מקור:", placeholder="למשל: victory, 2WEI")
+    col_q, col_origin = st.columns(2)
+    query = col_q.text_input("מילת חיפוש / שיר:", placeholder="למשל: victory, zombie")
+    origin_artist = col_origin.text_input(
+        "אמן המקור (לא חובה):", placeholder="למשל: The Cranberries",
+        help="מחפש גם קאברים לשירים של האמן הזה, לא רק את מילת החיפוש.")
 
     col_search, col_fresh = st.columns([1, 1])
     do_search = col_search.button("🔎 חפש שירים", type="primary")
     fresh_only = col_fresh.checkbox("הצג רק תוצאות שלא ראיתי", value=True)
 
     if do_search:
-        if not query.strip():
-            st.warning("הכנס מילת חיפוש")
+        if not query.strip() and not origin_artist.strip():
+            st.warning("הכנס מילת חיפוש או אמן מקור")
         else:
             with st.spinner("סורק את iTunes ו-Deezer..."):
                 exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
-                results = apply_blacklist(search_covers(query, filters=filters, exclude_keys=exclude))
+                results = apply_blacklist(search_covers(
+                    query or origin_artist, filters=filters, exclude_keys=exclude,
+                    origin_artist=origin_artist, prefer_new=prefer_new,
+                    min_year=RECENCY_OPTIONS[recency]))
             st.session_state["candidates"] = results
             st.session_state["covers_source"] = ""
             st.session_state["visible_count"] = PAGE_SIZE
@@ -407,13 +483,17 @@ if candidates:
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", ["impact (עוצמה מול המקור)", "רלוונטיות",
+    sort_by = col_b.selectbox("מיון:", ["ציון", "impact (עוצמה מול המקור)", "חדשים קודם",
                                        "אורך (עולה)", "אורך (יורד)", "אמן"])
 
     display = list(candidates)
     if only_approved:
         display = [t for t in display if (status_of(t) or {}).get("status") == federation.APPROVED]
-    if sort_by == "impact (עוצמה מול המקור)":
+    if sort_by == "ציון":
+        display.sort(key=lambda t: t.get("score", 0), reverse=True)
+    elif sort_by == "חדשים קודם":
+        display.sort(key=lambda t: search_module.release_year(t), reverse=True)
+    elif sort_by == "impact (עוצמה מול המקור)":
         display.sort(key=lambda t: st.session_state.get("impact", {})
                      .get(t["uid"], {}).get("impact", -1), reverse=True)
     elif sort_by == "אורך (עולה)":
@@ -430,7 +510,9 @@ if candidates:
     action_all, action_selected = st.columns([1, 1])
     visible = display[: st.session_state["visible_count"]]
 
-    if action_all.button("🔍 בדוק את כל התוצאות המוצגות בפדרציה"):
+    if st.session_state.get("federation_blocked"):
+        action_all.caption("🌉 האתר חסום מהשרת — כל שיר נבדק ידנית בכפתור 🔗 שלו")
+    elif action_all.button("🔍 בדוק את כל התוצאות המוצגות בפדרציה"):
         verify_tracks(visible)
         st.rerun()
 
