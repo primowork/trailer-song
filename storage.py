@@ -156,3 +156,16 @@ def load_bigness() -> dict:
 
 def save_bigness(measurements: dict) -> bool:
     return _save_json("bigness.json", measurements)
+
+
+# מצעדים שיובאו מעמודי בילבורד שמורים. שם הקובץ נגזר משם המצעד, כדי שייבוא
+# חוזר של אותו מצעד יעדכן במקום לשכפל.
+IMPORTED_CHARTS = "imported_charts.json"
+
+
+def load_charts() -> dict:
+    return _load_json(IMPORTED_CHARTS, {}) or {}
+
+
+def save_charts(charts: dict) -> bool:
+    return _save_json(IMPORTED_CHARTS, charts)
