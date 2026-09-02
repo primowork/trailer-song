@@ -124,6 +124,18 @@ def save_statuses(statuses: dict) -> bool:
     return _save_json("statuses.json", statuses)
 
 
+# ---------- שמות שדות הטופס של הפדרציה ----------
+
+def load_federation_fields() -> dict:
+    """שמות שדות שנלמדו מדף החיפוש האמיתי."""
+    data = _load_json("federation_fields.json", {})
+    return data if isinstance(data, dict) else {}
+
+
+def save_federation_fields(fields: dict) -> bool:
+    return _save_json("federation_fields.json", fields)
+
+
 def save_debug_html(html: str, label: str) -> str:
     """שומר HTML גולמי לצורך כיול הפרסור מול המבנה האמיתי של אתר הפדרציה."""
     path = _path(f"debug_{label}.html")

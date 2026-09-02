@@ -10,12 +10,14 @@
 לכייל אותם מול ה-HTML האמיתי בלי לשנות קוד. ראה FIELD_CANDIDATES ו-README.
 """
 import os
+import urllib.parse
 from dataclasses import asdict, dataclass
 
 import httpx
 from bs4 import BeautifulSoup
 from thefuzz import fuzz
 
+import storage
 from search import clean_artist_name, clean_track_title
 
 FEDERATION_URL = os.environ.get("IFPI_SEARCH_URL", "https://www.ifpi.co.il/search.asp")
@@ -176,6 +178,77 @@ def parse_ifpi_table(html_content: str, target_artist: str, target_track: str = 
     return best
 
 
+def all_input_names(html: str) -> list[str]:
+    """כל שמות ה-input/select בדף — למקרה שאף מועמד לא מתאים."""
+    try:
+        soup = BeautifulSoup(html or "", "html.parser")
+    except Exception:
+        return []
+    names = []
+    for element in soup.find_all(["input", "select"]):
+        name = element.get("name")
+        if name and name not in names and element.get("type") != "hidden":
+            names.append(name)
+    return names
+
+
+def learn_fields_from_html(html: str) -> dict:
+    """לומד את שמות שדות החיפוש מדף שהמשתמש הדביק, ושומר אותם.
+
+    האתר חוסם את השרת, ולכן preflight מעולם לא ראה את הטופס ושמות השדות
+    ב-*_FIELD_CANDIDATES הם ניחוש. הדפדפן של המשתמש כן מגיע לאתר.
+    """
+    artist = _first_present_field(html, ARTIST_FIELD_CANDIDATES)
+    track = _first_present_field(html, TRACK_FIELD_CANDIDATES)
+    result = {
+        "artist_field": artist,
+        "track_field": track,
+        "all_inputs": all_input_names(html),
+    }
+    if artist or track:
+        storage.save_federation_fields(
+            {"artist_field": artist, "track_field": track})
+    return result
+
+
+def set_fields(artist_field: str, track_field: str) -> bool:
+    """קביעה ידנית, כשהזיהוי האוטומטי לא מצא את השדות הנכונים."""
+    return storage.save_federation_fields(
+        {"artist_field": artist_field, "track_field": track_field})
+
+
+def learned_fields() -> dict:
+    """שמות השדות בתוקף: משתנה סביבה קודם, אחרת מה שנלמד מהדף."""
+    stored = storage.load_federation_fields()
+    return {
+        "artist_field": os.environ.get("IFPI_ARTIST_FIELD") or stored.get("artist_field", ""),
+        "track_field": os.environ.get("IFPI_TRACK_FIELD") or stored.get("track_field", ""),
+    }
+
+
+def build_search_url(artist: str, track: str) -> str:
+    """קישור חיפוש מוכן, לפתיחה בדפדפן של המשתמש.
+
+    בלי שמות שדות ידועים מחזיר את הכתובת הבסיסית — עדיף מקישור עם פרמטרים שגויים.
+    """
+    fields = learned_fields()
+    params = {}
+    if fields["artist_field"] and artist:
+        params[fields["artist_field"]] = " ".join(clean_artist_name(artist).split()[:2])
+    if fields["track_field"] and track:
+        params[fields["track_field"]] = clean_track_title(track) or track
+    if not params:
+        return FEDERATION_URL
+    return f"{FEDERATION_URL}?{urllib.parse.urlencode(params)}"
+
+
+def verify_from_html(html: str, artist: str, track: str) -> VerifyResult:
+    """פסק דין מתוך HTML שהמשתמש הדביק — אותה לוגיקה כמו במסלול האוטומטי."""
+    result = parse_ifpi_table(html, artist, track)
+    result.strategy = "הדבקה ידנית"
+    return result
+
+
 def _looks_like_results_page(html: str) -> bool:
     if not html or len(html) < 500:
         return False
@@ -290,6 +363,13 @@ class FederationClient:
 
         self.artist_field = _first_present_field(html, ARTIST_FIELD_CANDIDATES)
         self.track_field = _first_present_field(html, TRACK_FIELD_CANDIDATES)
+
+        # שמות שנלמדו הם נפילה לאחור לזיהוי מהדף החי, ורק כשבדף בכלל יש טופס.
+        # אחרת דף שגיאה היה "מצליח" preflight רק כי פעם נלמדו שמות.
+        if not self.artist_field and not self.track_field and all_input_names(html):
+            learned = learned_fields()
+            self.artist_field = learned["artist_field"]
+            self.track_field = learned["track_field"]
 
         if not self.artist_field and not self.track_field:
             self.preflight_error = (
