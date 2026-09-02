@@ -5,6 +5,7 @@ import io
 import time
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import audio
 import covers as covers_module
@@ -41,6 +42,38 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+
+def _only_one_audio_at_a_time():
+    """עוצר כל נגן אחר ברגע שמתחילים לנגן אחד.
+
+    Streamlit מרנדר <audio> נייטיבי לכל שיר, וכולם יכולים לנגן במקביל — מה
+    שהופך את ההאזנה לחסרת תועלת. הסקריפט רץ בתוך iframe ולכן ניגש למסמך
+    האב, ומאזין ב-capture כדי לתפוס גם נגנים שנוספו אחרי הרינדור.
+    """
+    renderer = getattr(st, "iframe", None) or components.html
+    renderer(
+        """
+        <script>
+        (function () {
+            const doc = window.parent.document;
+            if (doc.__singleAudioBound) return;
+            doc.__singleAudioBound = true;
+            doc.addEventListener("play", function (event) {
+                const started = event.target;
+                if (!(started instanceof window.parent.HTMLMediaElement)) return;
+                doc.querySelectorAll("audio, video").forEach(function (other) {
+                    if (other !== started && !other.paused) {
+                        other.pause();
+                    }
+                });
+            }, true);
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 # ---------- מצב ----------
@@ -366,152 +399,135 @@ def export_button(tracks: list[dict], label_prefix: str):
     )
 
 
-# ---------- מסכים ----------
+# ---------- מסך חיפוש מאוחד ----------
+
+_only_one_audio_at_a_time()
 
 st.title("🎵 סורק קאברים לטריילרים")
+st.write(
+    "שיר אחד, שלוש דרכים לחפש אותו: כל גרסאות הכיסוי מהמאגר, רק הגרסאות "
+    "האפיות מהחנויות, או חיפוש חופשי רחב."
+)
 
-tab_covers, tab_search = st.tabs(["🎬 מצא קאברים לשיר", "🔎 חיפוש חופשי"])
+col_title, col_artist = st.columns(2)
+cover_title = col_title.text_input("שם השיר:", placeholder="למשל: Bitter Sweet Symphony")
+cover_artist = col_artist.text_input(
+    "אמן מקורי (לא חובה):", placeholder="The Verve",
+    help="מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955 "
+         "וגם Eurythmics 1983. גם משמש כבסיס להשוואת עוצמה.")
 
-with tab_covers:
-    st.write(
-        "מזין שיר מקורי ומקבל את כל גרסאות הכיסוי המוכרות שלו ממאגר קאברים יחסי "
-        "(SecondHandSongs, ובנפילה לאחור MusicBrainz), ולא מניחוש טקסטואלי בכותרות."
-    )
+with st.expander("🎛️ פילטרים", expanded=False):
+    col1, col2, col3 = st.columns(3)
+    style_filter = col1.selectbox("סגנון / ז'אנר:", [ALL, *STYLES])
+    tempo_filter = col2.selectbox("קצב / טמפו:", [ALL, "Fast Action", "Slow Build-up"])
+    length_filter = col3.selectbox("אורך השיר:", [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG])
 
-    col_title, col_artist = st.columns(2)
-    cover_title = col_title.text_input("שם השיר המקורי:", placeholder="למשל: Zombie")
-    cover_artist = col_artist.text_input(
-        "אמן מקורי (לא חובה):", placeholder="Eurythmics",
-        help="ממלא תפקיד מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955.")
+    col4, col5, col6 = st.columns(3)
+    recency = col4.selectbox("חדשות:", list(RECENCY_OPTIONS))
+    prefer_new = col5.checkbox(
+        "תעדף חדש עם ציון גבוה", value=True,
+        help="בונוס טריות שיורד מ-25 לאפס על פני חמש שנים.")
+    fresh_only = col6.checkbox(
+        "רק מה שלא ראיתי", value=False,
+        help="בחיפוש החופשי: מדלג על תוצאות שכבר הוצגו, כדי להביא חומר חדש.")
+    st.caption("הקצב נמדד מה-preview בכפתור 'נתח אודיו', לא מנוחש מהכותרת.")
 
-    if st.button("🔎 אילו שירים בשם הזה?"):
-        if not cover_title.strip():
-            st.warning("הכנס שם שיר")
-        else:
-            with st.spinner("מחפש יצירות..."):
-                st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
-                    cover_title, cover_artist)
-            if not st.session_state["work_candidates"]:
-                st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתור למטה.")
+filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
-    chosen_work = ""
-    candidates = st.session_state.get("work_candidates") or []
-    if candidates:
-        # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
-        # בלי בחירה מפורשת המערכת לקחה את הראשון והחזירה עשרים גרסאות קאנטרי.
-        labels = {
-            f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
-            + (f" ({c['writers']})" if c["writers"] else ""): c["id"]
-            for c in candidates
-        }
-        picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
-        chosen_work = labels[picked]
+if st.button("🔎 אילו שירים בשם הזה?"):
+    if not cover_title.strip():
+        st.warning("הכנס שם שיר")
+    else:
+        with st.spinner("מחפש יצירות..."):
+            st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
+                cover_title, cover_artist)
+        if not st.session_state["work_candidates"]:
+            st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתורים למטה.")
 
-    col_all, col_epic = st.columns(2)
-    search_all = col_all.button("🎬 מצא קאברים", type="primary")
-    search_epic = col_epic.button(
-        "🎥 רק גרסאות טריילר אפיות",
-        help="מחפש בחנויות טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic "
-             "בכותרת. זה חיפוש ולא סיווג: אין כאן טענה שהם שימשו בטריילר.")
+chosen_work = ""
+work_candidates = st.session_state.get("work_candidates") or []
+if work_candidates:
+    # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
+    # בלי בחירה מפורשת נלקחה הראשונה והוחזרו עשרים גרסאות קאנטרי.
+    labels = {
+        f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
+        + (f" ({c['writers']})" if c["writers"] else ""): c["id"]
+        for c in work_candidates
+    }
+    picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
+    chosen_work = labels[picked]
 
-    if search_epic:
-        if not cover_title.strip():
-            st.warning("הכנס שם שיר")
-        else:
-            with st.spinner("מחפש גרסאות אפיות..."):
-                results, source_used = covers_module.find_epic_versions(
-                    cover_title, cover_artist)
-                results = apply_blacklist(results)
-            st.session_state["candidates"] = results
-            st.session_state["covers_source"] = source_used
-            st.session_state["original"] = None
-            st.session_state["visible_count"] = PAGE_SIZE
-            st.session_state["last_query"] = cover_title
-            declared = sum(1 for t in results if t.get("trailer_indicator"))
-            if not results:
-                st.info("לא נמצאו גרסאות לשיר הזה. נסה 'מצא קאברים' לרשימה המלאה.")
-            else:
-                st.caption(
-                    f"📣 {declared} גרסאות עם סימן טריילר (כותרת אפית או ז'אנר פסקול) מופיעות ראשונות. "
-                    "השאר נשארות ברשימה — רמיקס יכול להיות ענק גם בלי לכתוב זאת. "
-                    "לחץ '💥 מדוד עוצמה מול המקור' וכל מי שיימדד כגדול יסומן 🔊."
-                )
+col_all, col_epic, col_free = st.columns(3)
+search_all = col_all.button("🎬 כל הגרסאות", type="primary",
+                            help="כל גרסאות הכיסוי של היצירה מהמאגר היחסי.")
+search_epic = col_epic.button(
+    "🎥 גרסאות טריילר אפיות",
+    help="חיפוש בחנויות אחרי טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic, "
+         "או שיושבים על אלבום של סדרה או סרט. זה חיפוש ולא סיווג.")
+search_free = col_free.button(
+    "🔎 חיפוש חופשי",
+    help="חיפוש רחב בחנויות עם הפילטרים למעלה, בלי להיצמד ליצירה מסוימת.")
 
-    if search_all:
-        if not cover_title.strip():
-            st.warning("הכנס שם שיר")
-        else:
-            with st.spinner("שולף גרסאות מהמאגר..."):
-                results, source_used, original = covers_module.find_covers(
-                    cover_title, cover_artist, work_id=chosen_work)
-                results = apply_blacklist(results)
-            st.session_state["candidates"] = results
-            st.session_state["covers_source"] = source_used
-            st.session_state["original"] = original
-            st.session_state["visible_count"] = PAGE_SIZE
-            st.session_state["last_query"] = cover_title
-            if not results:
-                st.info(
-                    "לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר, או ששני המקורות "
-                    "לא היו זמינים. נסה את לשונית החיפוש החופשי."
-                )
 
-    original = st.session_state.get("original")
-    if original:
-        st.caption(f"גרסת ייחוס להשוואה: **{original['artist']}** — {original['track']}"
-                   + (f" ({original['year']})" if original.get("year") else ""))
-        if not original.get("preview_url"):
-            st.warning("לגרסת הייחוס אין preview — אי אפשר למדוד עוצמה מולה. "
-                       "מלא 'אמן מקורי' כדי לבחור בסיס השוואה אחר.")
+def _store_results(results, source, original=None):
+    st.session_state["candidates"] = results
+    st.session_state["covers_source"] = source
+    st.session_state["original"] = original
+    st.session_state["visible_count"] = PAGE_SIZE
+    st.session_state["last_query"] = cover_title or cover_artist
 
-    if st.session_state["covers_source"]:
-        st.caption(f"מקור הנתונים: {st.session_state['covers_source']}")
 
-with tab_search:
-    st.write("חיפוש רחב על פני iTunes ו-Deezer עם וריאציות שאילתה, ניפוי כפילויות ודירוג.")
+if (search_all or search_epic or search_free) and not (
+        cover_title.strip() or cover_artist.strip()):
+    st.warning("הכנס שם שיר או אמן")
 
-    with st.expander("🎛️ פילטרים", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        style_filter = col1.selectbox("סגנון / ז'אנר:", [ALL, *STYLES])
-        tempo_filter = col2.selectbox("קצב / טמפו:", [ALL, "Fast Action", "Slow Build-up"])
-        length_filter = col3.selectbox("אורך השיר:", [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG])
+elif search_epic:
+    with st.spinner("מחפש גרסאות אפיות..."):
+        results, source_used = covers_module.find_epic_versions(cover_title, cover_artist)
+        results = apply_blacklist(results)
+    _store_results(results, source_used)
+    declared = sum(1 for t in results if t.get("trailer_indicator"))
+    if not results:
+        st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
+    else:
+        st.caption(
+            f"📣 {declared} גרסאות עם סימן טריילר מופיעות ראשונות. השאר נשארות "
+            "ברשימה — רמיקס יכול להיות ענק בלי לכתוב זאת. לחץ '💥 מדוד עוצמה "
+            "מול המקור' וכל מי שיימדד כגדול יסומן 🔊."
+        )
 
-        col4, col5 = st.columns(2)
-        recency = col4.selectbox("חדשות:", list(RECENCY_OPTIONS))
-        prefer_new = col5.checkbox(
-            "תעדף חדש עם ציון גבוה", value=True,
-            help="מוסיף בונוס טריות לציון, כך שחומר חדש וטוב עולה מעל ישן באותו ציון.")
-        st.caption("הקצב נמדד מה-preview בכפתור 'נתח אודיו' שליד כל שיר, לא מנוחש מהכותרת.")
+elif search_all:
+    with st.spinner("שולף גרסאות מהמאגר..."):
+        results, source_used, original = covers_module.find_covers(
+            cover_title, cover_artist, work_id=chosen_work)
+        results = apply_blacklist(results)
+    _store_results(results, source_used, original)
+    if not results:
+        st.info("לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר. נסה 'חיפוש חופשי'.")
 
-    filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
-    col_q, col_origin = st.columns(2)
-    query = col_q.text_input("מילת חיפוש / שיר:", placeholder="למשל: victory, zombie")
-    origin_artist = col_origin.text_input(
-        "אמן המקור (לא חובה):", placeholder="למשל: The Cranberries",
-        help="מחפש גם קאברים לשירים של האמן הזה, לא רק את מילת החיפוש.")
+elif search_free:
+    with st.spinner("סורק את iTunes ו-Deezer..."):
+        exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
+        results = apply_blacklist(search_covers(
+            cover_title or cover_artist, filters=filters, exclude_keys=exclude,
+            origin_artist=cover_artist, prefer_new=prefer_new,
+            min_year=RECENCY_OPTIONS[recency]))
+    _store_results(results, "חיפוש בחנויות")
+    for track in results:
+        st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
+    if not results:
+        st.info("לא נמצאו תוצאות. נסה לבטל את 'רק מה שלא ראיתי' או להרחיב פילטרים.")
 
-    col_search, col_fresh = st.columns([1, 1])
-    do_search = col_search.button("🔎 חפש שירים", type="primary")
-    fresh_only = col_fresh.checkbox("הצג רק תוצאות שלא ראיתי", value=True)
+original = st.session_state.get("original")
+if original:
+    st.caption(f"גרסת ייחוס להשוואה: **{original['artist']}** — {original['track']}"
+               + (f" ({original['year']})" if original.get("year") else ""))
+    if not original.get("preview_url"):
+        st.warning("לגרסת הייחוס אין preview — אי אפשר למדוד עוצמה מולה. "
+                   "מלא 'אמן מקורי' כדי לבחור בסיס השוואה אחר.")
 
-    if do_search:
-        if not query.strip() and not origin_artist.strip():
-            st.warning("הכנס מילת חיפוש או אמן מקור")
-        else:
-            with st.spinner("סורק את iTunes ו-Deezer..."):
-                exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
-                results = apply_blacklist(search_covers(
-                    query or origin_artist, filters=filters, exclude_keys=exclude,
-                    origin_artist=origin_artist, prefer_new=prefer_new,
-                    min_year=RECENCY_OPTIONS[recency]))
-            st.session_state["candidates"] = results
-            st.session_state["covers_source"] = ""
-            st.session_state["visible_count"] = PAGE_SIZE
-            st.session_state["last_query"] = query
-            for track in results:
-                st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
-            if not results:
-                st.info("לא נמצאו תוצאות חדשות. נסה לבטל את הסימון 'הצג רק תוצאות שלא ראיתי'.")
+if st.session_state["covers_source"]:
+    st.caption(f"מקור הנתונים: {st.session_state['covers_source']}")
 
 
 # ---------- תוצאות ----------
