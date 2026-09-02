@@ -29,6 +29,13 @@ TRAILER_PATTERNS = (
     r"\btrailer\b.{0,30}\b(soundtrack|ost)\b",
     r"\bas\s+(heard|seen)\s+in\b",
     r"\bfrom\s+the\s+.{0,40}\btrailer\b",
+    # מוזיקה רשמית של סדרה או סרט: התיאור האוטומטי של YouTube נושא את שורת
+    # ה-℗ של חברת ההפקה. הגרסה של "Bittersweet Symphony" ל-The Crown נראית
+    # בדיוק כך, ואין בכותרת שלה אף מילת מפתח.
+    r"℗\s*.{0,40}\b(netflix|hbo|amazon|disney|marvel|paramount|lionsgate|"
+    r"sony pictures|warner bros|universal pictures|a24|apple tv)\b",
+    r"\b(netflix|hbo max|disney\+|prime video)\s+(music|original)\b",
+    r"\b(original\s+)?(series|motion picture|television)\s+soundtrack\b",
 )
 
 _cache: dict | None = None

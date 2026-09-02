@@ -16,7 +16,7 @@ import httpx
 from thefuzz import fuzz
 
 import search as search_module
-from search import has_epic_title
+from search import is_trailer_indicator
 from search import (clean_artist_name, clean_track_title, normalize_artist,
                     normalize_title, score_track, track_key)
 
@@ -281,9 +281,9 @@ def find_epic_versions(title: str, artist: str = "",
     # הכותרת מכניסה, אבל אינה מוציאה: רמיקס יכול להיות גרסה ענקית גם אם לא
     # כתוב בו "epic". מי שלא הכריז על עצמו נשאר ברשימה ונמדד לפי גודל.
     for track in results:
-        track["epic_by_title"] = has_epic_title(track)
+        track["trailer_indicator"] = is_trailer_indicator(track)
 
-    results.sort(key=lambda t: (t["epic_by_title"], t.get("score", 0)), reverse=True)
+    results.sort(key=lambda t: (t["trailer_indicator"], t.get("score", 0)), reverse=True)
     return results[:limit], "חיפוש בחנויות"
 
 

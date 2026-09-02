@@ -257,7 +257,7 @@ def render_track(track: dict, index: int):
         badge = " 🎬" if evidence else ""
         if audio.is_big_version(metrics):
             badge += " 🔊"          # נמדדה כגרסה גדולה, לא משנה מה הכותרת אומרת
-        elif track.get("epic_by_title"):
+        elif track.get("trailer_indicator"):
             badge += " 📣"          # מכריזה על עצמה כאפית, טרם נמדדה
         st.markdown(f"**{track['artist']}**{badge} - {track['track']}")
         if metrics and metrics.get("analyzed"):
@@ -423,12 +423,12 @@ with tab_covers:
             st.session_state["original"] = None
             st.session_state["visible_count"] = PAGE_SIZE
             st.session_state["last_query"] = cover_title
-            declared = sum(1 for t in results if t.get("epic_by_title"))
+            declared = sum(1 for t in results if t.get("trailer_indicator"))
             if not results:
                 st.info("לא נמצאו גרסאות לשיר הזה. נסה 'מצא קאברים' לרשימה המלאה.")
             else:
                 st.caption(
-                    f"📣 {declared} גרסאות מכריזות על עצמן כאפיות ומופיעות ראשונות. "
+                    f"📣 {declared} גרסאות עם סימן טריילר (כותרת אפית או ז'אנר פסקול) מופיעות ראשונות. "
                     "השאר נשארות ברשימה — רמיקס יכול להיות ענק גם בלי לכתוב זאת. "
                     "לחץ '💥 מדוד עוצמה מול המקור' וכל מי שיימדד כגדול יסומן 🔊."
                 )

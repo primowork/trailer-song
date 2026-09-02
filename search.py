@@ -25,6 +25,8 @@ EPIC_MODIFIERS = (
     "cinematic cover",
     "epic trailer version",
     "orchestral cover",
+    "soundtrack",
+    "official soundtrack",
 )
 
 # מילים שמסמנות קאבר אפי בכותרת / באלבום
@@ -77,6 +79,20 @@ def has_epic_title(track: dict) -> bool:
     """האם הטראק עצמו מציג את עצמו כגרסה אפית/טריילרית."""
     haystack = f"{track.get('track', '')} {track.get('album', '')}".lower()
     return any(re.search(rf"\b{re.escape(m)}", haystack) for m in EPIC_TITLE_MARKERS)
+
+
+def is_soundtrack(track: dict) -> bool:
+    return any(g in (track.get("genre", "") or "").lower() for g in EPIC_GENRES)
+
+
+def is_trailer_indicator(track: dict) -> bool:
+    """סימן שהגרסה הופקה לטריילר, לסדרה או לסרט.
+
+    כותרת אינה מספיקה: הגרסה של "Bittersweet Symphony" שהופקה ל-The Crown
+    נקראת פשוט "Bittersweet Symphony" ואין בה אף מילת מפתח. מה שכן יש לה
+    הוא ז'אנר Soundtrack — עובדה בשדה מטא-דאטה, ולכן סימן אמין יותר.
+    """
+    return has_epic_title(track) or is_soundtrack(track)
 
 
 ALL = "הכל"
@@ -263,7 +279,9 @@ def epic_bonus(track: dict) -> int:
     if any(kw in haystack for kw in EPIC_KEYWORDS):
         bonus += 8
     if any(g in (track.get("genre", "") or "").lower() for g in EPIC_GENRES):
-        bonus += 10
+        # ז'אנר פסקול על *קאבר* לשיר מוכר הוא הסימן החזק ביותר שיש במטא-דאטה
+        # לגרסה שהופקה לסדרה או לסרט. זו עובדה בשדה, לא מילה בכותרת.
+        bonus += 20
     if any(fuzz.partial_ratio(seed.lower(), artist.lower()) > 90 for seed in EPIC_SEEDS):
         bonus += 15
     if any(fuzz.ratio(seed.lower(), normalize_artist(artist)) > 90

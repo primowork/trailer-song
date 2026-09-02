@@ -165,7 +165,7 @@ def test_declared_epic_versions_come_first(monkeypatch):
     """הכותרת מכניסה, אבל אינה מוציאה."""
     monkeypatch.setattr(covers.search_module, "search_covers", lambda *a, **k: _epic_pool())
     results, source = covers.find_epic_versions("Summertime")
-    declared = [t["artist"] for t in results if t["epic_by_title"]]
+    declared = [t["artist"] for t in results if t["trailer_indicator"]]
     assert set(declared) == {"2WEI", "Someone"}
     assert [t["artist"] for t in results[:2]] == declared
     assert source == "חיפוש בחנויות"
@@ -177,7 +177,7 @@ def test_a_remix_is_not_dropped_for_lacking_the_word_epic(monkeypatch):
     results, _ = covers.find_epic_versions("Summertime")
     remix = [t for t in results if t["artist"] == "Lana Del Rey"]
     assert remix, "הרמיקס נמחק מהתוצאות"
-    assert remix[0]["epic_by_title"] is False
+    assert remix[0]["trailer_indicator"] is False
 
 
 def test_epic_search_excludes_the_original_performer(monkeypatch):
@@ -192,7 +192,7 @@ def test_nothing_declared_still_returns_candidates(monkeypatch):
                         lambda *a, **k: [make("SL", "Summertime")])
     results, _ = covers.find_epic_versions("Summertime")
     assert [t["artist"] for t in results] == ["SL"]
-    assert results[0]["epic_by_title"] is False
+    assert results[0]["trailer_indicator"] is False
 
 
 def test_reference_version_must_be_playable():
