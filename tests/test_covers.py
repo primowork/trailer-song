@@ -209,3 +209,63 @@ def test_unplayable_original_is_used_when_nothing_else_exists():
     versions = [{"artist": "Helen Jepson", "track": "Summertime", "year": "1935",
                  "preview_url": ""}]
     assert covers.pick_original(versions)["artist"] == "Helen Jepson"
+
+
+# ---------- חיפוש לפי אמן ----------
+
+def _song(artist, track, uid="x"):
+    return {"source": "iTunes", "uid": f"itunes-{uid}", "artist": artist,
+            "track": track, "album": "", "duration_sec": 200,
+            "preview_url": "http://p", "artwork": "", "genre": "",
+            "release_date": "", "year": "2020"}
+
+
+CATALOG = (
+    # "Yellow" חוזר על ארבעה אוספים, "Sparks" על אחד: כך נראה להיט בקטלוג
+    [_song("Coldplay", "Yellow", f"y{i}") for i in range(4)]
+    + [_song("Coldplay", "Clocks", f"c{i}") for i in range(3)]
+    + [_song("Coldplay", "Sparks", "s1")]
+    + [_song("Some Tribute Band", "Yellow", "t1")]
+)
+
+
+def test_artist_top_titles_ranks_by_appearances(monkeypatch):
+    monkeypatch.setattr(covers.search_module, "itunes_search",
+                        lambda *a, **k: [dict(item) for item in CATALOG])
+    titles = covers.artist_top_titles("Coldplay", limit=3)
+    assert titles[:2] == ["Yellow", "Clocks"]
+    # שיר של אמן אחר אינו נספר לאמן שביקשנו
+    assert len(titles) == 3
+
+
+def test_artist_top_titles_without_a_name_makes_no_call(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("לא אמורה להיות קריאה")
+    monkeypatch.setattr(covers.search_module, "itunes_search", boom)
+    assert covers.artist_top_titles("  ") == []
+
+
+def test_find_artist_covers_tags_and_dedupes(monkeypatch):
+    monkeypatch.setattr(covers.search_module, "itunes_search",
+                        lambda *a, **k: [dict(item) for item in CATALOG])
+    monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yellow", "Clocks"])
+
+    # אותו קאבר חוזר משני השירים: חייב להופיע פעם אחת, אחרת ה-uid כפול והעמוד נופל
+    shared = _song("Epic Covers", "Yellow (Epic Trailer Version)", "shared")
+    per_title = {
+        "Yellow": [shared, _song("Trailer Music", "Yellow (Cinematic)", "a")],
+        "Clocks": [dict(shared)],
+    }
+    monkeypatch.setattr(covers, "find_epic_versions",
+                        lambda title, artist, limit=12: ([dict(t) for t in per_title[title]], "x"))
+
+    results, source, titles = covers.find_artist_covers("Coldplay")
+    assert titles == ["Yellow", "Clocks"]
+    assert source
+    assert len({t["uid"] for t in results}) == len(results) == 2
+    assert {t["origin_track"] for t in results} <= {"Yellow", "Clocks"}
+
+
+def test_find_artist_covers_without_titles_returns_empty(monkeypatch):
+    monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: [])
+    assert covers.find_artist_covers("Nobody") == ([], "", [])

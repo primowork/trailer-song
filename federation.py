@@ -565,6 +565,31 @@ class FederationClient:
         return results
 
 
+REACH_TIMEOUT = 3.0
+
+
+def reachable(url: str = FEDERATION_URL, timeout: float = REACH_TIMEOUT) -> bool:
+    """האם השרת בכלל מצליח לפתוח חיבור לאתר הפדרציה.
+
+    בדיקת TCP גולמית ולא preflight מלא: מצב הכשל בפועל הוא timeout ברמת החיבור
+    (IP של דאטה-סנטר שנחסם), וה-preflight המלא עולה עד 20 שניות — יקר מדי לבדיקה
+    שרצה מאליה. כשמוגדר proxy הבדיקה הישירה אינה רלוונטית ולכן מדלגים עליה.
+    """
+    if PROXY:
+        return True
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 def diagnose(url: str = FEDERATION_URL) -> dict:
     """אבחון חיבור לאתר הפדרציה, לשימוש הממשק.
 
