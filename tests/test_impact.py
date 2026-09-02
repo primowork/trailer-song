@@ -83,3 +83,26 @@ def test_original_without_years_falls_back_to_the_first():
 
 def test_no_versions_no_original():
     assert covers.pick_original([]) is None
+
+
+# ---------- "גדולה מהחיים" נקבע במדידה, לא בכותרת ----------
+
+def test_measured_big_version_regardless_of_title():
+    assert audio.is_big_version({"analyzed": True, "impact": 85})
+    assert not audio.is_big_version({"analyzed": True, "impact": 30})
+
+
+def test_unmeasured_is_not_declared_small():
+    """'לא נמדד' אינו 'לא גדול' — אסור לפסול גרסה שלא נבדקה."""
+    assert not audio.is_big_version({"analyzed": False, "impact": 0})
+    assert not audio.is_big_version(None)
+
+
+def test_threshold_is_adjustable():
+    assert audio.is_big_version({"analyzed": True, "impact": 50}, threshold=40)
+    assert not audio.is_big_version({"analyzed": True, "impact": 50}, threshold=70)
+
+
+def test_dataclass_and_dict_agree():
+    metrics = audio.compare_to_original(HUGE_COVER, SMALL_ORIGINAL)
+    assert audio.is_big_version(metrics) == audio.is_big_version(metrics.to_dict())

@@ -188,6 +188,20 @@ def impact_for(cover: dict, original: dict) -> ImpactMetrics:
     return compare_to_original(features_for(cover), features_for(original))
 
 
+# מעל הסף הזה הגרסה נחשבת "גדולה מהחיים" לפי המדידה, בלי קשר לכותרת שלה
+BIG_VERSION_THRESHOLD = 60
+
+
+def is_big_version(metrics: "ImpactMetrics | dict | None",
+                   threshold: int = BIG_VERSION_THRESHOLD) -> bool:
+    """האם המדידה מראה גרסה גדולה. 'לא נמדד' אינו 'לא גדול'."""
+    if metrics is None:
+        return False
+    if isinstance(metrics, dict):
+        return bool(metrics.get("analyzed")) and metrics.get("impact", 0) >= threshold
+    return metrics.analyzed and metrics.impact >= threshold
+
+
 def matches_tempo(features: AudioFeatures, tempo_filter: str) -> bool:
     """סינון לפי BPM נמדד במקום לפי מילה שנדחפה לשאילתה."""
     if not tempo_filter or tempo_filter == "הכל" or not features.bpm:

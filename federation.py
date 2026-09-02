@@ -45,7 +45,11 @@ PUBLISHER_HINTS = (
     "יוניברסל", "וורנר", "סוני", "הליקון", "אן.אמ.סי", "מיוצג",
     "nmc", "bmg", "universal", "sony", "warner", "helicon",
 )
-PUBLISHER_HEADERS = ("מייצג", "חברה", "מפיץ", "בעל זכויות", "לייבל", "יצרן")
+# "מיוצג בפדרציה ע\"י" הוא הכיתוב האמיתי באתר. הכתיב "מייצג" לבדו לא תפס אותו.
+PUBLISHER_HEADERS = ("מיוצג", "מייצג", "חברה", "מפיץ", "בעל זכויות", "לייבל", "יצרן")
+
+# מילות הכותרת שמזהות את שורת הכותרות בטבלת התוצאות
+HEADER_MARKERS = ("המבצע", "הקלטה", "אלבום", "מיוצג")
 
 ARTIST_MATCH_THRESHOLD = 85
 TRACK_MATCH_THRESHOLD = 80
@@ -104,15 +108,75 @@ def _first_present_field(html: str, candidates) -> str:
     return ""
 
 
-def _find_publisher_column(table) -> int | None:
-    if table is None:
-        return None
-    for row in table.find_all("tr")[:3]:
-        headers = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
-        for idx, header in enumerate(headers):
+def _row_columns(element) -> list[str]:
+    """עמודות של שורה: תאי טבלה, ואם אין — ה-div-ים הישירים שבתוכה."""
+    cells = element.find_all(["td", "th"], recursive=False)
+    if not cells:
+        cells = element.find_all(["td", "th"])
+    if not cells:
+        cells = element.find_all("div", recursive=False)
+    return [cell.get_text(" ", strip=True) for cell in cells]
+
+
+def _extract_rows(soup) -> list[list[str]]:
+    """שורות התוצאה, בין אם הן <tr> ובין אם הן div-ים צפים.
+
+    ifpi.co.il לא משתמש ב-<table> בכלל: טבלת התוצאות שם בנויה מ-div-ים עם
+    float, ולכן חיפוש <tr> בלבד החזיר "לא נמצאה טבלה" על כל דף תוצאות אמיתי.
+    """
+    rows = [_row_columns(tr) for tr in soup.find_all("tr")]
+    rows = [cols for cols in rows if cols]
+    if rows:
+        return rows
+
+    # שורות שהאתר מסמן במפורש (המנגנון שפותח את פרטי ההקלטה)
+    marked = soup.find_all("div", class_="om")
+    rows = [cols for cols in (_row_columns(div) for div in marked) if len(cols) >= 2]
+    if rows:
+        # לשורת הכותרות אין class="om", ובלעדיה אינדקס עמודת המו"ל היה נשען על
+        # ברירת מחדל קשיחה במקום על מה שכתוב בדף
+        header = _find_header_row(soup)
+        return ([header] + rows) if header else rows
+
+    # נפילה לאחור: כל div שהילדים הישירים שלו הם כמה div-ים עם טקסט
+    for div in soup.find_all("div"):
+        children = div.find_all("div", recursive=False)
+        if len(children) < 4:
+            continue
+        cols = [c.get_text(" ", strip=True) for c in children]
+        if sum(1 for c in cols if c) >= 3:
+            rows.append(cols)
+    return rows
+
+
+def _is_header_row(cols: list[str]) -> bool:
+    return sum(1 for c in cols if any(m in c for m in HEADER_MARKERS)) >= 2
+
+
+def _find_header_row(soup) -> list[str] | None:
+    """שורת הכותרות של טבלת התוצאות, שאינה מסומנת כשורה רגילה."""
+    for div in soup.find_all("div"):
+        children = div.find_all("div", recursive=False)
+        if len(children) < 3:
+            continue
+        cols = [c.get_text(" ", strip=True) for c in children]
+        if _is_header_row(cols):
+            return cols
+    return None
+
+
+def _publisher_index(rows: list[list[str]]) -> int | None:
+    """אינדקס עמודת המו"ל, לפי שורת הכותרות."""
+    for cols in rows[:6]:
+        if sum(1 for c in cols if any(m in c for m in HEADER_MARKERS)) < 2:
+            continue
+        for idx, header in enumerate(cols):
             if any(h in header for h in PUBLISHER_HEADERS):
                 return idx
     return None
+
+
+
 
 
 def parse_ifpi_table(html_content: str, target_artist: str, target_track: str = "") -> VerifyResult:
@@ -129,19 +193,18 @@ def parse_ifpi_table(html_content: str, target_artist: str, target_track: str = 
     if any(marker in text for marker in NO_RESULTS_MARKERS):
         return VerifyResult(status=NOT_FOUND, confidence=95)
 
-    rows = soup.find_all("tr")
+    rows = _extract_rows(soup)
     if not rows:
         return VerifyResult(status=UNKNOWN, error="לא נמצאה טבלת תוצאות")
 
     clean_artist = clean_artist_name(target_artist).lower()
     clean_track = clean_track_title(target_track).lower()
-    publisher_idx = _find_publisher_column(soup.find("table"))
+    publisher_idx = _publisher_index(rows)
 
     best = VerifyResult(status=NOT_FOUND, confidence=60)
 
-    for row in rows:
-        cols = [td.get_text(" ", strip=True) for td in row.find_all(["td", "th"])]
-        if not cols:
+    for cols in rows:
+        if not cols or _is_header_row(cols):
             continue
         row_text = " ".join(cols).lower()
 
