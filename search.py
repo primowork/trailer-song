@@ -70,7 +70,10 @@ STYLES = (
 # סמנים שאמנים כותבים בכותרת של גרסת טריילר אפית בפועל. זה חיפוש, לא סיווג:
 # אנחנו מוצאים טראקים שקוראים לעצמם כך, ולא טוענים שהם שימשו בטריילר.
 EPIC_TITLE_MARKERS = (
-    "trailer", "epic", "cinematic", "orchestral", "dramatic", "dark",
+    "trailer",
+    # trailerized: מונח מקצועי לגרסה שעובדה מחדש לשימוש בטריילר
+    "trailerized",
+    "epic", "cinematic", "orchestral", "dramatic", "dark",
     "cover version", "remake", "reimagined",
 )
 
@@ -93,6 +96,7 @@ PRODUCTION_ALBUM_MARKERS = (
     r"\boriginal score\b",
     r"\bfrom the\b",       # "(From the Motion Picture)", "From the Netflix Series"
     r"\btrailer\b",
+    r"\btrailerized\b",
 )
 
 

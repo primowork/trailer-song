@@ -159,3 +159,28 @@ def test_show_album_outranks_the_original():
              "album": "Urban Hymns", "genre": "Alternative",
              "preview_url": "http://p", "uid": "v"}
     assert search.score_track(crown, QUERY) > search.score_track(verve, QUERY)
+
+
+# ---------- trailerized ----------
+
+def test_trailerized_in_the_track_title():
+    assert search.has_epic_title(
+        {"track": "Zombie (Trailerized Version)", "album": "Covers"})
+
+
+def test_trailerized_in_the_album_name():
+    """הפער: דפוס האלבום היה \\btrailer\\b סגור משני הצדדים ולכן פספס אותו."""
+    assert search.has_production_album(_album("Trailerized Covers"))
+    assert search.has_production_album(_album("Trailerized"))
+
+
+def test_trailerized_is_an_indicator_from_either_field():
+    assert search.is_trailer_indicator(
+        {"track": "Zombie (Trailerized Version)", "album": "Covers", "genre": "Pop"})
+    assert search.is_trailer_indicator(
+        {"track": "Zombie", "album": "Trailerized Covers", "genre": "Pop"})
+
+
+def test_trailerized_does_not_loosen_ordinary_albums():
+    for name in ["Greatest Hits", "Urban Hymns", "Trail of Dead"]:
+        assert not search.has_production_album(_album(name)), name
