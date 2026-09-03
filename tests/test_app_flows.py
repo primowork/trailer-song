@@ -43,7 +43,7 @@ def test_the_page_renders(app):
     assert not app.exception
 
 
-def test_greatest_artist_click_fills_the_field_and_searches(app, monkeypatch):
+def test_greatest_artist_click_shows_a_preview_before_searching(app, monkeypatch):
     monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yesterday"])
     monkeypatch.setattr(covers, "find_epic_versions",
                         lambda title, artist="", limit=12, filters=None, prefer_new=False, min_year=0:
@@ -57,8 +57,41 @@ def test_greatest_artist_click_fills_the_field_and_searches(app, monkeypatch):
 
     assert not app.exception
     assert app.session_state["cover_artist"] == artists.GREATEST_ARTISTS[0]
+    assert app.session_state["search_mode"] == "🎤 קאברים לאמן"
+    # לא הורץ חיפוש קאברים יקר מיד — קודם מוצגת תצוגה מקדימה זולה
+    assert app.session_state["candidates"] == []
+    assert any("Yesterday" in b.label for b in app.button
+              if (b.key or "").startswith("artist_preview_"))
+
+    # "🔎 חפש" מריץ את החיפוש המלא לפי האמן, בדיוק כמו היום
+    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button.click().run()
+
+    assert not app.exception
     assert app.session_state["candidates"]
     assert app.session_state["candidates"][0]["origin_track"] == "Yesterday"
+
+
+def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
+    monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yesterday"])
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track("Beatles", f"{title} (Cover)", "c1")], "src", None))
+
+    source = app.radio(key="index_source")
+    source.set_value(source.options[1]).run()
+    first = artists.GREATEST_ARTISTS[0]
+    app.button(key=f"goat_0_{first[:30]}").click().run()
+
+    preview_button = [b for b in app.button
+                     if (b.key or "").startswith("artist_preview_")][0]
+    preview_button.click().run()
+
+    assert not app.exception
+    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["cover_title"] == "Yesterday"
+    assert app.session_state["candidates"]
+    assert app.session_state["candidates"][0]["uid"] == "itunes-c1"
 
 
 def test_suggestion_click_fills_both_fields(app, monkeypatch):

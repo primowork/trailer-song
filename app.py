@@ -112,6 +112,8 @@ def _init_state():
         "all_inputs": [],
         "suggest_query": "",
         "suggestions": [],
+        "artist_preview_query": "",
+        "artist_preview_titles": [],
         "cors_retried": set(),
         "federation_probed": False,
         "similar_of": None,
@@ -693,6 +695,27 @@ def suggestion_row(query: str):
 
 suggestion_row(cover_title)
 
+ARTIST_PREVIEW_COUNT = 20
+
+
+def _artist_preview_titles(artist: str) -> list[str]:
+    """עד 20 השירים המזוהים ביותר עם האמן, זול (קריאת iTunes אחת) ומקוצ'ר.
+
+    לחיצה על אמן ב-📇 אינדקס מצעדים לא צריכה להריץ מיד חיפוש קאברים יקר
+    (עד 8 חיפושים מקבילים) לפני שהמשתמש בכלל ראה אילו שירים נבחרו לו.
+    הקאש לפי שם מנורמל מונע קריאת iTunes חוזרת בכל rerun (checkbox, מדידת
+    אודיו וכו׳).
+    """
+    key = search_module.normalize_artist(artist)
+    if st.session_state["artist_preview_query"] != key:
+        st.session_state["artist_preview_query"] = key
+        search_module.reset_errors()
+        with st.spinner(f"מזהה שירים של {artist}..."):
+            st.session_state["artist_preview_titles"] = covers_module.artist_top_titles(
+                artist, limit=ARTIST_PREVIEW_COUNT)
+    return st.session_state["artist_preview_titles"]
+
+
 def _entry_grid(entries: list[dict], key_prefix: str):
     """רשת כפתורים משותפת לאמנים ולשירים, מכל אחד משלושת מקורות האינדקס.
 
@@ -719,7 +742,10 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                                         use_container_width=True)
             if clicked:
                 if entry["kind"] == "artist":
-                    queue_fields(artist=entry["artist"], mode=MODE_ARTIST, auto_run=True)
+                    # לא auto_run: קודם מוצגת תצוגה מקדימה זולה של שירי האמן
+                    # (ראו את המקטע אחרי רדיו "סוג חיפוש") — חיפוש הקאברים
+                    # המלא יקר ולא צריך לרוץ לפני שהמשתמש בחר מה לחפש בפועל
+                    queue_fields(artist=entry["artist"], mode=MODE_ARTIST)
                 else:
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
 
@@ -864,6 +890,23 @@ if search_mode == MODE_SONG:
         }
         picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
         chosen_work = labels[picked]
+
+elif search_mode == MODE_ARTIST and cover_artist.strip():
+    titles = _artist_preview_titles(cover_artist)
+    if titles:
+        st.caption(f"🎵 {len(titles)} השירים המזוהים ביותר עם {cover_artist} — "
+                   "לחיצה מריצה חיפוש קאברים לשיר הזה בלבד. '🔎 חפש' למטה "
+                   "סורק את כל השירים המובילים בבת אחת.")
+        _entry_grid([{"kind": "song", "artist": cover_artist, "track": title,
+                      "rank": index + 1} for index, title in enumerate(titles)],
+                    "artist_preview")
+    else:
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.caption("לא נמצאו שירים מזוהים עם האמן הזה. אפשר עדיין ללחוץ "
+                       "'🔎 חפש' לחיפוש קאברים ישיר.")
 
 run_search = st.button("🔎 חפש", type="primary") or st.session_state.pop("auto_run", False)
 
