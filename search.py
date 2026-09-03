@@ -382,21 +382,38 @@ def deezer_search(term: str, limit: int = 100,
 # ניצח התאמה מדויקת: "California Dreaming (Epic Cinematic Trailer Cover Version)"
 # קיבל 140 מול 97 של הגרסה האמיתית של Sia.
 MAX_EPIC_BONUS = 30
-RELEVANCE_FLOOR = 60
+# מתחת לרצפה הזו טראק לא מוצג בכלל (ראו השימוש ב-search_covers) ולא רק
+# מדורג נמוך. מכויל מול: קאברים לגיטימיים (אחרי ניקוי תג גרסה) מגיעים
+# ל-100; "At Long Last, Love" מול שאילתת "At Last" — שיר אחר לגמרי שחולק
+# שתי מילים — מגיע ל-60; "Yellow Submarine" מול "Yellow" ל-57.
+RELEVANCE_FLOOR = 65
 
 
 def relevance(track: dict, query: str) -> int:
-    """כמה השיר תואם למה שהמשתמש חיפש, על מחרוזות מנורמלות."""
+    """כמה השיר תואם למה שהמשתמש חיפש, על מחרוזות מנורמלות.
+
+    `fuzz.token_set_ratio` לבד מחזיר 100 לכל כותרת שמכילה את *כל* מילות
+    השאילתה כתת-קבוצה — "At Long Last, Love" מקבל 100 מול שאילתת "At Last"
+    בדיוק כמו התאמה מדויקת, כי הוא לא מבחין בין "אותו שיר עם תוספת" ל"שיר
+    אחר לגמרי שחולק שתי מילים". `fuzz.ratio` על מחרוזות מרוכזות רגיש לאורך
+    ומעניש מילים זרות בכותרת המועמד; לוקחים min של שניהם. הכותרת מנוקה
+    קודם מתגיות גרסה (`clean_track_title`) כדי שקאבר אפי לגיטימי לא יפסיד
+    בהשוואת אורך רק בגלל "(Epic Trailer Version)" שהוא עצמו מחפש.
+    """
     if not query:
         return 100
     q = normalize_title(query)
-    title = normalize_title(track.get("track", ""))
+    raw_title = track.get("track", "")
+    title = normalize_title(clean_track_title(raw_title) or raw_title)
     # השוואה נוספת בלי רווחים, שההבדל בין "bitter sweet" ל-"bittersweet"
     # לא יוריד את הציון של הגרסה הנכונה
     squeeze = lambda s: s.replace(" ", "")
-    return max(
+    title_score = min(
         fuzz.token_set_ratio(q, title),
         fuzz.ratio(squeeze(q), squeeze(title)),
+    )
+    return max(
+        title_score,
         fuzz.token_set_ratio(q, normalize_artist(track.get("artist", ""))),
     )
 
@@ -537,6 +554,11 @@ def search_covers(query: str, filters: dict | None = None,
         if track_key(track.get("artist", ""), track.get("track", "")) in exclude_keys:
             continue
         if min_year and release_year(track) and release_year(track) < min_year:
+            continue
+        # מתחת לרצפת הרלוונטיות זה כנראה שיר אחר לגמרי שחולק כמה מילים עם
+        # השאילתה ("At Long Last, Love" מול "At Last") — לא מדורג נמוך,
+        # לא מוצג בכלל.
+        if relevance(track, query) < RELEVANCE_FLOOR:
             continue
         track["score"] = score_track(track, query, prefer_new=prefer_new)
         scored.append(track)
