@@ -159,3 +159,72 @@ def test_describe_names_the_dimension_the_user_is_consistent_about():
 
 def test_describe_without_favorites_is_empty():
     assert taste.describe(taste.profile([])) == ""
+
+
+# ---------- 👎 דוגמאות שליליות ----------
+
+def test_a_dimension_that_separates_likes_from_rejects_outweighs_a_consistent_one():
+    """הלב של הלמידה מדחיות.
+
+    המשתמש עקבי לחלוטין בעוצמה — אבל גם הדחויים עקביים באותה עוצמה, ולכן
+    היא לא מלמדת כלום. הבס הוא היחיד שמפריד, גם אם הוא פחות עקבי.
+    """
+    favorites = [liked(feature_fields={"loudness": 0.19, "low_end": 2.4 + i * 0.2})
+                 for i in range(4)]
+    rejections = [liked(feature_fields={"loudness": 0.19, "low_end": 0.9 + i * 0.2})
+                  for i in range(4)]
+    learned = taste.profile(favorites, rejections=rejections)
+    assert learned["dimension_weights"]["low_end"] > learned["dimension_weights"]["loudness"]
+
+
+def test_a_track_near_the_rejected_centre_is_pushed_down():
+    favorites = [liked(feature_fields={"low_end": 2.8}) for _ in range(5)]
+    rejections = [liked(feature_fields={"low_end": 0.9}) for _ in range(5)]
+    sounds_rejected = features(low_end=0.9)
+
+    without = taste.profile(favorites)
+    with_rejections = taste.profile(favorites, rejections=rejections)
+
+    # הדחיות מגדילות את הביטחון (יותר דוגמאות), ולכן ההשוואה היא על ההפרדה
+    # ולא על הערך המוחלט: כמה הדחוי נמוך ביחס לאהוב
+    def separation(learned):
+        return (taste.match(song(), sounds_rejected, learned)
+                / taste.match(song(), features(low_end=2.8), learned))
+
+    assert separation(with_rejections) < separation(without)
+    assert separation(with_rejections) < 0.5
+
+
+def test_a_rejected_genre_gets_negative_lift():
+    favorites = [liked({"genre": "Metal"}) for _ in range(4)]
+    rejections = [liked({"genre": "Classical"}) for _ in range(4)]
+    learned = taste.profile(favorites, rejections=rejections)
+    assert learned["lift"]["genre:classical"] < 0
+    assert learned["lift"]["genre:metal"] > 0
+
+
+def test_rejections_sharpen_a_signal_the_background_alone_would_miss():
+    """שני הז'אנרים נפוצים ברקע במידה שווה — רק הדחיות מפרידות ביניהם."""
+    favorites = [liked({"genre": "Choir"}) for _ in range(4)]
+    rejections = [liked({"genre": "Piano"}) for _ in range(4)]
+    background = ([song(genre="Choir") for _ in range(10)]
+                  + [song(genre="Piano") for _ in range(10)])
+
+    without = taste.profile(favorites, background)
+    with_rejections = taste.profile(favorites, background, rejections=rejections)
+    assert with_rejections["lift"]["genre:choir"] > without["lift"]["genre:choir"]
+
+
+def test_rejections_alone_still_count_toward_confidence():
+    only_likes = taste.profile([liked() for _ in range(3)])
+    with_rejections = taste.profile([liked() for _ in range(3)],
+                                    rejections=[liked() for _ in range(5)])
+    assert with_rejections["confidence"] > only_likes["confidence"]
+
+
+def test_describe_names_what_is_avoided():
+    favorites = [liked({"genre": "Metal"}) for _ in range(4)]
+    rejections = [liked({"genre": "Classical"}) for _ in range(4)]
+    text = taste.describe(taste.profile(favorites, rejections=rejections))
+    assert "דחיות" in text
+    assert "נמנע מ" in text and "Classical" in text

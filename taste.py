@@ -47,6 +47,12 @@ CATEGORICAL_WEIGHT = 0.4
 NEUTRAL = 0.5
 # לייק ישן שוקל פחות, כדי שהטעם יוכל לזוז עם הזמן. חצי-חיים בימים.
 RECENCY_HALFLIFE_DAYS = 120.0
+# כמה קריטריון פישר (הפרדה בין אהובים לדחויים) מגביר את משקל המימד
+FISHER_STRENGTH = 3.0
+# כמה קרבה למרכז הדחויים גורעת מההתאמה
+REJECT_PENALTY = 0.7
+# מספר הדחיות שבו הן שוקלות כמו הרקע כקבוצת ייחוס קטגוריאלית
+REJECT_REFERENCE_HALF = 5.0
 
 DIMENSIONS = tuple(audio.WEIGHTS)
 
@@ -101,60 +107,96 @@ def _recency_weight(entry: dict, now: float) -> float:
     return 0.5 ** (age_days / RECENCY_HALFLIFE_DAYS)
 
 
-def profile(favorites: list, background: list | None = None,
-            now: float | None = None) -> dict:
-    """בונה פרופיל טעם מהלייקים, בניגוד לשכיחות ברקע.
+def _moments(entries: list, weights: list) -> tuple:
+    """מרכז ופיזור מרוכך לכל מימד אודיו, לקבוצת דוגמאות אחת.
 
-    `favorites` — רשומות כפי שנשמרו ב-`storage.load_favorites()` (טראק plus
-    `features` plus `added_at`). `background` — פול התוצאות שמוצג בפועל, שממנו
-    נלמדת שכיחות הרקע. בלי רקע, המודל מדרדר למונה שכיחות: הוא היה מסיק
-    ש"Soundtrack" הוא הטעם של המשתמש רק כי זה מה שהחיפוש מחזיר ממילא.
+    מוחזר גם מספר הדוגמאות שהיו מדודות בפועל — פיזור שחושב על שתי דוגמאות
+    אינו אותו דבר כמו פיזור שחושב על עשרים, וההחלטות למטה תלויות בזה.
     """
-    now = now or time.time()
-    count = len(favorites)
-    empty = {"count": 0, "mean": {}, "spread": {}, "dimension_weights": {},
-             "lift": {}, "confidence": 0.0}
-    if not count:
-        return empty
-
-    weights = [_recency_weight(entry, now) for entry in favorites]
-
-    # --- מרכז הכובד של הצליל, ורלוונטיות פר-מימד ---
     vectors, vector_weights = [], []
-    for entry, weight in zip(favorites, weights):
+    for entry, weight in zip(entries, weights):
         normalized = audio.normalized(entry.get("features"))
         if normalized:
             vectors.append(normalized)
             vector_weights.append(weight)
+    if not vectors:
+        return {}, {}, 0
 
-    mean, spread, dimension_weights = {}, {}, {}
-    if vectors:
-        total = sum(vector_weights) or 1.0
-        for dimension in DIMENSIONS:
-            values = [vector[dimension] for vector in vectors]
-            mu = sum(v * w for v, w in zip(values, vector_weights)) / total
-            variance = sum(w * (v - mu) ** 2
-                           for v, w in zip(values, vector_weights)) / total
-            observed = math.sqrt(max(0.0, variance))
-            # ריכוך: מדגם קטן לא רשאי להכריז "בדיוק 0.31 בס, בלי סטייה"
-            n = len(vectors)
-            sigma = ((n * observed + SPREAD_SHRINK * SPREAD_PRIOR)
-                     / (n + SPREAD_SHRINK))
-            mean[dimension] = mu
-            spread[dimension] = max(sigma, 0.05)
+    total = sum(vector_weights) or 1.0
+    mean, spread = {}, {}
+    for dimension in DIMENSIONS:
+        values = [vector[dimension] for vector in vectors]
+        mu = sum(v * w for v, w in zip(values, vector_weights)) / total
+        variance = sum(w * (v - mu) ** 2
+                       for v, w in zip(values, vector_weights)) / total
+        # ריכוך: מדגם קטן לא רשאי להכריז "בדיוק 0.31 בס, בלי סטייה"
+        sigma = ((len(vectors) * math.sqrt(max(0.0, variance))
+                  + SPREAD_SHRINK * SPREAD_PRIOR) / (len(vectors) + SPREAD_SHRINK))
+        mean[dimension] = mu
+        spread[dimension] = max(sigma, 0.05)
+    return mean, spread, len(vectors)
 
-        # מימד שהמשתמש עקבי בו (σ קטן) מקבל משקל גבוה — זה הלב של
-        # "המערכת מבינה *למה* אהבתי", ולא רק "אהבתי"
+
+def _rates(entries: list, weights: list, labels: dict | None = None) -> tuple:
+    """שכיחות משוקללת של כל תכונה קטגוריאלית בקבוצה."""
+    counts = {}
+    for entry, weight in zip(entries, weights):
+        for trait in traits(entry, labels):
+            counts[trait] = counts.get(trait, 0.0) + weight
+    total = sum(weights) or 1.0
+    return {trait: count / total for trait, count in counts.items()}, total
+
+
+def profile(favorites: list, background: list | None = None,
+            rejections: list | None = None, now: float | None = None) -> dict:
+    """בונה פרופיל טעם מהלייקים, בניגוד לדחיות ולשכיחות ברקע.
+
+    `favorites` / `rejections` — רשומות כפי שנשמרו ב-`storage` (טראק plus
+    `features` plus `added_at`). `background` — פול התוצאות שמוצג בפועל.
+
+    שני מקורות ניגוד, ולא במקרה. **הרקע** עונה על "מה נפוץ ממילא": בלעדיו
+    המודל היה מסיק ש-Soundtrack הוא הטעם של המשתמש רק כי זה מה שהחיפוש
+    מחזיר. **הדחיות** עונות על שאלה חזקה יותר: "מה מפריד בין מה שאהבתי לבין
+    מה שדחיתי". דוגמאות חיוביות לבדן נותנות מרכז כובד; דוגמאות שליליות
+    נותנות *כיוון*, וזה מה שמפריד טעם מ"עוד מאותו דבר".
+    """
+    now = now or time.time()
+    count = len(favorites)
+    if not count:
+        return {"count": 0, "mean": {}, "spread": {}, "dimension_weights": {},
+                "lift": {}, "labels": {}, "reject_mean": {}, "reject_spread": {},
+                "reject_count": 0, "confidence": 0.0}
+
+    rejections = rejections or []
+    weights = [_recency_weight(entry, now) for entry in favorites]
+    reject_weights = [_recency_weight(entry, now) for entry in rejections]
+
+    # --- מרכז הכובד של הצליל, ורלוונטיות פר-מימד ---
+    mean, spread, measured_count = _moments(favorites, weights)
+    reject_mean, reject_spread, reject_measured = _moments(rejections, reject_weights)
+
+    dimension_weights = {}
+    if mean:
+        # בסיס: מימד שהמשתמש עקבי בו (σ קטן) מגדיר את הטעם יותר ממימד מפוזר
         raw = {d: 1.0 / (spread[d] ** 2) for d in DIMENSIONS}
+        if reject_mean:
+            # ובנוכחות דחיות, מה שבאמת חשוב הוא מה ש*מפריד* בין השתיים.
+            # קריטריון פישר: מרחק בין המרכזים ביחס לפיזור המשותף. מימד שבו
+            # האהובים והדחויים יושבים באותו מקום אינו מלמד כלום, גם אם
+            # המשתמש עקבי בו לחלוטין.
+            for dimension in DIMENSIONS:
+                gap = (mean[dimension] - reject_mean[dimension]) ** 2
+                pooled = spread[dimension] ** 2 + reject_spread[dimension] ** 2
+                raw[dimension] *= 1.0 + FISHER_STRENGTH * gap / pooled
         total_raw = sum(raw.values()) or 1.0
         dimension_weights = {d: raw[d] / total_raw for d in DIMENSIONS}
 
-    # --- יחס סבירות קטגוריאלי מול הרקע ---
-    liked, labels = {}, {}
-    total_weight = sum(weights) or 1.0
-    for entry, weight in zip(favorites, weights):
-        for trait in traits(entry, labels):
-            liked[trait] = liked.get(trait, 0.0) + weight
+    # --- יחס סבירות קטגוריאלי, מול הרקע ומול הדחיות ---
+    # הכתיב המקורי נאסף משתי הקבוצות: `describe` מציג גם את מה שנאהב וגם את
+    # מה שנדחה, ותכונה שהופיעה רק בדחיות זקוקה לשם קריא בדיוק כמו האחרות
+    labels = {}
+    liked_rate, total_weight = _rates(favorites, weights, labels)
+    rejected_rate, _ = _rates(rejections, reject_weights, labels)
 
     pool = background or []
     background_rate = {}
@@ -164,14 +206,19 @@ def profile(favorites: list, background: list | None = None,
                 background_rate[trait] = background_rate.get(trait, 0.0) + 1.0
         background_rate = {t: c / len(pool) for t, c in background_rate.items()}
 
+    # ככל שיש יותר דחיות, הן משמשות יותר כקבוצת הייחוס במקום הרקע הכללי:
+    # הן דגימה קשה יותר — מאותו פול, אבל של מה שהמשתמש דחה בפועל
+    reject_pull = len(rejections) / (len(rejections) + REJECT_REFERENCE_HALF)
+
     lift = {}
-    for trait, weighted_count in liked.items():
-        favored = (weighted_count + SMOOTHING) / (total_weight + SMOOTHING)
-        # תכונה שלא נראתה ברקע בכלל מקבלת את שכיחות הרצפה, לא אפס —
+    for trait in set(liked_rate) | set(rejected_rate):
+        favored = liked_rate.get(trait, 0.0) + SMOOTHING
+        # תכונה שלא נראתה בקבוצת הייחוס מקבלת את שכיחות הרצפה ולא אפס,
         # אחרת log מתפוצץ והתכונה הנדירה מקבלת משקל אינסופי
-        base = background_rate.get(trait, SMOOTHING)
-        value = math.log(favored / max(base, SMOOTHING))
-        lift[trait] = max(-MAX_LIFT, min(MAX_LIFT, value))
+        base_background = max(background_rate.get(trait, SMOOTHING), SMOOTHING)
+        base_rejected = max(rejected_rate.get(trait, 0.0) + SMOOTHING, SMOOTHING)
+        base = ((1 - reject_pull) * base_background + reject_pull * base_rejected)
+        lift[trait] = max(-MAX_LIFT, min(MAX_LIFT, math.log(favored / base)))
 
     return {
         "count": count,
@@ -180,8 +227,19 @@ def profile(favorites: list, background: list | None = None,
         "dimension_weights": dimension_weights,
         "lift": lift,
         "labels": labels,
-        "confidence": count / (count + CONFIDENCE_HALF),
+        "reject_mean": reject_mean,
+        "reject_spread": reject_spread,
+        "reject_count": len(rejections),
+        # הביטחון גדל גם מדחיות: כל תיוג הוא דוגמה, לאיזה כיוון שלא יהיה
+        "confidence": (count + len(rejections)) / (count + len(rejections) + CONFIDENCE_HALF),
     }
+
+
+def _similarity(normalized: dict, mean: dict, spread: dict,
+                dimension_weights: dict) -> float:
+    distance = sum(dimension_weights[d] * (normalized[d] - mean[d]) ** 2
+                   / (2 * spread[d] ** 2) for d in DIMENSIONS)
+    return math.exp(-distance)
 
 
 def match(track: dict, features: dict | None, learned: dict) -> float:
@@ -192,11 +250,16 @@ def match(track: dict, features: dict | None, learned: dict) -> float:
     mean = learned.get("mean") or {}
     normalized = audio.normalized(features)
     if normalized and mean:
-        spread = learned["spread"]
         dimension_weights = learned["dimension_weights"]
-        distance = sum(dimension_weights[d] * (normalized[d] - mean[d]) ** 2
-                       / (2 * spread[d] ** 2) for d in DIMENSIONS)
-        audio_match = math.exp(-distance)
+        audio_match = _similarity(normalized, mean, learned["spread"],
+                                  dimension_weights)
+        reject_mean = learned.get("reject_mean") or {}
+        if reject_mean:
+            # קרבה לדחויים גורעת: טראק שיושב בדיוק בין השניים אינו "חצי
+            # מתאים", הוא חשוד. זה מה שהופך מרכז כובד לכיוון
+            away = _similarity(normalized, reject_mean, learned["reject_spread"],
+                               dimension_weights)
+            audio_match = max(0.0, audio_match - REJECT_PENALTY * away)
     else:
         audio_match = NEUTRAL
 
@@ -249,6 +312,19 @@ def describe(learned: dict) -> str:
         label = _TRAIT_LABELS.get(kind, kind)
         parts.append(f"{label} {display.get(trait, name)}".strip())
 
-    if not parts:
-        return f"לומד מ-{learned['count']} לייקים — עדיין אין דפוס מובהק"
-    return f"לומד מ-{learned['count']} לייקים: " + " · ".join(parts[:5])
+    source = f"{learned['count']} לייקים"
+    if learned.get("reject_count"):
+        source += f" ו-{learned['reject_count']} דחיות"
+
+    avoided = [f"{_TRAIT_LABELS.get(t.partition(':')[0], '')} "
+               f"{display.get(t, t.partition(':')[2])}".strip()
+               for t, value in sorted((learned.get("lift") or {}).items(),
+                                      key=lambda item: item[1])[:2]
+               if value <= -0.4]
+
+    if not parts and not avoided:
+        return f"לומד מ-{source} — עדיין אין דפוס מובהק"
+    text = f"לומד מ-{source}: " + " · ".join(parts[:5])
+    if avoided:
+        text += " · נמנע מ: " + " · ".join(avoided)
+    return text

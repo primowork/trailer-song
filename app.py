@@ -104,6 +104,7 @@ def _init_state():
         "blacklist": storage.load_blacklist(),
         "cache": storage.load_cache(),
         "favorites": storage.load_favorites(),
+        "rejections": storage.load_rejections(),
         "candidates": [],
         "seen_keys": set(),
         "visible_count": PAGE_SIZE,
@@ -156,27 +157,52 @@ def is_favorite(track: dict) -> bool:
     return track_key(track.get("artist", ""), track.get("track", "")) in st.session_state["favorites"]
 
 
+def is_rejected(track: dict) -> bool:
+    return track_key(track.get("artist", ""), track.get("track", "")) in st.session_state["rejections"]
+
+
+def _snapshot(track: dict) -> dict:
+    features = st.session_state["bigness"].get(track["uid"])
+    return {
+        **{field: track.get(field) for field in FAVORITE_FIELDS},
+        # המדידה נשמרת ברגע התיוג כדי שהלמידה לא תהיה תלויה בכך שהטראק יימדד
+        # שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
+        "features": features if audio.measured(features) else None,
+        "added_at": time.time(),
+    }
+
+
 def toggle_favorite(track: dict):
-    """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון של `taste`."""
-    favorites = st.session_state["favorites"]
+    """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון החיובי."""
+    favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
     key = track_key(track.get("artist", ""), track.get("track", ""))
     if key in favorites:
         favorites.pop(key)
     else:
-        features = st.session_state["bigness"].get(track["uid"])
-        favorites[key] = {
-            **{field: track.get(field) for field in FAVORITE_FIELDS},
-            # המדידה נשמרת ברגע הלייק כדי שהלמידה לא תהיה תלויה בכך שהטראק
-            # יימדד שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
-            "features": features if audio.measured(features) else None,
-            "added_at": time.time(),
-        }
+        favorites[key] = _snapshot(track)
+        # אותו טראק לא יכול להיות גם אהוב וגם דחוי
+        if rejections.pop(key, None) is not None:
+            storage.save_rejections(rejections)
     storage.save_favorites(favorites)
+
+
+def toggle_rejection(track: dict):
+    """מסמן "לא זה". דוגמאות שליליות הן שנותנות ללמידה כיוון ולא רק מרכז."""
+    favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
+    key = track_key(track.get("artist", ""), track.get("track", ""))
+    if key in rejections:
+        rejections.pop(key)
+    else:
+        rejections[key] = _snapshot(track)
+        if favorites.pop(key, None) is not None:
+            storage.save_favorites(favorites)
+    storage.save_rejections(rejections)
 
 
 def taste_profile(background: list[dict] | None = None) -> dict:
     """הפרופיל הנלמד. הרקע הוא פול התוצאות המוצג, ובלעדיו זה מונה שכיחות."""
-    return taste.profile(list(st.session_state["favorites"].values()), background)
+    return taste.profile(list(st.session_state["favorites"].values()), background,
+                         rejections=list(st.session_state["rejections"].values()))
 
 
 def taste_of(track: dict, learned: dict) -> float:
@@ -379,6 +405,16 @@ with st.sidebar:
                                      if chart["title"] != to_remove})
                 st.rerun()
 
+    # הדחיות אינן פלייליסט ולכן אינן מוצגות כרשימה — הן רק מלמדות
+    if st.session_state["rejections"]:
+        with st.expander(f"👎 סימנת 'לא זה' ({len(st.session_state['rejections'])})"):
+            st.caption("הדחיות אינן מוסתרות מהתוצאות — הן רק מלמדות את הדירוג "
+                       "להתרחק מהסגנון הזה. להסתרה מלאה יש 🚫 חסום אמן.")
+            if st.button("🗑️ נקה דחיות"):
+                st.session_state["rejections"] = {}
+                storage.save_rejections({})
+                st.rerun()
+
     # החסימה עצמה נשארת פעילה; רק התצוגה שלה ירדה מהחזית לטובת הפלייליסט
     with st.expander(f"🚫 רשימה שחורה ({len(st.session_state['blacklist'])})"):
         blacklist = sorted(st.session_state["blacklist"])
@@ -531,17 +567,25 @@ def render_track(track: dict, index: int, learned: dict | None = None):
     status = status_of(track)
     duration_min = round(track.get("duration_sec", 0) / 60, 1)
 
-    cols = st.columns([0.5, 0.6, 3, 3, 2.2, 1.5, 1.2])
-    (col_check, col_heart, col_title, col_audio, col_status,
+    cols = st.columns([0.5, 0.6, 0.6, 3, 3, 2.2, 1.5, 1.2])
+    (col_check, col_heart, col_down, col_title, col_audio, col_status,
      col_btn_check, col_btn_block) = cols
 
     selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
 
-    favorited = is_favorite(track)
+    favorited, rejected = is_favorite(track), is_rejected(track)
     if col_heart.button("❤️" if favorited else "🤍", key=f"btn_favorite_{uid}",
                         help="הסר מהפלייליסט" if favorited else
                              "שמור לפלייליסט — והדירוג ילמד מזה מה אתה אוהב"):
         toggle_favorite(track)
+        st.rerun()
+    # דוגמה שלילית שווה יותר מדוגמה חיובית נוספת: היא נותנת ללמידה כיוון,
+    # בעוד שעוד לייק רק מהדק מרכז כובד שכבר ידוע
+    if col_down.button("👎", key=f"btn_reject_{uid}",
+                       type="primary" if rejected else "secondary",
+                       help="בטל את הסימון" if rejected else
+                            "לא זה — הדירוג ילמד להתרחק מסגנון כזה"):
+        toggle_rejection(track)
         st.rerun()
 
     with col_title:
