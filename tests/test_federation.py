@@ -392,6 +392,26 @@ def test_diagnose_separates_tcp_from_http():
     assert "נכשל" in report["dns"]
 
 
+def test_reachable_and_diagnose_share_the_tcp_check(monkeypatch):
+    """שתי נקודות הכניסה (שקטה וידנית) חייבות להסכים — הן קוראות לאותו קוד."""
+    import socket as socket_module
+    calls = []
+
+    def fake_connect(address, timeout=None):
+        calls.append(address)
+        raise ConnectionRefusedError("boom")
+
+    monkeypatch.setattr(socket_module, "create_connection", fake_connect)
+    monkeypatch.setattr(federation, "PROXY", "")
+
+    assert federation.reachable("https://example.com/x", timeout=1) is False
+    report = federation.diagnose("https://example.com/x")
+    assert "נכשל" in report["tcp"]
+    assert "boom" in report["tcp"]
+    # שתי הקריאות פנו לאותו host/port דרך אותה פונקציית בדיקה משותפת
+    assert all(addr == ("example.com", 443) for addr in calls)
+
+
 # ---------- מסלול ידני דרך הדפדפן (האתר חוסם את השרת) ----------
 
 def test_learning_fields_from_a_real_form():

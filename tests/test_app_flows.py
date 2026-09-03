@@ -46,7 +46,8 @@ def test_the_page_renders(app):
 def test_greatest_artist_click_fills_the_field_and_searches(app, monkeypatch):
     monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yesterday"])
     monkeypatch.setattr(covers, "find_epic_versions",
-                        lambda title, artist="", limit=12: ([track("Epic", f"{title} (Epic)", "e1")], "src"))
+                        lambda title, artist="", limit=12, filters=None, prefer_new=False, min_year=0:
+                            ([track("Epic", f"{title} (Epic)", "e1")], "src"))
 
     # האינדקס נפתח על המצעד החי; רשימת בילבורד היא המקור השני
     source = app.radio(key="index_source")
@@ -78,7 +79,9 @@ def test_more_like_this_replaces_the_list(app, monkeypatch):
     app.run()
 
     monkeypatch.setattr(covers, "find_epic_versions",
-                        lambda title, artist="", limit=40: ([track("Other", f"{title} (Cinematic)", "o1")], "src"))
+                        lambda title, artist="", limit=40, filters=None, prefer_new=False, min_year=0:
+                            ([track("Other", f"{title} (Cinematic)", "o1")], "src"))
+    monkeypatch.setattr(covers, "find_covers", lambda *a, **k: ([], "", None))
     app.button(key="more_covers_itunes-e1").click().run()
 
     assert not app.exception

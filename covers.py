@@ -254,8 +254,9 @@ def pick_original(versions: list[dict], artist: str = "") -> dict | None:
     return pool[0]
 
 
-def find_epic_versions(title: str, artist: str = "",
-                       limit: int = 60) -> tuple[list[dict], str]:
+def find_epic_versions(title: str, artist: str = "", limit: int = 60,
+                       filters: dict | None = None, prefer_new: bool = False,
+                       min_year: int = 0) -> tuple[list[dict], str]:
     """גרסאות שמציגות את עצמן כטריילר אפי, ישירות מהחנויות.
 
     לשונית הקאברים מושכת את *כל* הגרסאות של היצירה מהמאגר, ולכן היא מחזירה
@@ -264,7 +265,8 @@ def find_epic_versions(title: str, artist: str = "",
     """
     clean = clean_track_title(title) or title
     results = search_module.search_covers(
-        clean, origin_artist=artist, include_seeds=True, prefer_new=False,
+        clean, filters=filters, origin_artist=artist, include_seeds=True,
+        prefer_new=prefer_new, min_year=min_year,
         extra_modifiers=search_module.EPIC_SEARCH_MODIFIERS)
 
     # לא לכלול את הביצוע המקורי עצמו
@@ -358,6 +360,51 @@ def find_covers(title: str, artist: str = "",
     return unique, source_used, original
 
 
+def find_all_covers(title: str, artist: str = "", filters: dict | None = None,
+                    prefer_new: bool = False, min_year: int = 0, work_id: str = "",
+                    limit: int = 80) -> tuple[list[dict], str, dict | None]:
+    """קאברים לשיר, ממוזגים ממאגר הגרסאות הרשמי וממחיפוש בחנויות כאחד.
+
+    `find_covers` (SecondHandSongs/MusicBrainz) ו-`find_epic_versions` (חיפוש
+    בחנויות) עונות בפועל על אותה שאלה — "קאברים לשיר הזה, בעדיפות לאפיים" —
+    ממקורות משלימים. מריצים את שתיהן במקביל ומאחדים, במקום לאלץ את המשתמש
+    לבחור מראש איזה מקור ישרת אותו טוב יותר.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        catalog_future = pool.submit(find_covers, title, artist, limit=limit, work_id=work_id)
+        store_future = pool.submit(find_epic_versions, title, artist, limit=limit,
+                                   filters=filters, prefer_new=prefer_new, min_year=min_year)
+        catalog_results, catalog_source, original = catalog_future.result()
+        store_results, store_source = store_future.result()
+
+    for track in catalog_results:
+        track.setdefault("catalog_source", catalog_source)
+        track["trailer_indicator"] = is_trailer_indicator(track)
+    for track in store_results:
+        track.setdefault("catalog_source", store_source)
+
+    merged = search_module.dedupe(catalog_results + store_results)
+    if min_year or (filters or {}).get("length"):
+        merged = [t for t in merged
+                 if search_module.passes_length_filter(t.get("duration_sec", 0),
+                                                        (filters or {}).get("length"))
+                 and (not min_year or not search_module.release_year(t)
+                      or search_module.release_year(t) >= min_year)]
+    merged.sort(key=lambda t: (t.get("trailer_indicator", False), t.get("score", 0)), reverse=True)
+
+    # אותו טראק יכול לחזור עם uid-ים שונים משני המקורות. הממשק בונה מפתחות
+    # widget מה-uid, וכפילות מפילה את העמוד כולו.
+    unique, seen = [], set()
+    for track in merged:
+        if track["uid"] in seen:
+            continue
+        seen.add(track["uid"])
+        unique.append(track)
+
+    sources = [s for s in (catalog_source, store_source) if s]
+    return unique[:limit], " + ".join(sources), original
+
+
 # ---------- חיפוש לפי אמן ----------
 
 ARTIST_MATCH_THRESHOLD = 88   # קרבת שם האמן שנחשבת "אותו אמן"
@@ -391,7 +438,9 @@ def artist_top_titles(artist: str, limit: int = ARTIST_TOP_TITLES) -> list[str]:
     return [entry["title"] for entry in ranked[:limit]]
 
 
-def find_artist_covers(artist: str, limit: int = 80) -> tuple[list[dict], str, list[str]]:
+def find_artist_covers(artist: str, limit: int = 80, filters: dict | None = None,
+                       prefer_new: bool = False, min_year: int = 0
+                       ) -> tuple[list[dict], str, list[str]]:
     """הקאברים הגדולים לשירים של אמן מסוים.
 
     מחזיר (תוצאות, מקור, השירים שנסרקו). כל תוצאה מתויגת ב-`origin_track` כדי
@@ -403,7 +452,9 @@ def find_artist_covers(artist: str, limit: int = 80) -> tuple[list[dict], str, l
         return [], "", []
 
     def covers_for(title: str) -> list[dict]:
-        found, _ = find_epic_versions(title, artist, limit=ARTIST_PER_TITLE)
+        found, _ = find_epic_versions(title, artist, limit=ARTIST_PER_TITLE,
+                                      filters=filters, prefer_new=prefer_new,
+                                      min_year=min_year)
         for track in found:
             track["origin_track"] = title
         return found
@@ -442,7 +493,7 @@ def more_covers_of(track: dict, limit: int = SIMILAR_LIMIT) -> tuple[list[dict],
     title = track.get("origin_track") or clean_track_title(track.get("track", ""))
     if not title.strip():
         return [], ""
-    found, source = find_epic_versions(title, limit=limit)
+    found, source, _ = find_all_covers(title, limit=limit)
     found = [t for t in found if t.get("uid") != track.get("uid")]
     for item in found:
         item["origin_track"] = title
