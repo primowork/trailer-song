@@ -1,8 +1,10 @@
+import collections
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import chart_data
 import classics
 
 GENRE_LISTS = (classics.POP_CLASSICS, classics.ROCK_CLASSICS, classics.BLUES_CLASSICS)
@@ -52,16 +54,54 @@ def test_a_decade_category_contains_only_that_decade():
         assert max(years) <= first + 9
 
 
-def test_the_decades_together_cover_everything():
-    decades = [label for label in classics.CATEGORIES if label.endswith("'s")]
-    covered = {(e["artist"], e["track"])
-               for label in decades for e in classics.CATEGORIES[label]}
-    assert covered == {(e["artist"], e["track"]) for e in classics.ALL_CLASSICS}
+def test_every_decade_comes_from_the_chart_data():
+    """העשורים 60–2010 הם נתוני מצעד, לא הרשימות האצורות."""
+    for label in ("60's", "70's", "80's", "90's", "2000's", "2010's"):
+        assert classics.CATEGORIES[label] is chart_data.DECADE_HITS[label]
+
+
+def test_the_fifties_bridge_the_gap_before_the_hot_100():
+    """ה-Hot 100 מתחיל באוגוסט 1958 — לפני כן רק הרשימות האצורות."""
+    years = [e["year"] for e in classics.CATEGORIES["50's"]]
+    assert min(years) < 1958, "חסרות השנים שלפני תחילת המצעד"
+    assert max(years) >= 1958, "חסרים נתוני המצעד עצמו"
 
 
 def test_derived_categories_are_subsets_of_their_source():
     assert set(map(id, classics.CATEGORIES["🎤 פופ קלאסי"])) <= set(map(id, classics.POP_CLASSICS))
     assert set(map(id, classics.CATEGORIES["🎸 רוק קלאסי"])) <= set(map(id, classics.ROCK_CLASSICS))
+
+
+# ---------- תקרת חזרתיות ----------
+
+def test_no_artist_repeats_more_than_twice_in_any_category():
+    """התלונה שהובילה לשינוי: 53%–64% מהשירים היו של אמנים חוזרים."""
+    for name, entries in classics.CATEGORIES.items():
+        counts = collections.Counter(e["artist"].casefold() for e in entries)
+        artist, most = counts.most_common(1)[0]
+        assert most <= 2, f"{name}: {artist} מופיע {most} פעמים"
+
+
+def test_cap_by_artist_keeps_the_first_entries_in_order():
+    sample = ({"artist": "A", "track": "1", "year": 1970},
+              {"artist": "B", "track": "2", "year": 1971},
+              {"artist": "a", "track": "3", "year": 1972},
+              {"artist": "A", "track": "4", "year": 1973})
+    kept = classics.cap_by_artist(sample, limit=2)
+    assert [e["track"] for e in kept] == ["1", "2", "3"]
+
+
+def test_cap_by_artist_is_a_display_filter_not_a_deletion():
+    """השיר נשאר בקוד — רק לא נדחס לאותה קטגוריה."""
+    capped = {(e["artist"], e["track"]) for e in classics.CATEGORIES["🎸 רוק"]}
+    everything = {(e["artist"], e["track"]) for e in classics.ROCK_CLASSICS}
+    assert capped < everything
+
+
+def test_no_song_appears_twice_inside_one_category():
+    for name, entries in classics.CATEGORIES.items():
+        keys = [(e["artist"].casefold(), e["track"].casefold()) for e in entries]
+        assert len(keys) == len(set(keys)), f"כפילות בקטגוריה {name}"
 
 
 def test_oldies_is_fifties_and_sixties_across_all_genres():

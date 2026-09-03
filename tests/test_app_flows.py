@@ -73,8 +73,7 @@ def test_greatest_artist_click_shows_a_preview_before_searching(app, monkeypatch
     # האינדקס נפתח על המצעד החי; רשימת בילבורד היא המקור השני
     source = app.radio(key="index_source")
     source.set_value(source.options[1]).run()
-    first = artists.GREATEST_ARTISTS[0]
-    app.button(key=f"goat_0_{first[:30]}").click().run()
+    app.button(key="goat_0").click().run()
 
     assert not app.exception
     assert app.session_state["cover_artist"] == artists.GREATEST_ARTISTS[0]
@@ -101,8 +100,7 @@ def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
 
     source = app.radio(key="index_source")
     source.set_value(source.options[1]).run()
-    first = artists.GREATEST_ARTISTS[0]
-    app.button(key=f"goat_0_{first[:30]}").click().run()
+    app.button(key="goat_0").click().run()
 
     preview_button = [b for b in app.button
                      if (b.key or "").startswith("artist_preview_")][0]
@@ -168,7 +166,7 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     app = AppTest.from_file(APP, default_timeout=120).run()
     source = app.radio(key="index_source")
     source.set_value(source.options[-1]).run()
-    app.button(key="imp_hot-100_0_Umbrella").click().run()
+    app.button(key="imp_hot-100_0").click().run()
 
     assert not app.exception
     assert app.session_state["cover_title"] == "Umbrella"
@@ -402,6 +400,25 @@ def test_blues_category_is_reachable(app):
     assert not app.exception
     labels = " ".join(b.label for b in app.button if (b.key or "").startswith("classic_"))
     assert "Muddy Waters" in labels
+
+
+def test_every_category_renders_without_a_repeating_artist(app):
+    """התלונה: "שירים לא מוכרים וחוזרים על עצמם" — התקרה חייבת להחזיק בממשק."""
+    import collections
+
+    import classics
+
+    picker = app.selectbox(key="classics_category")
+    for label in classics.CATEGORIES:
+        picker.set_value(label).run()
+        assert not app.exception, label
+
+        buttons = [b for b in app.button if (b.key or "").startswith("classic_")]
+        assert buttons, f"קטגוריה ריקה בממשק: {label}"
+
+        artists = collections.Counter(
+            (b.help or b.label).split(" — ")[-1] for b in buttons)
+        assert artists.most_common(1)[0][1] <= 2, f"{label}: {artists.most_common(1)}"
 
 
 def test_a_saved_version_is_clickable_and_searches_for_it_again(app, monkeypatch):

@@ -6,9 +6,14 @@
 `artists.GREATEST_ARTISTS` — ולא נשלפות מ-API חי, כדי שיהיו יציבות,
 מוכרות וזמינות בלי תלות ברשת.
 
+קטגוריות העשורים מגיעות מ-`chart_data` — נתוני Billboard Hot 100
+היסטוריים, שם ההיכרות נמדדת מהופעות בפועל במצעד ולא מהזיכרון. הרשימות
+כאן משרתות את קטגוריות הז'אנר, שאין להן מקבילה במצעד.
+
 כל רשומה: {"artist": ..., "track": ..., "year": ...}. השנה היא הערכה
 (שנת יציאה/שיא הצלחה) ומיועדת להצגה בלבד, לא לדיוק ארכיוני.
 """
+import chart_data
 
 POP_CLASSICS: tuple[dict, ...] = (
     # 1950s
@@ -550,9 +555,10 @@ BLUES_CLASSICS: tuple[dict, ...] = (
 
 # ---------- קטגוריות ----------
 
-# העשורים והקטגוריות ה"קלאסיות" אינן רשימות נפרדות אלא חתכים של אותם נתונים:
-# לכל רשומה יש `year`, ולכן "אולדיס" או "80's" הם סינון ולא תחזוקה כפולה.
-# רק ז'אנר חדש דורש רשימה חדשה.
+# קטגוריות העשורים מגיעות מנתוני מצעד אמיתיים (`chart_data.DECADE_HITS`,
+# נוצר מ-Billboard Hot 100 ההיסטורי) ולא מהרשימות האצורות כאן: לרשימה
+# שנכתבה מהזיכרון אין מדד ל"כמה השיר מוכר", וזו הייתה התלונה. הז'אנרים
+# נשארים אצורים — ל-Hot 100 אין שדה ז'אנר, ובלוז כמעט לא מצעד בו.
 ALL_CLASSICS: tuple[dict, ...] = POP_CLASSICS + ROCK_CLASSICS + BLUES_CLASSICS
 
 
@@ -560,21 +566,44 @@ def in_years(entries: tuple, first: int, last: int) -> tuple:
     return tuple(entry for entry in entries if first <= entry["year"] <= last)
 
 
+def cap_by_artist(entries: tuple, limit: int = 2) -> tuple:
+    """לכל היותר `limit` שירים לאמן, בשמירה על סדר הקלט.
+
+    בלי זה 53%–64% מהשירים בכל רשימת ז'אנר שייכים לאמנים שחוזרים בה —
+    חמישה שירים של Led Zeppelin ברוק, חמישה של Whitney Houston בפופ.
+    זה סינון תצוגה: השיר נשאר בקוד, פשוט לא נדחס לאותה קטגוריה.
+    """
+    kept, seen = [], {}
+    for entry in entries:
+        name = entry["artist"].strip().casefold()
+        if seen.get(name, 0) >= limit:
+            continue
+        seen[name] = seen.get(name, 0) + 1
+        kept.append(entry)
+    return tuple(kept)
+
+
 # הגבולות אינם שרירותיים אלא פורמטי רדיו מקובלים: "אולדיס" הוא 50s–60s,
 # "רוק קלאסי" הוא הרוק שבין הפלישה הבריטית לגראנג', ו"פופ קלאסי" הוא הפופ
 # שלפני עידן ה-CD. מי שרוצה חתך אחר יכול לבחור עשור ישירות.
+#
+# ה-Hot 100 מתחיל באוגוסט 1958, ולכן 1950–1957 מגיעות מהרשימות האצורות
+# ומשלימות את עשור ה-50 ואת "אולדיס".
+_PRE_HOT100 = in_years(ALL_CLASSICS, 1950, 1957)
+
 CATEGORIES: dict[str, tuple] = {
-    "🎤 פופ": POP_CLASSICS,
-    "🎸 רוק": ROCK_CLASSICS,
-    "🎺 בלוז": BLUES_CLASSICS,
-    "🎤 פופ קלאסי": in_years(POP_CLASSICS, 1950, 1989),
-    "🎸 רוק קלאסי": in_years(ROCK_CLASSICS, 1965, 1995),
-    "📻 אולדיס": in_years(ALL_CLASSICS, 1950, 1969),
-    "50's": in_years(ALL_CLASSICS, 1950, 1959),
-    "60's": in_years(ALL_CLASSICS, 1960, 1969),
-    "70's": in_years(ALL_CLASSICS, 1970, 1979),
-    "80's": in_years(ALL_CLASSICS, 1980, 1989),
-    "90's": in_years(ALL_CLASSICS, 1990, 1999),
-    "2000's": in_years(ALL_CLASSICS, 2000, 2009),
-    "2010's": in_years(ALL_CLASSICS, 2010, 2020),
+    "🎤 פופ": cap_by_artist(POP_CLASSICS),
+    "🎸 רוק": cap_by_artist(ROCK_CLASSICS),
+    "🎺 בלוז": cap_by_artist(BLUES_CLASSICS),
+    "🎤 פופ קלאסי": cap_by_artist(in_years(POP_CLASSICS, 1950, 1989)),
+    "🎸 רוק קלאסי": cap_by_artist(in_years(ROCK_CLASSICS, 1965, 1995)),
+    "📻 אולדיס": cap_by_artist(
+        _PRE_HOT100 + chart_data.DECADE_HITS["50's"] + chart_data.DECADE_HITS["60's"]),
+    "50's": cap_by_artist(_PRE_HOT100 + chart_data.DECADE_HITS["50's"]),
+    "60's": chart_data.DECADE_HITS["60's"],
+    "70's": chart_data.DECADE_HITS["70's"],
+    "80's": chart_data.DECADE_HITS["80's"],
+    "90's": chart_data.DECADE_HITS["90's"],
+    "2000's": chart_data.DECADE_HITS["2000's"],
+    "2010's": chart_data.DECADE_HITS["2010's"],
 }
