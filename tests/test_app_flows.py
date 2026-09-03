@@ -107,8 +107,9 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     # מאפשרויות מקור האינדקס שאפשר לבחור
     monkeypatch.setattr(storage, "load_charts", lambda: imported)
     monkeypatch.setattr(covers, "find_epic_versions",
-                        lambda title, artist="", limit=60: (
+                        lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0: (
                             [track("Epic", f"{title} (Epic Trailer Version)", "e1")], "src"))
+    monkeypatch.setattr(covers, "find_covers", lambda *a, **k: ([], "", None))
 
     app = AppTest.from_file(APP, default_timeout=120).run()
     source = app.radio(key="index_source")
@@ -118,4 +119,73 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     assert not app.exception
     assert app.session_state["cover_title"] == "Umbrella"
     assert app.session_state["cover_artist"] == "Rihanna"
+    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
     assert app.session_state["candidates"]
+
+
+def test_search_mode_radio_has_three_options(app):
+    modes = app.radio(key="search_mode")
+    assert modes.options == ["🎬 קאברים לשיר", "🎤 קאברים לאמן", "🔎 חיפוש חופשי + פילטרים"]
+
+
+def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
+    called = {}
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda *a, **k: (called.setdefault("hit", True) and
+                                        [track("X", "Y", "y1")], "src", None))
+    app.text_input(key="cover_title").set_value("Yellow").run()
+    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button.click().run()
+
+    assert not app.exception
+    assert called.get("hit")
+    assert app.session_state["candidates"][0]["uid"] == "itunes-y1"
+
+
+def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
+    called = {}
+    monkeypatch.setattr(covers, "find_artist_covers",
+                        lambda *a, **k: (called.setdefault("hit", True) and
+                                        [track("X", "Y", "y2")], "src", ["Y"]))
+    modes = app.radio(key="search_mode")
+    modes.set_value("🎤 קאברים לאמן").run()
+    app.text_input(key="cover_artist").set_value("Coldplay").run()
+    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button.click().run()
+
+    assert not app.exception
+    assert called.get("hit")
+    assert app.session_state["candidates"][0]["uid"] == "itunes-y2"
+
+
+def test_free_mode_dispatches_to_search_covers(app, monkeypatch):
+    called = {}
+    monkeypatch.setattr(search_module, "search_covers",
+                        lambda *a, **k: called.setdefault("hit", True) and
+                                        [track("X", "Y", "y3")])
+    modes = app.radio(key="search_mode")
+    modes.set_value("🔎 חיפוש חופשי + פילטרים").run()
+    app.text_input(key="cover_title").set_value("Yellow").run()
+    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button.click().run()
+
+    assert not app.exception
+    assert called.get("hit")
+    assert app.session_state["candidates"][0]["uid"] == "itunes-y3"
+
+
+def test_filters_thread_through_to_song_mode(app, monkeypatch):
+    """לפני האיחוד רק החיפוש החופשי כיבד את הפילטרים; עכשיו כולם."""
+    seen = {}
+
+    def fake(title, artist="", filters=None, prefer_new=False, min_year=0, work_id="", limit=80):
+        seen["filters"] = filters
+        return [], "", None
+
+    monkeypatch.setattr(covers, "find_all_covers", fake)
+    app.text_input(key="cover_title").set_value("Yellow").run()
+    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button.click().run()
+
+    assert not app.exception
+    assert seen["filters"] is not None
