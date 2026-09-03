@@ -118,3 +118,50 @@ def test_in_years_is_inclusive_on_both_ends():
               {"artist": "b", "track": "u", "year": 1979},
               {"artist": "c", "track": "v", "year": 1980})
     assert len(classics.in_years(sample, 1970, 1979)) == 2
+
+
+# ---------- בריכת ההגרלה ----------
+
+def test_the_famous_pool_is_a_reasonable_size():
+    pool = classics.famous_pool()
+    assert 400 <= len(pool) <= 900
+
+
+def test_the_famous_pool_has_no_duplicates():
+    keys = [(e["artist"].casefold(), e["track"].casefold()) for e in classics.famous_pool()]
+    assert len(keys) == len(set(keys))
+
+
+def test_famous_pool_entries_have_the_expected_shape():
+    for entry in classics.famous_pool():
+        assert entry["artist"].strip()
+        assert entry["track"].strip()
+        assert 1950 <= entry["year"] <= 2020
+
+
+def test_the_famous_pool_takes_only_the_top_of_each_decade():
+    """הרשימות ב-`chart_data` מדורגות לפי המצעד, ולכן "הראשונים" = המוכרים."""
+    pool = {(e["artist"], e["track"]) for e in classics.famous_pool()}
+    for decade in chart_data.DECADE_HITS.values():
+        head = decade[:classics.FAMOUS_PER_DECADE]
+        tail = decade[classics.FAMOUS_PER_DECADE:]
+        assert all((e["artist"], e["track"]) in pool for e in head)
+        # הזנב יכול להופיע רק אם הוא ממילא ברשימות האצורות
+        curated = {(e["artist"], e["track"])
+                   for e in classics.POP_CLASSICS + classics.ROCK_CLASSICS}
+        assert all((e["artist"], e["track"]) not in pool
+                   for e in tail if (e["artist"], e["track"]) not in curated)
+
+
+def test_blues_is_not_a_source_for_the_pool():
+    """הבקשה היא שיר שסביר שיש לו קאבר. שיר בלוז שגם היה להיט במצעד נשאר —
+    מה שנפסל הוא הרשימה כמקור."""
+    pool = {(e["artist"], e["track"]) for e in classics.famous_pool()}
+    charted = {(e["artist"], e["track"])
+               for decade in chart_data.DECADE_HITS.values() for e in decade}
+    curated = {(e["artist"], e["track"])
+               for e in classics.POP_CLASSICS + classics.ROCK_CLASSICS}
+    blues_only = [(e["artist"], e["track"]) for e in classics.BLUES_CLASSICS
+                  if (e["artist"], e["track"]) not in charted | curated]
+    assert blues_only, "הבדיקה חסרת משמעות אם כל הבלוז ממילא מופיע במקומות אחרים"
+    assert not [k for k in blues_only if k in pool]

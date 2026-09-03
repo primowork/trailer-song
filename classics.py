@@ -607,3 +607,34 @@ CATEGORIES: dict[str, tuple] = {
     "2000's": chart_data.DECADE_HITS["2000's"],
     "2010's": chart_data.DECADE_HITS["2010's"],
 }
+
+
+# ---------- בריכת ההגרלה ----------
+
+# כמה שירים לקחת מראש כל עשור. הרשימות ב-`chart_data` כבר מדורגות לפי
+# ביצועים בפועל במצעד, ולכן "הראשונים" פירושו פשוט המוכרים ביותר.
+FAMOUS_PER_DECADE = 40
+
+
+def famous_pool() -> tuple[dict, ...]:
+    """שירים מוכרים דיים שסביר שקיימות להם גרסאות קאבר — לכפתור ההגרלה.
+
+    נבנית ממה שכבר קיים ולא מרשימה נוספת לתחזק: ראשי כל עשור מנתוני
+    המצעד, ועל גביהם רשימות הפופ והרוק האצורות. **בלוז לא נכנס** — הבקשה
+    היא שיר שסביר שיש לו קאבר, ולתקליטי הבלוז שברשימה יש הרבה פחות
+    גרסאות כאלה מאשר ללהיטי הפופ והרוק.
+    """
+    entries: list[dict] = []
+    for decade in chart_data.DECADE_HITS.values():
+        entries.extend(decade[:FAMOUS_PER_DECADE])
+    entries.extend(cap_by_artist(POP_CLASSICS))
+    entries.extend(cap_by_artist(ROCK_CLASSICS))
+
+    unique, seen = [], set()
+    for entry in entries:
+        key = (entry["artist"].strip().casefold(), entry["track"].strip().casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(entry)
+    return tuple(unique)
