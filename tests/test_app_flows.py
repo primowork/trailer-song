@@ -40,6 +40,30 @@ def test_the_page_renders(app):
     assert not app.exception
 
 
+def _page_css(app) -> str:
+    return " ".join(m.value for m in app.markdown if "<style>" in (m.value or ""))
+
+
+def test_the_root_stays_ltr_below_the_mobile_breakpoint(app):
+    """`direction: rtl` על השורש שבר את קיפול הסרגל בטלפון.
+
+    Streamlit מסתיר את הסרגל בנייד עם `translateX` שלילי. כיווניות הפוכה על
+    `stAppViewContainer` הפכה את ההזזה: הסרגל נשאר על המסך, נמעך לכ-50px,
+    וחפף לתוכן — האפליקציה הייתה בלתי שמישה בטלפון. הכיווניות על השורש
+    חייבת להישאר מאחורי media query של דסקטופ.
+    """
+    css = _page_css(app)
+    assert '[data-testid="stMain"] { direction: rtl; }' in css
+
+    before_root_rule = css.split('[data-testid="stAppViewContainer"]')[0]
+    assert "@media (min-width: 768px)" in before_root_rule
+
+
+def test_the_content_column_is_capped_so_it_does_not_stretch(app):
+    """ב-layout="wide" הטופס נמתח על פני 1400px ומפזר את העין."""
+    assert "max-width: 1180px" in _page_css(app)
+
+
 def test_classics_is_the_default_index_source_and_needs_no_network(app):
     # אין כאן שום monkeypatch לרשת — קלאסיקות היא רשימה סטטית
     assert app.radio(key="index_source").value.startswith("🎻 קלאסיקות")
@@ -258,6 +282,25 @@ def test_heart_saves_to_the_playlist_and_persists(app):
     saved = list(app.session_state["favorites"].values())[0]
     assert saved["artist"] == "2WEI"
     assert saved["track"] == "Zombie (Epic)"
+
+
+def test_a_result_is_one_card_and_not_a_row_of_eight_columns(app):
+    """Streamlit לא מכווץ עמודות בטלפון אלא עורם אותן לרוחב מלא.
+
+    שורת התוצאה הייתה בנויה משמונה עמודות, ולכן כל תוצאה הפכה בטלפון
+    לשמונה בלוקים נפרדים — עשרים תוצאות היו 160 בלוקים. הבדיקה סופרת את
+    העמודות שכל תוצאה מוסיפה בפועל, ולא את מראה העמוד.
+    """
+    app.session_state["candidates"] = [track("2WEI", "One", "u1")]
+    app.run()
+    one = len(app.columns)
+
+    app.session_state["candidates"] = [track("2WEI", f"T{i}", f"u{i}") for i in range(4)]
+    app.run()
+    four = len(app.columns)
+
+    assert not app.exception
+    assert (four - one) / 3 <= 2, "תוצאה בודדת פורשת יותר משתי עמודות"
 
 
 def test_heart_toggles_off(app):

@@ -47,16 +47,42 @@ RECENCY_OPTIONS = {
 
 st.set_page_config(page_title="סורק קאברים - IFPI Israel", page_icon="🎵", layout="wide")
 
+# ה-RTL מוחל על אזור התוכן ועל הסרגל בנפרד, ולא על `stAppViewContainer`
+# שעוטף את שניהם. זה לא עניין של סגנון: בטלפון Streamlit מסתיר את הסרגל
+# בעזרת `translateX` שלילי, וכיווניות הפוכה על השורש הפכה את ההזזה — הסרגל
+# נשאר על המסך, נמעך לרוחב של כ-50px, וחפף לתוכן הראשי. זה מה שהפך את
+# האפליקציה לבלתי שמישה בטלפון.
+#
+# `max-width` על אזור התוכן הוא התיקון לצד השני: ב-`layout="wide"` הטופס
+# נמתח על פני 1400px ומפזר את העין. הרוחב הרחב עדיין משרת את הרשתות
+# (אינדקס המצעדים) שבאמת צריכות אותו.
 st.markdown(
     """
     <style>
-    [data-testid="stAppViewContainer"] { direction: rtl; }
-    [data-testid="stAppViewContainer"] p,
-    [data-testid="stAppViewContainer"] h1,
-    [data-testid="stAppViewContainer"] h2,
-    [data-testid="stAppViewContainer"] h3,
+    /* על מסך רחב הכיווניות חלה על השורש, כדי שהסרגל יישב מימין כמו שמצופה
+       בעברית. בטלפון היא נשארת מחוץ לשורש — ראו ההסבר מעל. */
+    @media (min-width: 768px) {
+        [data-testid="stAppViewContainer"] { direction: rtl; }
+    }
+    [data-testid="stMain"] { direction: rtl; }
+    [data-testid="stMain"] p,
+    [data-testid="stMain"] h1,
+    [data-testid="stMain"] h2,
+    [data-testid="stMain"] h3,
     [data-testid="stColumn"] { text-align: right; }
     [data-testid="stSidebar"] { direction: rtl; text-align: right; }
+
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1180px;
+        padding-top: 2.5rem;
+    }
+    @media (max-width: 640px) {
+        [data-testid="stMainBlockContainer"] {
+            padding: 1.25rem 0.9rem 3rem;
+        }
+        /* כותרת של 2.5rem גולשת לשלוש שורות במסך של 390px */
+        [data-testid="stMain"] h1 { font-size: 1.7rem; }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -587,26 +613,14 @@ def render_track(track: dict, index: int, learned: dict | None = None):
     status = status_of(track)
     duration_min = round(track.get("duration_sec", 0) / 60, 1)
 
-    cols = st.columns([0.5, 0.6, 0.6, 3, 3, 2.2, 1.5, 1.2])
-    (col_check, col_heart, col_down, col_title, col_audio, col_status,
-     col_btn_check, col_btn_block) = cols
-
-    selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
-
-    favorited, rejected = is_favorite(track), is_rejected(track)
-    if col_heart.button("❤️" if favorited else "🤍", key=f"btn_favorite_{uid}",
-                        help="הסר מהפלייליסט" if favorited else
-                             "שמור לפלייליסט — והדירוג ילמד מזה מה אתה אוהב"):
-        toggle_favorite(track)
-        st.rerun()
-    # דוגמה שלילית שווה יותר מדוגמה חיובית נוספת: היא נותנת ללמידה כיוון,
-    # בעוד שעוד לייק רק מהדק מרכז כובד שכבר ידוע
-    if col_down.button("👎", key=f"btn_reject_{uid}",
-                       type="primary" if rejected else "secondary",
-                       help="בטל את הסימון" if rejected else
-                            "לא זה — הדירוג ילמד להתרחק מסגנון כזה"):
-        toggle_rejection(track)
-        st.rerun()
+    # כרטיס אחד לכל תוצאה, ולא שורה של שמונה עמודות. Streamlit לא מכווץ
+    # עמודות בטלפון אלא **עורם** אותן לרוחב מלא, כך שכל תוצאה הפכה לשמונה
+    # בלוקים נפרדים — עשרים תוצאות היו 160 בלוקים, ומכאן "לא עובד בפלאפון".
+    # כאן התוכן זורם לרוחב הכרטיס, והפעולות יושבות בשורה אופקית אחת
+    # (`horizontal=True`) שנשברת לשורה נוספת במקום להיערם.
+    card = st.container(border=True)
+    with card:
+        col_title, col_side = st.columns([3, 2], vertical_alignment="top")
 
     with col_title:
         features = st.session_state.get("bigness", {}).get(uid)
@@ -658,64 +672,90 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             parts.append(f"אלבום: {track['album']}")
         st.caption(" · ".join(parts))
 
-    with col_audio:
+    with col_side:
+        # תג ולא st.info/success/error: התיבות הצבעוניות תפסו את מרבית גובה
+        # הכרטיס ודחקו את מה שבאמת מבדיל בין תוצאות — הכותרת והמדידה
+        if status is None:
+            st.badge("⚪ טרם נבדק", color="gray")
+        elif status["status"] == federation.APPROVED:
+            st.badge(f"🟢 ברפרטואר · {status['confidence']}%", color="green")
+            st.caption(status["publisher"])
+            if status.get("matched_row"):
+                with st.popover("שורה מהפדרציה"):
+                    st.code(status["matched_row"])
+        elif status["status"] == federation.NOT_FOUND:
+            st.badge("🔴 לא ברפרטואר", color="red")
+        else:
+            st.badge("🟠 הבדיקה נכשלה", color="orange")
+            st.caption(status.get("error", "")[:150])
+
         if track.get("preview_url"):
             st.audio(track["preview_url"])
         else:
             st.caption("אין תצוגה מקדימה")
 
-    with col_status:
-        if status is None:
-            st.info("⚪ טרם נבדק")
-        elif status["status"] == federation.APPROVED:
-            st.success(f"🟢 ברפרטואר ({status['publisher']}) · ביטחון {status['confidence']}%")
-            if status.get("matched_row"):
-                with st.popover("הצג שורה מהפדרציה"):
-                    st.code(status["matched_row"])
-        elif status["status"] == federation.NOT_FOUND:
-            st.error("🔴 לא נמצא ברפרטואר")
-        else:
-            st.warning(f"🟠 לא ידוע — הבדיקה נכשלה\n\n{status.get('error', '')[:150]}")
+    with card:
+        # `horizontal` נשען על flex ולא על רשת עמודות, ולכן הכפתורים נשארים
+        # זה לצד זה גם ברוחב של 390px ונשברים לשורה שנייה בעת הצורך
+        with st.container(horizontal=True, wrap=True, vertical_alignment="center"):
+            selected = st.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed",
+                                   help="סמן לבדיקה קבוצתית")
 
-    if st.session_state.get("federation_blocked"):
-        with col_btn_check.popover("🔗 בדוק ידנית"):
-            url = federation.build_search_url(track["artist"], track["track"])
-            st.markdown(f"[פתח חיפוש בפדרציה]({url})")
-            st.caption("אם הטופס לא מולא מראש, העתק:")
-            st.code(f"{clean_artist_name(track['artist'])}\n{track['track']}")
-            pasted = st.text_area("הדבק את ה-HTML של עמוד התוצאות:", height=100,
-                                  key=f"paste_{uid}")
-            if st.button("קבע סטטוס", key=f"apply_{uid}") and pasted.strip():
-                record_status(track, federation.verify_from_html(
-                    pasted, track["artist"], track["track"]))
-                storage.save_debug_html(pasted, "results_page")
+            favorited, rejected = is_favorite(track), is_rejected(track)
+            if st.button("❤️" if favorited else "🤍", key=f"btn_favorite_{uid}",
+                         help="הסר מהפלייליסט" if favorited else
+                              "שמור לפלייליסט — והדירוג ילמד מזה מה אתה אוהב"):
+                toggle_favorite(track)
                 st.rerun()
-    elif col_btn_check.button("🔍 בדוק", key=f"btn_check_{uid}"):
-        with st.spinner("בודק..."):
-            verify_tracks([track])
-        st.rerun()
+            # דוגמה שלילית שווה יותר מדוגמה חיובית נוספת: היא נותנת ללמידה כיוון,
+            # בעוד שעוד לייק רק מהדק מרכז כובד שכבר ידוע
+            if st.button("👎", key=f"btn_reject_{uid}",
+                         type="primary" if rejected else "secondary",
+                         help="בטל את הסימון" if rejected else
+                              "לא זה — הדירוג ילמד להתרחק מסגנון כזה"):
+                toggle_rejection(track)
+                st.rerun()
 
-    with col_btn_block.popover("🔁 עוד"):
-        st.caption(f"עוד כמו **{track['track']}**")
-        if st.button("🎼 עוד קאברים לשיר הזה", key=f"more_covers_{uid}",
-                     use_container_width=True):
-            st.session_state["similar_of"] = ("covers", track)
-            st.rerun()
-        if st.button("🎨 עוד באותו סגנון", key=f"more_style_{uid}",
-                     use_container_width=True,
-                     help="לפי הז'אנר והאמן של הטראק הזה. המדידה בדפדפן ממיינת "
-                          "את מה שחוזר לפי גודל."):
-            st.session_state["similar_of"] = ("style", track)
-            st.rerun()
+            if st.session_state.get("federation_blocked"):
+                with st.popover("🔗 בדוק ידנית"):
+                    url = federation.build_search_url(track["artist"], track["track"])
+                    st.markdown(f"[פתח חיפוש בפדרציה]({url})")
+                    st.caption("אם הטופס לא מולא מראש, העתק:")
+                    st.code(f"{clean_artist_name(track['artist'])}\n{track['track']}")
+                    pasted = st.text_area("הדבק את ה-HTML של עמוד התוצאות:", height=100,
+                                          key=f"paste_{uid}")
+                    if st.button("קבע סטטוס", key=f"apply_{uid}") and pasted.strip():
+                        record_status(track, federation.verify_from_html(
+                            pasted, track["artist"], track["track"]))
+                        storage.save_debug_html(pasted, "results_page")
+                        st.rerun()
+            elif st.button("🔍 בדוק", key=f"btn_check_{uid}"):
+                with st.spinner("בודק..."):
+                    verify_tracks([track])
+                st.rerun()
 
-    if col_btn_block.button("🚫 חסום אמן", key=f"btn_block_{uid}"):
-        st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
-        storage.save_blacklist(st.session_state["blacklist"])
-        st.session_state["candidates"] = apply_blacklist(st.session_state["candidates"])
-        st.toast(f"האמן '{track['artist']}' הועבר לרשימה השחורה", icon="🚫")
-        st.rerun()
+            # רוחב מפורש: בתוך מכולה אופקית Streamlit מכווץ את ה-popover
+            # ומקצץ את התווית ל-"🔁 …"
+            with st.popover("🔁 עוד", width=110):
+                st.caption(f"עוד כמו **{track['track']}**")
+                if st.button("🎼 עוד קאברים לשיר הזה", key=f"more_covers_{uid}",
+                             use_container_width=True):
+                    st.session_state["similar_of"] = ("covers", track)
+                    st.rerun()
+                if st.button("🎨 עוד באותו סגנון", key=f"more_style_{uid}",
+                             use_container_width=True,
+                             help="לפי הז'אנר והאמן של הטראק הזה. המדידה בדפדפן ממיינת "
+                                  "את מה שחוזר לפי גודל."):
+                    st.session_state["similar_of"] = ("style", track)
+                    st.rerun()
 
-    st.divider()
+            if st.button("🚫 חסום אמן", key=f"btn_block_{uid}"):
+                st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
+                storage.save_blacklist(st.session_state["blacklist"])
+                st.session_state["candidates"] = apply_blacklist(st.session_state["candidates"])
+                st.toast(f"האמן '{track['artist']}' הועבר לרשימה השחורה", icon="🚫")
+                st.rerun()
+
     return track if selected else None
 
 
@@ -1188,7 +1228,10 @@ candidates = st.session_state["candidates"]
 
 if candidates:
     st.divider()
-    col_a, col_b, col_c = st.columns([2, 2, 2])
+    # שתי עמודות ולא שלוש: בטלפון Streamlit עורם עמודות לרוחב מלא, ו"סה"כ
+    # במאגר" כ-st.metric תפס מסך שלם בשביל מספר אחד. הוא ירד לשורת caption
+    # מתחת לכותרת, שם הוא ממילא נקרא יחד עם "מוצגים X מתוך Y".
+    col_a, col_b = st.columns([1, 1])
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
@@ -1230,9 +1273,8 @@ if candidates:
     elif sort_by == "אמן":
         display.sort(key=lambda t: t.get("artist", "").lower())
 
-    col_c.metric("סה\"כ במאגר", len(candidates))
-
     st.subheader(f"מוצגים {min(st.session_state['visible_count'], len(display))} מתוך {len(display)}")
+    st.caption(f"סה\"כ במאגר: {len(candidates)}")
 
     action_all, action_selected = st.columns([1, 1])
     visible = display[: st.session_state["visible_count"]]
