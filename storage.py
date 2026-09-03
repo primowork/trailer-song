@@ -169,6 +169,17 @@ def save_favorites(favorites: dict) -> bool:
     return _save_json("favorites.json", favorites)
 
 
+# מה שהמשתמש דחה במפורש (👎). מאגר נפרד ולא דגל בתוך favorites, כי הפלייליסט
+# הוא רשימת השמעה — דחייה לא אמורה להופיע בו. ללמידה שני המאגרים שקולים:
+# דוגמאות שליליות הן שנותנות למודל *כיוון* ולא רק מרכז כובד.
+def load_rejections() -> dict:
+    return _load_json("rejections.json", {}) or {}
+
+
+def save_rejections(rejections: dict) -> bool:
+    return _save_json("rejections.json", rejections)
+
+
 # מצעדים שיובאו מעמודי בילבורד שמורים. שם הקובץ נגזר משם המצעד, כדי שייבוא
 # חוזר של אותו מצעד יעדכן במקום לשכפל.
 IMPORTED_CHARTS = "imported_charts.json"

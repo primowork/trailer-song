@@ -23,6 +23,121 @@ const WINDOW_SEC = 0.05;   // חלון לחישוב צפיפות המכות
 const LOW_HZ = 120;        // מתחת לזה: תופים ו-braam של טריילר
 const MID_HZ = 2000;       // 120–2000: גוף השיר — קול, גיטרה, מיתרים
 
+// מדדי גוון. ארבעת מדדי העוצמה (loudness/low_end/onset_rate/dynamic_span)
+// כולם סטטיסטיקות RMS, כלומר "כמה הטראק גדול" נמדד בארבע דרכים — ולכן braam
+// אפל, פנפרה אורקסטרלית בהירה, קאבר מטאל ומקהלה יכולים לקבל מספרים כמעט
+// זהים. מה שמפריד ביניהם הוא הגוון, וכאן הוא נמדד מהספקטרום עצמו.
+const FFT_SIZE = 2048;
+const MAX_FRAMES = 240;    // דגימה פרוסה על כל הקליפ; ממוצע לא צריך יותר
+const AIR_HZ = 8000;       // מעליו: אוויר, צימבלים, נשימה, ברק הפקה
+const PRESENCE_HZ = 2500;  // 2.5k–8k: חוד, עיוות, נשיכת מיתרים
+
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      let t = re[i]; re[i] = re[j]; re[j] = t;
+      t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    const half = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < half; k++) {
+        const pr = re[i + k + half], pi = im[i + k + half];
+        const vr = pr * cr - pi * ci;
+        const vi = pr * ci + pi * cr;
+        const ur = re[i + k], ui = im[i + k];
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + half] = ur - vr; im[i + k + half] = ui - vi;
+        const ncr = cr * wr - ci * wi;
+        ci = cr * wi + ci * wr;
+        cr = ncr;
+      }
+    }
+  }
+}
+
+function timbre(mono, sampleRate) {
+  const bins = FFT_SIZE >> 1;
+  if (mono.length < FFT_SIZE) return {};
+
+  const window = new Float32Array(FFT_SIZE);
+  for (let i = 0; i < FFT_SIZE; i++) {
+    window[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT_SIZE - 1));
+  }
+
+  const starts = [];
+  const usable = mono.length - FFT_SIZE;
+  const frames = Math.min(MAX_FRAMES, Math.max(1, Math.floor(usable / FFT_SIZE)));
+  for (let f = 0; f < frames; f++) {
+    starts.push(Math.floor((usable * f) / Math.max(1, frames - 1)) || 0);
+  }
+
+  const average = new Float64Array(bins);
+  const previous = new Float64Array(bins);
+  const re = new Float64Array(FFT_SIZE);
+  const im = new Float64Array(FFT_SIZE);
+  const magnitude = new Float64Array(bins);
+  let flux = 0, fluxFrames = 0;
+
+  starts.forEach((start, index) => {
+    for (let i = 0; i < FFT_SIZE; i++) {
+      re[i] = mono[start + i] * window[i];
+      im[i] = 0;
+    }
+    fft(re, im);
+    let frameSum = 0;
+    for (let k = 0; k < bins; k++) {
+      magnitude[k] = Math.hypot(re[k], im[k]);
+      average[k] += magnitude[k];
+      frameSum += magnitude[k];
+    }
+    if (index && frameSum) {
+      // שטף ספקטרלי: כמה הספקטרום *משתנה*. מיתרים מתמשכים כמעט לא זזים,
+      // הפקה קצבית עם פרקושן קופצת כל הזמן — הבדל שאינו נראה בשום מדד RMS
+      let change = 0;
+      for (let k = 0; k < bins; k++) {
+        const rise = magnitude[k] - previous[k];
+        if (rise > 0) change += rise;
+      }
+      flux += change / frameSum;
+      fluxFrames++;
+    }
+    previous.set(magnitude);
+  });
+
+  let total = 0, weighted = 0, logSum = 0, air = 0, presence = 0;
+  const hzPerBin = sampleRate / FFT_SIZE;
+  for (let k = 0; k < bins; k++) {
+    const value = average[k] / starts.length;
+    const hz = k * hzPerBin;
+    total += value;
+    weighted += value * hz;
+    logSum += Math.log(value + 1e-12);
+    if (hz >= AIR_HZ) air += value;
+    else if (hz >= PRESENCE_HZ) presence += value;
+  }
+  if (!total) return {};
+
+  const round = (value) => Math.round(value * 1000) / 1000;
+  return {
+    // מרכז ספקטרלי כשבר מתדר נייקוויסט: בהיר מול אפל
+    centroid: round((weighted / total) / (sampleRate / 2)),
+    // שטיחות: טונאלי ונקי (נמוך) מול רועש ומעוות (גבוה)
+    flatness: round(Math.exp(logSum / bins) / (total / bins)),
+    air: round(air / total),
+    presence: round(presence / total),
+    flux: round(fluxFrames ? flux / fluxFrames : 0),
+  };
+}
+
 function rms(data) {
   let sum = 0;
   for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
@@ -119,6 +234,7 @@ async function measure(url) {
     low_end: Math.round((await lowEndRatio(buffer)) * 100) / 100,
     dynamic_span: Math.round(dynamicSpan(frames) * 100) / 100,
     onset_rate: Math.round(onsetRate(frames, seconds) * 100) / 100,
+    ...timbre(mono, buffer.sampleRate),
   };
 }
 

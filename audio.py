@@ -47,17 +47,38 @@ def _scaled(value: float, floor: float, full_credit: float) -> float:
     return max(0.0, min((value - floor) / span, 1.0))
 
 
+# מדדי גוון, לשימוש `taste.py` בלבד — הם *לא* נכנסים לציון הגודל, כי "גדול"
+# הוא שאלה של עוצמה ולא של צבע. ארבעת מדדי העוצמה שב-WEIGHTS הם כולם
+# סטטיסטיקות RMS, ולכן braam אפל ופנפרה בהירה יכולים לקבל בהם ערכים כמעט
+# זהים; אלה המדדים שמפרידים ביניהם.
+# (רצפה, ערך עליון). הטווחים הם הערכה ומיועדים לכיול על ייצוא אמיתי.
+TIMBRE_RANGES = {
+    "centroid": (0.03, 0.18),    # מרכז ספקטרלי: אפל → בהיר
+    "flatness": (0.005, 0.20),   # טונאלי ונקי → רועש ומעוות
+    "air": (0.002, 0.10),        # אנרגיה מעל 8kHz
+    "presence": (0.02, 0.30),    # אנרגיה 2.5–8kHz
+    "flux": (0.05, 0.45),        # מיתרים מתמשכים → פרקושן קצבי
+}
+
+
 def normalized(features: "dict | None") -> "dict | None":
     """המדדים הגולמיים על סקאלה אחידה 0..1, או None כשאין מדידה.
 
-    הנרמול חי כאן ולא אצל הקורא כי הטווחים (`WEIGHTS`) הם ידע של המודול הזה.
-    `taste.py` משווה טראקים זה לזה במרחב הזה, ומדדים בסקאלות שונות (עוצמה
-    0.1–0.3 מול קשת 1.5–6.0) אינם ברי-השוואה בלי הנרמול.
+    הנרמול חי כאן ולא אצל הקורא כי הטווחים הם ידע של המודול הזה. `taste.py`
+    משווה טראקים זה לזה במרחב הזה, ומדדים בסקאלות שונות (עוצמה 0.1–0.3 מול
+    קשת 1.5–6.0) אינם ברי-השוואה בלי הנרמול.
+
+    מדדי הגוון מוחזרים רק כשהם קיימים בפועל: מדידות שנשמרו לפני שהם נוספו
+    עדיין תקפות, והן פשוט מתוארות בפחות מימדים.
     """
     if not measured(features):
         return None
-    return {name: _scaled(features.get(name, 0.0), floor, full)
-            for name, (_, floor, full) in WEIGHTS.items()}
+    result = {name: _scaled(features.get(name, 0.0), floor, full)
+              for name, (_, floor, full) in WEIGHTS.items()}
+    for name, (floor, full) in TIMBRE_RANGES.items():
+        if features.get(name) is not None:
+            result[name] = _scaled(features[name], floor, full)
+    return result
 
 
 def bigness(features: "dict | None") -> int:

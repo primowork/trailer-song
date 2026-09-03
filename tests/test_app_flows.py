@@ -48,7 +48,8 @@ def test_classics_is_the_default_index_source_and_needs_no_network(app):
 
 def test_classics_song_click_runs_a_focused_song_search(app, monkeypatch):
     import classics
-    first = classics.POP_CLASSICS[0]
+    # הקטגוריה הראשונה היא ברירת המחדל של ה-selectbox
+    first = classics.CATEGORIES[next(iter(classics.CATEGORIES))][0]
     monkeypatch.setattr(covers, "find_all_covers",
                         lambda title, artist="", **k: (
                             [track(first["artist"], f"{title} (Cover)", "c1")], "src", None))
@@ -328,3 +329,114 @@ def test_without_favorites_the_default_sort_falls_back_to_measured_size(app):
     assert not app.exception
     order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert order.index("btn_favorite_itunes-big") < order.index("btn_favorite_itunes-small")
+
+
+def test_thumbs_down_pushes_that_style_down(app):
+    """דחייה היא לא הסתרה: הטראק נשאר, אבל יורד — וגם דומים לו."""
+    loud = {"loudness": 0.29, "low_end": 2.9, "onset_rate": 3.4, "dynamic_span": 5.8}
+    calm = {"loudness": 0.09, "low_end": 0.9, "onset_rate": 0.9, "dynamic_span": 2.0}
+
+    app.session_state["favorites"] = {
+        f"calm {i}|x": {"artist": f"Calm {i}", "track": "X", "genre": "Classical",
+                        "year": "2019", "features": dict(calm), "added_at": 1.0}
+        for i in range(4)
+    }
+    app.session_state["rejections"] = {
+        f"loud {i}|y": {"artist": f"Loud {i}", "track": "Y", "genre": "Soundtrack",
+                        "year": "2019", "features": dict(loud), "added_at": 1.0}
+        for i in range(4)
+    }
+    app.session_state["candidates"] = [
+        track("New Loud", "Clocks (Epic)", "loud", genre="Soundtrack"),
+        track("New Calm", "Clocks (Piano)", "calm", genre="Classical"),
+    ]
+    app.session_state["bigness"] = {"itunes-loud": loud, "itunes-calm": calm}
+    app.run()
+
+    assert not app.exception
+    keys = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert keys.index("btn_favorite_itunes-calm") < keys.index("btn_favorite_itunes-loud")
+    # הדחוי עדיין מוצג, רק נמוך
+    assert "btn_favorite_itunes-loud" in keys
+
+
+def test_thumbs_down_button_saves_and_clears_the_heart(app):
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    app.button(key="btn_favorite_itunes-e1").click().run()
+    assert len(app.session_state["favorites"]) == 1
+
+    app.button(key="btn_reject_itunes-e1").click().run()
+
+    assert not app.exception
+    # אותו טראק לא יכול להיות גם אהוב וגם דחוי
+    assert app.session_state["favorites"] == {}
+    assert len(app.session_state["rejections"]) == 1
+    assert storage.load_rejections()
+
+
+def test_switching_classics_category_changes_the_songs(app):
+    import classics
+    labels = list(classics.CATEGORIES)
+
+    picker = app.selectbox(key="classics_category")
+    assert picker.options == labels
+
+    picker.set_value("50's").run()
+    assert not app.exception
+    fifties = {b.label for b in app.button if (b.key or "").startswith("classic_")}
+
+    picker.set_value("2000's").run()
+    assert not app.exception
+    two_thousands = {b.label for b in app.button if (b.key or "").startswith("classic_")}
+
+    assert fifties and two_thousands
+    assert not (fifties & two_thousands)
+
+
+def test_blues_category_is_reachable(app):
+    picker = app.selectbox(key="classics_category")
+    picker.set_value("🎺 בלוז").run()
+
+    assert not app.exception
+    labels = " ".join(b.label for b in app.button if (b.key or "").startswith("classic_"))
+    assert "Muddy Waters" in labels
+
+
+def test_a_saved_version_is_clickable_and_searches_for_it_again(app, monkeypatch):
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track("Someone", f"{title} (Cover)", "c1")], "src", None))
+    app.session_state["favorites"] = {
+        "2wei|zombie": {"artist": "2WEI", "track": "Zombie", "genre": "Soundtrack",
+                        "year": "2018", "features": None, "added_at": 1.0}
+    }
+    app.run()
+
+    app.button(key="fav_open_2wei|zombie").click().run()
+
+    assert not app.exception
+    assert app.session_state["cover_title"] == "Zombie"
+    assert app.session_state["cover_artist"] == "2WEI"
+    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["candidates"]
+
+
+def test_a_saved_artist_ranks_their_other_covers_higher(app):
+    """הבקשה: קאבר של אמן ששמור עולה, גם כשזה קאבר לשיר אחר."""
+    app.session_state["favorites"] = {
+        f"violet orlandi|song {i}": {
+            "artist": "Violet Orlandi", "track": f"Song {i}", "genre": "Rock",
+            "year": "2019", "features": None, "added_at": 1.0}
+        for i in range(4)
+    }
+    app.session_state["candidates"] = [
+        track("Unknown Cover Band", "Clocks (Cover)", "unknown", genre="Rock"),
+        track("Violet Orlandi", "Clocks (Cover)", "known", genre="Rock"),
+    ]
+    app.run()
+
+    assert not app.exception
+    keys = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert keys.index("btn_favorite_itunes-known") < keys.index("btn_favorite_itunes-unknown")

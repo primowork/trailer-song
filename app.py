@@ -104,6 +104,7 @@ def _init_state():
         "blacklist": storage.load_blacklist(),
         "cache": storage.load_cache(),
         "favorites": storage.load_favorites(),
+        "rejections": storage.load_rejections(),
         "candidates": [],
         "seen_keys": set(),
         "visible_count": PAGE_SIZE,
@@ -124,7 +125,7 @@ def _init_state():
         "federation_probed": False,
         "similar_of": None,
         "pending_fields": None,
-        "index_source": "🎻 קלאסיקות (פופ/רוק)",
+        "index_source": "🎻 קלאסיקות",
         "search_mode": MODE_SONG,
     }
     for key, value in defaults.items():
@@ -156,27 +157,52 @@ def is_favorite(track: dict) -> bool:
     return track_key(track.get("artist", ""), track.get("track", "")) in st.session_state["favorites"]
 
 
+def is_rejected(track: dict) -> bool:
+    return track_key(track.get("artist", ""), track.get("track", "")) in st.session_state["rejections"]
+
+
+def _snapshot(track: dict) -> dict:
+    features = st.session_state["bigness"].get(track["uid"])
+    return {
+        **{field: track.get(field) for field in FAVORITE_FIELDS},
+        # המדידה נשמרת ברגע התיוג כדי שהלמידה לא תהיה תלויה בכך שהטראק יימדד
+        # שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
+        "features": features if audio.measured(features) else None,
+        "added_at": time.time(),
+    }
+
+
 def toggle_favorite(track: dict):
-    """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון של `taste`."""
-    favorites = st.session_state["favorites"]
+    """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון החיובי."""
+    favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
     key = track_key(track.get("artist", ""), track.get("track", ""))
     if key in favorites:
         favorites.pop(key)
     else:
-        features = st.session_state["bigness"].get(track["uid"])
-        favorites[key] = {
-            **{field: track.get(field) for field in FAVORITE_FIELDS},
-            # המדידה נשמרת ברגע הלייק כדי שהלמידה לא תהיה תלויה בכך שהטראק
-            # יימדד שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
-            "features": features if audio.measured(features) else None,
-            "added_at": time.time(),
-        }
+        favorites[key] = _snapshot(track)
+        # אותו טראק לא יכול להיות גם אהוב וגם דחוי
+        if rejections.pop(key, None) is not None:
+            storage.save_rejections(rejections)
     storage.save_favorites(favorites)
+
+
+def toggle_rejection(track: dict):
+    """מסמן "לא זה". דוגמאות שליליות הן שנותנות ללמידה כיוון ולא רק מרכז."""
+    favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
+    key = track_key(track.get("artist", ""), track.get("track", ""))
+    if key in rejections:
+        rejections.pop(key)
+    else:
+        rejections[key] = _snapshot(track)
+        if favorites.pop(key, None) is not None:
+            storage.save_favorites(favorites)
+    storage.save_rejections(rejections)
 
 
 def taste_profile(background: list[dict] | None = None) -> dict:
     """הפרופיל הנלמד. הרקע הוא פול התוצאות המוצג, ובלעדיו זה מונה שכיחות."""
-    return taste.profile(list(st.session_state["favorites"].values()), background)
+    return taste.profile(list(st.session_state["favorites"].values()), background,
+                         rejections=list(st.session_state["rejections"].values()))
 
 
 def taste_of(track: dict, learned: dict) -> float:
@@ -248,6 +274,18 @@ def verify_tracks(tracks: list[dict]):
     progress.progress(1.0, text="הסתיים")
 
 
+def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
+                 auto_run: bool = False):
+    """קובע את שדות החיפוש (ואופציונלית מצב + הרצה אוטומטית) מכפתור, ומרענן.
+
+    Streamlit אוסר על שינוי session_state של widget אחרי שהוא נוצר, ולכן אי אפשר
+    לכתוב לשדה מתוך כפתור שמצויר מתחתיו. הערך נשמר כאן ומוחל בתחילת הריצה הבאה,
+    לפני שהשדות/הרדיו נוצרים.
+    """
+    st.session_state["pending_fields"] = (title, artist, mode, auto_run)
+    st.rerun()
+
+
 # ---------- סרגל צד ----------
 
 with st.sidebar:
@@ -265,11 +303,19 @@ with st.sidebar:
                                  key=lambda item: item[1].get("added_at", 0),
                                  reverse=True):
             col_name, col_remove = st.columns([4, 1])
-            col_name.caption(f"**{entry.get('artist', '')}** — {entry.get('track', '')}")
+            label = f"{entry.get('artist', '')} — {entry.get('track', '')}"
+            # לחיצה על גרסה שמורה מחזירה אליה: ממלאת את השדות ומריצה חיפוש
+            # לשיר הזה, כדי שאפשר יהיה למצוא אותה ואת מה שדומה לה שוב
+            if col_name.button(label[:48], key=f"fav_open_{key}", help=label,
+                               use_container_width=True):
+                queue_fields(entry.get("track", ""), entry.get("artist", ""),
+                             mode=MODE_SONG, auto_run=True)
             if col_remove.button("✕", key=f"unfav_{key}", help="הסר מהפלייליסט"):
                 favorites.pop(key)
                 storage.save_favorites(favorites)
                 st.rerun()
+            if entry.get("preview_url"):
+                st.audio(entry["preview_url"])
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
@@ -377,6 +423,16 @@ with st.sidebar:
             if to_remove and st.button("הסר"):
                 storage.save_charts({slug: chart for slug, chart in stored.items()
                                      if chart["title"] != to_remove})
+                st.rerun()
+
+    # הדחיות אינן פלייליסט ולכן אינן מוצגות כרשימה — הן רק מלמדות
+    if st.session_state["rejections"]:
+        with st.expander(f"👎 סימנת 'לא זה' ({len(st.session_state['rejections'])})"):
+            st.caption("הדחיות אינן מוסתרות מהתוצאות — הן רק מלמדות את הדירוג "
+                       "להתרחק מהסגנון הזה. להסתרה מלאה יש 🚫 חסום אמן.")
+            if st.button("🗑️ נקה דחיות"):
+                st.session_state["rejections"] = {}
+                storage.save_rejections({})
                 st.rerun()
 
     # החסימה עצמה נשארת פעילה; רק התצוגה שלה ירדה מהחזית לטובת הפלייליסט
@@ -531,17 +587,25 @@ def render_track(track: dict, index: int, learned: dict | None = None):
     status = status_of(track)
     duration_min = round(track.get("duration_sec", 0) / 60, 1)
 
-    cols = st.columns([0.5, 0.6, 3, 3, 2.2, 1.5, 1.2])
-    (col_check, col_heart, col_title, col_audio, col_status,
+    cols = st.columns([0.5, 0.6, 0.6, 3, 3, 2.2, 1.5, 1.2])
+    (col_check, col_heart, col_down, col_title, col_audio, col_status,
      col_btn_check, col_btn_block) = cols
 
     selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
 
-    favorited = is_favorite(track)
+    favorited, rejected = is_favorite(track), is_rejected(track)
     if col_heart.button("❤️" if favorited else "🤍", key=f"btn_favorite_{uid}",
                         help="הסר מהפלייליסט" if favorited else
                              "שמור לפלייליסט — והדירוג ילמד מזה מה אתה אוהב"):
         toggle_favorite(track)
+        st.rerun()
+    # דוגמה שלילית שווה יותר מדוגמה חיובית נוספת: היא נותנת ללמידה כיוון,
+    # בעוד שעוד לייק רק מהדק מרכז כובד שכבר ידוע
+    if col_down.button("👎", key=f"btn_reject_{uid}",
+                       type="primary" if rejected else "secondary",
+                       help="בטל את הסימון" if rejected else
+                            "לא זה — הדירוג ילמד להתרחק מסגנון כזה"):
+        toggle_rejection(track)
         st.rerun()
 
     with col_title:
@@ -721,18 +785,6 @@ st.write(
     "קאברים לכל הקטלוג של אמן, או חיפוש חופשי עם פילטרים."
 )
 
-def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
-                 auto_run: bool = False):
-    """קובע את שדות החיפוש (ואופציונלית מצב + הרצה אוטומטית) מכפתור, ומרענן.
-
-    Streamlit אוסר על שינוי session_state של widget אחרי שהוא נוצר, ולכן אי אפשר
-    לכתוב לשדה מתוך כפתור שמצויר מתחתיו. הערך נשמר כאן ומוחל בתחילת הריצה הבאה,
-    לפני שהשדות/הרדיו נוצרים.
-    """
-    st.session_state["pending_fields"] = (title, artist, mode, auto_run)
-    st.rerun()
-
-
 _pending = st.session_state.pop("pending_fields", None)
 if _pending:
     _title, _artist, _mode, _auto_run = _pending
@@ -845,13 +897,13 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
 
 
-def _classics_entries(genre: str) -> list[dict]:
-    """קלאסיקות פופ/רוק, 1950–2020 — רשימה סטטית, לא מצעד חי.
+def _classics_entries(category: str) -> list[dict]:
+    """קלאסיקות לפי ז'אנר או עשור, 1950–2020 — רשימה סטטית, לא מצעד חי.
 
-    מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימה כאן
-    קבועה בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
+    מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימות כאן
+    קבועות בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
     """
-    source = classics_module.POP_CLASSICS if genre == "פופ" else classics_module.ROCK_CLASSICS
+    source = classics_module.CATEGORIES.get(category, ())
     return [{"kind": "song", "artist": entry["artist"], "track": entry["track"],
             "rank": index + 1} for index, entry in enumerate(source)]
 
@@ -877,15 +929,19 @@ with st.expander("📇 אינדקס מצעדים", expanded=False):
                "התוצאות — שם קובע מה שנמדד מהאודיו.")
 
     imported = storage.load_charts()
-    sources = ["🎻 קלאסיקות (פופ/רוק)", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
+    sources = ["🎻 קלאסיקות", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
     sources += [f"מיובא: {chart['title']}" for chart in imported.values()]
     source = st.radio("מקור:", sources, horizontal=True, key="index_source")
 
     entries, key_prefix = [], ""
     if source.startswith("🎻 קלאסיקות"):
-        genre = st.radio("ז'אנר:", ["פופ", "רוק"], horizontal=True, key="classics_genre")
-        entries = _classics_entries(genre)
+        # selectbox ולא radio: שלוש-עשרה קטגוריות בשורה אחת אינן קריאות
+        category = st.selectbox("קטגוריה:", list(classics_module.CATEGORIES),
+                                key="classics_category")
+        entries = _classics_entries(category)
         key_prefix = "classic"
+        st.caption(f"{len(entries)} שירים · העשורים והקטגוריות הקלאסיות הם "
+                   "חתכים של אותן רשימות לפי שנה, ולכן שיר יכול להופיע בכמה מהן.")
 
     elif source.startswith("בילבורד"):
         artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")
