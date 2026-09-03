@@ -3,6 +3,7 @@ import csv
 import os
 import datetime as _dt
 import io
+import random
 import time
 
 import streamlit as st
@@ -214,6 +215,10 @@ def _init_state():
         "display_order": [],
         "order_signature": None,
         "result_generation": 0,
+        # מונה שמפתח האקספנדר של אינדקס המצעדים נגזר ממנו. העלאתו מרנדרת
+        # רכיב חדש, שנולד מכווץ — ראו את ההסבר ליד האקספנדר עצמו
+        "index_generation": 0,
+        "recent_rolls": [],
         "last_query": "",
         "debug_mode": False,
         "covers_source": "",
@@ -1040,13 +1045,46 @@ if _pending:
     if _auto_run:
         st.session_state["auto_run"] = True
 
-col_title, col_artist = st.columns(2)
+# `vertical_alignment="bottom"` כדי שהקובייה תשב בשורת שדות הקלט ולא
+# מעליהם — לשדות יש תווית מעל, ולכפתור אין
+col_title, col_artist, col_dice = st.columns([5, 5, 3], vertical_alignment="bottom")
 cover_title = col_title.text_input(
     "שם השיר:", key="cover_title", placeholder="למשל: Bitter Sweet Symphony")
 cover_artist = col_artist.text_input(
     "אמן מקורי (לא חובה):", key="cover_artist", placeholder="The Verve",
     help="מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955 "
          "וגם Eurythmics 1983.")
+
+RECENT_ROLLS = 5
+
+
+def roll_famous_song():
+    """מגריל שיר מוכר ומריץ עליו חיפוש, כמו לחיצה על שיר במצעדים.
+
+    הבריכה היא `classics.famous_pool()` — ראשי כל עשור מנתוני המצעד ועוד
+    רשימות הפופ והרוק. פופולריות במצעד היא הקירוב ל"סביר שיש לו קאבר";
+    בדיקה אמיתית הייתה קריאת רשת לכל מועמד, והיא הופכת לחיצה מיידית
+    להמתנה.
+    """
+    pool = classics_module.famous_pool()
+    recent = st.session_state["recent_rolls"]
+    # בלי זה שתי הגרלות רצופות מחזירות לפעמים את אותו שיר, וזה נראה תקול
+    fresh = [entry for entry in pool
+             if (entry["artist"], entry["track"]) not in recent] or list(pool)
+    choice = random.choice(fresh)
+
+    st.session_state["recent_rolls"] = (
+        recent + [(choice["artist"], choice["track"])])[-RECENT_ROLLS:]
+    st.toast(f"🎲 {choice['track']} — {choice['artist']}")
+    queue_fields(choice["track"], choice["artist"], mode=MODE_SONG, auto_run=True)
+
+
+# עם תווית ולא אמוג'י בלבד: בטלפון העמודות נערמות, וכפתור ברוחב מלא
+# שכתוב עליו רק "🎲" אינו מסביר את עצמו
+if col_dice.button("🎲 הגרל שיר", use_container_width=True,
+                   help="מגריל שיר מוכר מהמצעדים ומחפש לו גרסאות טריילר. "
+                        "ככל שהשיר מוכר יותר, כך גדל הסיכוי שמישהו כבר עשה לו קאבר."):
+    roll_famous_song()
 
 
 def suggestion_row(query: str):
@@ -1136,6 +1174,9 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                 clicked = column.button(full_label[:60], key=key, help=full_label,
                                         use_container_width=True)
             if clicked:
+                # האינדקס ארוך (עד 120 שירים), והצעד הבא של המשתמש — תוצאות
+                # או תצוגת השירים המקדימה — מרונדר מחוץ לו. הוא נסגר מעצמו
+                st.session_state["index_generation"] += 1
                 if entry["kind"] == "artist":
                     # לא auto_run: קודם מוצגת תצוגה מקדימה זולה של שירי האמן
                     # (ראו את המקטע אחרי רדיו "סוג חיפוש") — חיפוש הקאברים
@@ -1171,7 +1212,14 @@ def _imported_entries(chart: dict) -> list[dict]:
             for e in chart["entries"]]
 
 
-with st.expander("📇 אינדקס מצעדים", expanded=False):
+# המפתח נגזר ממונה, ולא סתם קבוע. ל-`st.expander` אין מצב פתוח/סגור
+# ב-`session_state` — גם אחרי שהמשתמש פותח אותו ידנית הערך נשאר None,
+# וכתיבה אליו אינה משפיעה. Streamlit מחיל את `expanded` רק כשהערך
+# **משתנה**, ולכן העברת False כשהוא כבר False לא סוגרת כלום. נמדד
+# בדפדפן: אחרי פתיחה ידנית הרכיב נשאר פתוח. מפתח חדש מרנדר רכיב חדש,
+# והוא נולד מכווץ — זה מה שעובד בפועל.
+with st.expander("📇 אינדקס מצעדים", expanded=False,
+                 key=f"chart_index_{st.session_state['index_generation']}"):
     st.caption("נקודת פתיחה לחיפוש: לחיצה על אמן מריצה 'קאברים לאמן', "
                "ולחיצה על שיר מריצה 'קאברים לשיר' — לשתיהן אותה תוצאה כמו מילוי "
                "השדות למעלה ולחיצה על 🔎 חפש. המיקום במצעד אינו משפיע על דירוג "

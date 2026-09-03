@@ -88,6 +88,81 @@ def test_classics_song_click_runs_a_focused_song_search(app, monkeypatch):
     assert app.session_state["candidates"]
 
 
+def test_picking_a_song_collapses_the_chart_index(app, monkeypatch):
+    """נמדד בדפדפן: העברת `expanded=False` כשהוא כבר False אינה סוגרת רכיב
+    שהמשתמש פתח ידנית. מה שסוגר הוא מפתח חדש, ולכן זה מה שנבדק."""
+    import classics
+    first = classics.CATEGORIES[next(iter(classics.CATEGORIES))][0]
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track(first["artist"], f"{title} (Cover)", "c1")], "src", None))
+
+    before = app.session_state["index_generation"]
+    [b for b in app.button if (b.key or "").startswith("classic_")][0].click().run()
+
+    assert not app.exception
+    assert app.session_state["index_generation"] > before
+
+
+def test_picking_an_artist_also_collapses_it(app, monkeypatch):
+    monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yesterday"])
+    source = app.radio(key="index_source")
+    source.set_value(source.options[1]).run()
+
+    before = app.session_state["index_generation"]
+    app.button(key="goat_0").click().run()
+
+    assert not app.exception
+    assert app.session_state["index_generation"] > before
+
+
+# ---------- 🎲 הגרלת שיר מוכר ----------
+
+def _dice(app):
+    return [b for b in app.button if (b.label or "").startswith("🎲")][0]
+
+
+def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monkeypatch):
+    import classics
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track("Someone", f"{title} (Cover)", "d1")], "src", None))
+
+    _dice(app).click().run()
+
+    assert not app.exception
+    rolled = (app.session_state["cover_artist"], app.session_state["cover_title"])
+    assert all(rolled)
+    assert rolled in {(e["artist"], e["track"]) for e in classics.famous_pool()}
+    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    # הוגרל *ורץ*, כמו לחיצה על שיר במצעדים
+    assert app.session_state["candidates"]
+
+
+def test_two_rolls_in_a_row_are_not_the_same_song(app, monkeypatch):
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: ([], "src", None))
+
+    _dice(app).click().run()
+    first = app.session_state["cover_title"]
+    _dice(app).click().run()
+
+    assert not app.exception
+    assert app.session_state["cover_title"] != first
+    assert len(app.session_state["recent_rolls"]) == 2
+
+
+def test_the_roll_history_stays_bounded(app, monkeypatch):
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: ([], "src", None))
+
+    for _ in range(8):
+        _dice(app).click().run()
+
+    assert not app.exception
+    assert len(app.session_state["recent_rolls"]) == 5
+
+
 def test_greatest_artist_click_shows_a_preview_before_searching(app, monkeypatch):
     monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yesterday"])
     monkeypatch.setattr(covers, "find_epic_versions",
