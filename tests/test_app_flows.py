@@ -481,6 +481,43 @@ def test_blocking_an_artist_drops_it_without_moving_the_rest(app):
     assert after == [uid for uid in before if uid != "itunes-u3"] + ["itunes-u20"]
 
 
+def test_the_resort_control_never_appears_or_disappears(app):
+    """כפתור שצץ מעל הרשימה דוחף את כל מה שמתחתיו — וזה מזיז את המקום.
+
+    לכן הוא מצויר תמיד, ומושבת כשאין מה לסדר.
+    """
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    quiet = [b for b in app.button if (b.label or "").startswith("🔄")]
+    assert len(quiet) == 1 and quiet[0].disabled
+
+    app.session_state["bigness"] = {f"itunes-u{i}": (BIG if i in (5, 17, 19) else SMALL)
+                                    for i in range(20)}
+    app.run()
+    active = [b for b in app.button if (b.label or "").startswith("🔄")]
+    assert len(active) == 1 and not active[0].disabled
+    assert "יזוזו" in active[0].label
+
+
+def test_the_scroll_keeper_is_a_persistent_observer(app):
+    """נמדד ש-iframe לא מורכב מחדש ב-rerun, ולכן סקריפט-בטעינה לא נורה.
+
+    השומר חייב להיות MutationObserver שחי בדף, ולשחזר רק את הצירוף
+    "היינו עמוק בעמוד ואחרי בנייה מחדש אנחנו בראשו".
+    """
+    script = " ".join(str(e.proto) for e in app.get("iframe"))
+    assert "MutationObserver" in script
+    assert "saved > 200 && el.scrollTop < 40" in script
+
+
+def test_a_generation_marker_lets_the_keeper_forget_the_old_list(app):
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    generation = app.session_state["result_generation"]
+    assert any(f"data-result-generation='{generation}'" in (m.value or "")
+               for m in app.markdown)
+
+
 def test_taste_lifts_tracks_that_match_what_was_hearted(app):
     """הבדיקה שקובעת, ובכוונה נגד מיון הגודל.
 
