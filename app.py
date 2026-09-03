@@ -24,6 +24,10 @@ from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
 
 PAGE_SIZE = 20
+# ברירת המחדל של המיון. השם אומר במפורש שהעדות על טריילר חלק מהדירוג —
+# כשהתווית הבטיחה רק "הטעם שלי", לא היה מובן למה גרסה שכתוב עליה
+# "Epic Trailer Version" יושבת למטה
+SORT_BEST = "⭐ הכי מתאים (טעם + סימני טריילר)"
 
 # שלושת מצבי החיפוש. "קאברים לשיר" ממזג שני מקורות (מאגר יחסי + חיפוש בחנויות)
 # תחת בחירה אחת — הם עונים בפועל על אותה שאלה. "קאברים לאמן" ו"חיפוש חופשי"
@@ -613,6 +617,43 @@ def measure_via_server(tracks: list):
 
 # ---------- סדר התצוגה ----------
 
+# משקלי הדירוג הראשי. שלושתם באותה סקאלה 0..1, ולכן הם מתחרים ולא
+# מבטלים זה את זה — בניגוד למיון לקסיקוגרפי, שבו המפתח הראשון מכריע לבדו.
+# המשקלים כוילו מול שלושה מקרים ולא לפי תחושה:
+#   א. בלי שום למידה, גרסה שכתוב עליה "Epic Trailer Version" חייבת לעלות
+#      מעל קאבר פופ רועש — גם כשהיא עצמה טרם נמדדה  (0.30 מול 0.10)
+#   ב. אחרי שישה ❤️ על סגנון רגוע, גרסה רגועה חייבת לנצח גרסה "אפית"
+#      רועשת עם שני סימני טריילר                     (0.41 מול 0.34)
+#   ג. אחרי ארבעה 👎 על סגנון, טראק מאותו סגנון יורד (0.46 מול 0.29)
+# משקל טעם של 0.40 נכשל ב-(ג), 0.55 נכשל ב-(ב), 0.65 עובר את שלושתם
+# במרווח נוח. הפריור על טריילר הוא מה שקובע כשאין עדיין מה ללמוד ממנו:
+# `taste_of` מחזיר 0 לכולם עד הלייק הראשון.
+RANK_TASTE = 0.65      # מה שהמשתמש לימד בפועל — גובר על הפריור
+RANK_TRAILER = 0.25    # עדות מפורשת שזו גרסת טריילר — הסיבה שהאפליקציה קיימת
+RANK_SIZE = 0.10       # המדידה בדפדפן. יש גם מיון מפורש "גודל (נמדד)"
+# "טרם נמדד" אינו "קטן". הערך הקודם היה -1, ולכן כל טראק שהמדידה לא הגיעה
+# אליו (אין preview, חסימת CORS, כישלון) צנח לתחתית — גם כשכתוב עליו
+# במפורש "Epic Trailer Version" ויש לו שני סימני טריילר.
+NEUTRAL_SIZE = 0.5
+
+
+def rank_score(track: dict, learned: dict, measurements: dict) -> float:
+    """הדירוג הראשי: טעם, עדות טריילר ומדידה — ביחד ולא בזה אחר זה.
+
+    קודם המפתח היה `(taste, measured_size, score)` לקסיקוגרפית. בלי לייקים
+    הטעם היה 0 לכולם, ולכן הגודל הנמדד הכריע לבדו ו-`score` — שכולל את
+    `epic_bonus` — לא נגע בסדר בפועל. נמדד: טראק בשם "Zombie (Epic Trailer
+    Version)", ז'אנר Soundtrack, ציון 130 מול 100, דורג **אחרון** מול קאבר
+    פופ רגיל שנמדד רועש. זה ההפך ממה שהאפליקציה אמורה לעשות.
+    """
+    features = measurements.get(track["uid"])
+    size = (audio.bigness(features) / 100.0 if audio.measured(features)
+            else NEUTRAL_SIZE)
+    return (RANK_TASTE * taste_of(track, learned)
+            + RANK_TRAILER * search_module.trailer_strength(track)
+            + RANK_SIZE * size)
+
+
 def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
     """הסדר המבוקש, מחושב על הנתונים שיש **ברגע זה**."""
     ranked = list(tracks)
@@ -620,13 +661,12 @@ def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
 
     def measured_size(track):
         features = measurements.get(track["uid"])
-        # מי שטרם נמדד יורד לתחתית ולא מתחזה ל"קטן"
+        # במיון המפורש לפי גודל, "טרם נמדד" באמת יורד לתחתית ולא מתחזה למדוד
         return audio.bigness(features) if audio.measured(features) else -1
 
-    if sort_by == "❤️ הטעם שלי":
-        # ברירת המחדל, וזה מה שמעלה את הסגנון שהמשתמש אוהב לראש. בלי לייקים
-        # `taste_of` מחזיר 0 לכולם, והמיון מתקפל למיון לפי גודל נמדד
-        ranked.sort(key=lambda t: (round(taste_of(t, learned), 3), measured_size(t),
+    if sort_by == SORT_BEST:
+        # ברירת המחדל. `score` נשאר רק כשובר שוויון
+        ranked.sort(key=lambda t: (round(rank_score(t, learned, measurements), 4),
                                    t.get("score", 0)), reverse=True)
     elif sort_by == "גודל (נמדד)":
         ranked.sort(key=lambda t: (measured_size(t), t.get("score", 0)), reverse=True)
@@ -1327,7 +1367,7 @@ if candidates:
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", ["❤️ הטעם שלי", "גודל (נמדד)", "ציון",
+    sort_by = col_b.selectbox("מיון:", [SORT_BEST, "גודל (נמדד)", "ציון",
                                        "חדשים קודם", "אורך (עולה)", "אורך (יורד)",
                                        "אמן"])
 

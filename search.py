@@ -120,8 +120,28 @@ def is_soundtrack(track: dict) -> bool:
     return any(g in (track.get("genre", "") or "").lower() for g in EPIC_GENRES)
 
 
+def is_trailer_artist(track: dict) -> bool:
+    """אמן או לייבל שידוע בגרסאות טריילר. עובדה על המבצע, לא על הכותרת."""
+    artist = (track.get("artist", "") or "").strip()
+    if not artist:
+        return False
+    # `partial_ratio` מחפש את החלון הטוב ביותר, ולכן שם קצר מהזרע מקבל 100
+    # על אות אחת מקרית: האמן "X" זכה ל-100 מול "Extreme Music". התאמה חלקית
+    # אמורה לתפוס זרע שיושב *בתוך* שם ארוך יותר, ולכן זרע ארוך מהשם נפסל.
+    lowered = artist.lower()
+    return (any(len(seed) <= len(lowered)
+                and fuzz.partial_ratio(seed.lower(), lowered) > 90
+                for seed in EPIC_SEEDS)
+            or any(fuzz.ratio(seed.lower(), normalize_artist(artist)) > 90
+                   for seed in TRAILER_COVER_ARTISTS))
+
+
 def trailer_indicators(track: dict) -> list[str]:
-    """אילו סימנים נמצאו בפועל, להצגה למשתמש במקום תג אטום."""
+    """אילו סימנים נמצאו בפועל, להצגה למשתמש במקום תג אטום.
+
+    אותה רשימה מזינה גם את `trailer_strength` שמדרגת: מה שמוצג כסיבה הוא
+    מה שקובע את המקום, ולכן אין פער בין התג שהמשתמש רואה לבין הסדר.
+    """
     found = []
     if has_epic_title(track):
         found.append("כותרת אפית")
@@ -129,7 +149,24 @@ def trailer_indicators(track: dict) -> list[str]:
         found.append("ז'אנר פסקול")
     if has_production_album(track):
         found.append("אלבום של סדרה/סרט")
+    if is_trailer_artist(track):
+        found.append("אמן טריילרים מוכר")
     return found
+
+
+# כמה סימנים נחשבים "עדות מלאה". שלושה מתוך ארבעה מספיקים: דרישה לארבעה
+# הייתה הופכת את המדד לבינארי כמעט תמיד.
+FULL_TRAILER_EVIDENCE = 3.0
+
+
+def trailer_strength(track: dict) -> float:
+    """כמה חזקה העדות שזו גרסת טריילר, 0..1.
+
+    מדד הדירוג הראשי לצד הטעם והמדידה. הוא נספר מ-`trailer_indicators`
+    ולא מ-`epic_bonus`: האחרון כולל מילים רחבות כמו "cover" ו-"version"
+    שכמעט כל קאבר מקבל, ולכן אינו מבחין בין גרסת טריילר לכל קאבר אחר.
+    """
+    return min(1.0, len(trailer_indicators(track)) / FULL_TRAILER_EVIDENCE)
 
 
 def is_trailer_indicator(track: dict) -> bool:
@@ -443,10 +480,7 @@ def epic_bonus(track: dict) -> int:
         # שם האלבום שאפל נותנת בפועל: "... Season 5 (Soundtrack from the
         # Netflix Series)". תופס גם כשהז'אנר לא סומן Soundtrack.
         bonus += 20
-    if any(fuzz.partial_ratio(seed.lower(), artist.lower()) > 90 for seed in EPIC_SEEDS):
-        bonus += 15
-    if any(fuzz.ratio(seed.lower(), normalize_artist(artist)) > 90
-           for seed in TRAILER_COVER_ARTISTS):
+    if is_trailer_artist(track):
         bonus += 15
     return min(bonus, MAX_EPIC_BONUS)
 
