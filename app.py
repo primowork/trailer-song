@@ -875,16 +875,18 @@ def _entry_grid(entries: list[dict], key_prefix: str):
     per_row = 2 if is_song else 4
     for row_start in range(0, len(entries), per_row):
         columns = st.columns(per_row)
-        for column, entry in zip(columns, entries[row_start:row_start + per_row]):
+        for offset, (column, entry) in enumerate(
+                zip(columns, entries[row_start:row_start + per_row])):
             rank = entry.get("rank")
+            # המפתח נגזר מהמיקום ברשימה ולא מהשם: שני שירים שונים בשם
+            # "Rockstar" באותה שורה מייצרים מפתח כפול ומפילים את העמוד.
+            key = f"{key_prefix}_{row_start + offset}"
             if entry["kind"] == "artist":
                 name = entry["artist"]
                 label = f"{rank}. {name}" if rank else name
-                key = f"{key_prefix}_{row_start}_{name[:30]}"
                 clicked = column.button(label, key=key, use_container_width=True)
             else:
                 full_label = (f"{rank}. " if rank else "") + f"{entry['track']} — {entry['artist']}"
-                key = f"{key_prefix}_{row_start}_{entry['track'][:25]}"
                 clicked = column.button(full_label[:60], key=key, help=full_label,
                                         use_container_width=True)
             if clicked:
@@ -901,7 +903,8 @@ def _classics_entries(category: str) -> list[dict]:
     """קלאסיקות לפי ז'אנר או עשור, 1950–2020 — רשימה סטטית, לא מצעד חי.
 
     מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימות כאן
-    קבועות בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
+    קבועות בקוד: הז'אנרים אצורים ב-`classics.py`, והעשורים מגיעים מנתוני
+    Billboard Hot 100 ההיסטוריים דרך `chart_data` (ראו `tools/build_charts.py`).
     """
     source = classics_module.CATEGORIES.get(category, ())
     return [{"kind": "song", "artist": entry["artist"], "track": entry["track"],
@@ -940,8 +943,9 @@ with st.expander("📇 אינדקס מצעדים", expanded=False):
                                 key="classics_category")
         entries = _classics_entries(category)
         key_prefix = "classic"
-        st.caption(f"{len(entries)} שירים · העשורים והקטגוריות הקלאסיות הם "
-                   "חתכים של אותן רשימות לפי שנה, ולכן שיר יכול להופיע בכמה מהן.")
+        st.caption(f"{len(entries)} שירים · העשורים מדורגים לפי ביצועים בפועל "
+                   "במצעד Billboard Hot 100 ההיסטורי, והז'אנרים לפי רשימות אצורות. "
+                   "בכל קטגוריה לכל היותר שני שירים לאמן, כדי שאותו אמן לא יחזור.")
 
     elif source.startswith("בילבורד"):
         artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")
