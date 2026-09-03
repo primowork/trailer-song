@@ -134,6 +134,11 @@ def _init_state():
         "candidates": [],
         "seen_keys": set(),
         "visible_count": PAGE_SIZE,
+        # סדר התצוגה קפוא (ראו `ordered_display`): רשימת uid, החתימה שיצרה
+        # אותה, ומונה שעולה בכל חיפוש חדש
+        "display_order": [],
+        "order_signature": None,
+        "result_generation": 0,
         "last_query": "",
         "debug_mode": False,
         "covers_source": "",
@@ -604,6 +609,91 @@ def measure_via_server(tracks: list):
 
     st.session_state["cors_retried"].update(measured_now.keys())
     _merge_results(measured_now, tracks, cache, overwrite=True)
+
+
+# ---------- סדר התצוגה ----------
+
+def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
+    """הסדר המבוקש, מחושב על הנתונים שיש **ברגע זה**."""
+    ranked = list(tracks)
+    measurements = st.session_state.get("bigness", {})
+
+    def measured_size(track):
+        features = measurements.get(track["uid"])
+        # מי שטרם נמדד יורד לתחתית ולא מתחזה ל"קטן"
+        return audio.bigness(features) if audio.measured(features) else -1
+
+    if sort_by == "❤️ הטעם שלי":
+        # ברירת המחדל, וזה מה שמעלה את הסגנון שהמשתמש אוהב לראש. בלי לייקים
+        # `taste_of` מחזיר 0 לכולם, והמיון מתקפל למיון לפי גודל נמדד
+        ranked.sort(key=lambda t: (round(taste_of(t, learned), 3), measured_size(t),
+                                   t.get("score", 0)), reverse=True)
+    elif sort_by == "גודל (נמדד)":
+        ranked.sort(key=lambda t: (measured_size(t), t.get("score", 0)), reverse=True)
+    elif sort_by == "ציון":
+        ranked.sort(key=lambda t: t.get("score", 0), reverse=True)
+    elif sort_by == "חדשים קודם":
+        ranked.sort(key=lambda t: search_module.release_year(t), reverse=True)
+    elif sort_by == "אורך (עולה)":
+        ranked.sort(key=lambda t: t.get("duration_sec", 0))
+    elif sort_by == "אורך (יורד)":
+        ranked.sort(key=lambda t: t.get("duration_sec", 0), reverse=True)
+    elif sort_by == "אמן":
+        ranked.sort(key=lambda t: t.get("artist", "").lower())
+    return ranked
+
+
+def ordered_display(tracks: list, sort_by: str, only_approved: bool, learned: dict) -> list:
+    """הסדר נקבע פעם אחת ונשאר — הליבה של תיקון "הכל קופץ".
+
+    מפתח המיון הראשי תלוי במדידות האודיו שממשיכות לזרום מהדפדפן אחרי
+    שהתוצאות כבר על המסך, וגם ב-`learned` שמשתנה בכל לחיצת ❤️. כשהוא חושב
+    מחדש בכל rerun, נמדד ש-20 מתוך 20 השורות הנראות משנות מיקום ברגע
+    שהמדידות חוזרות, ושלחיצת ❤️ אחת דוחפת שלושה שירים אל מעבר ל-20
+    המוצגים — כלומר הם "נעלמים". גרוע מכך: ל-`st.audio` אין `key`, ולכן
+    זהות הנגן היא מיקומית, ואחרי שינוי סדר הצליל של שיר אחד יושב על
+    הכרטיס של שיר אחר (נמדד בדפדפן: הנגן המנגן עבר משורה 1 לשורה 3).
+
+    לכן הסדר נשמר כרשימת uid ומחושב מחדש רק כשמשתנה החתימה — בורר המיון,
+    הפילטר, או חיפוש חדש. הדירוג לפי טעם לא בוטל, רק רגע ההחלה שלו הוקפא;
+    `resort_button` מחזיר את השליטה למשתמש.
+    """
+    signature = (sort_by, only_approved, st.session_state["result_generation"])
+    if st.session_state["order_signature"] != signature:
+        st.session_state["order_signature"] = signature
+        st.session_state["display_order"] = [t["uid"] for t in
+                                             sorted_by(tracks, sort_by, learned)]
+    return apply_order(tracks, st.session_state["display_order"])
+
+
+def apply_order(tracks: list, order: list) -> list:
+    """מסדר לפי רשימת uid שמורה. מה שנעלם יורד, מה שחדש נוסף בסוף.
+
+    "חדש" קורה כשהמשתמש לוחץ "עוד קאברים לשיר הזה" באמצע רשימה קיימת;
+    "נעלם" קורה בחסימת אמן. בשני המקרים שאר השורות לא זזות.
+    """
+    by_uid = {t["uid"]: t for t in tracks}
+    kept = [by_uid[uid] for uid in order if uid in by_uid]
+    known = set(order)
+    return kept + [t for t in tracks if t["uid"] not in known]
+
+
+def resort_button(display: list, sort_by: str, learned: dict):
+    """מיישם את מה שנלמד מאז — ביוזמת המשתמש, ולא באמצע האזנה.
+
+    בלי זה ההקפאה הייתה מסתירה את הלמידה עד החיפוש הבא. הכפתור אומר מראש
+    כמה שורות יזוזו, כדי שהתזוזה לא תהיה הפתעה.
+    """
+    fresh = [t["uid"] for t in sorted_by(display, sort_by, learned)]
+    current = [t["uid"] for t in display]
+    moving = sum(1 for old, new in zip(current, fresh) if old != new)
+    if not moving:
+        return
+    if st.button(f"🔄 סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)",
+                 help="הסדר קפוא בזמן עיון כדי שהרשימה לא תזוז תוך כדי האזנה. "
+                      "כאן מיישמים את מה שנלמד מאז — מדידות אודיו חדשות ולייקים."):
+        st.session_state["display_order"] = fresh
+        st.rerun()
 
 
 # ---------- הצגת שיר בודד ----------
@@ -1127,6 +1217,7 @@ def _run_similar():
     st.session_state["covers_source"] = f"{source} · {label}" if source else label
     st.session_state["original"] = None
     st.session_state["visible_count"] = PAGE_SIZE
+    st.session_state["result_generation"] += 1
     if not results:
         failure = _lookup_failed()
         if failure:
@@ -1140,6 +1231,7 @@ def _store_results(results, source, original=None):
     st.session_state["covers_source"] = source
     st.session_state["original"] = original
     st.session_state["visible_count"] = PAGE_SIZE
+    st.session_state["result_generation"] += 1
     st.session_state["last_query"] = cover_title or cover_artist
 
 
@@ -1247,31 +1339,8 @@ if candidates:
     # כמה Soundtrack יש כאן ממילא, ולא כספירה גולמית
     learned = taste_profile(display)
 
-    if sort_by == "❤️ הטעם שלי":
-        # ברירת המחדל, וזה מה שמעלה את הסגנון שהמשתמש אוהב לראש. בלי לייקים
-        # `taste_of` מחזיר 0 לכולם, והמיון מתקפל למיון לפי גודל נמדד
-        measurements = st.session_state.get("bigness", {})
-        display.sort(key=lambda t: (round(taste_of(t, learned), 3),
-                                    audio.bigness(measurements.get(t["uid"]))
-                                    if audio.measured(measurements.get(t["uid"])) else -1,
-                                    t.get("score", 0)), reverse=True)
-    elif sort_by == "ציון":
-        display.sort(key=lambda t: t.get("score", 0), reverse=True)
-    elif sort_by == "חדשים קודם":
-        display.sort(key=lambda t: search_module.release_year(t), reverse=True)
-    elif sort_by == "גודל (נמדד)":
-        # מי שטרם נמדד יורד לתחתית ולא מתחזה ל"קטן": מפתח שני הוא הציון,
-        # כדי שהסדר יישאר יציב עד שהמדידה בדפדפן חוזרת
-        measurements = st.session_state.get("bigness", {})
-        display.sort(key=lambda t: (audio.bigness(measurements.get(t["uid"]))
-                                    if audio.measured(measurements.get(t["uid"])) else -1,
-                                    t.get("score", 0)), reverse=True)
-    elif sort_by == "אורך (עולה)":
-        display.sort(key=lambda t: t.get("duration_sec", 0))
-    elif sort_by == "אורך (יורד)":
-        display.sort(key=lambda t: t.get("duration_sec", 0), reverse=True)
-    elif sort_by == "אמן":
-        display.sort(key=lambda t: t.get("artist", "").lower())
+    display = ordered_display(display, sort_by, only_approved, learned)
+    resort_button(display, sort_by, learned)
 
     st.subheader(f"מוצגים {min(st.session_state['visible_count'], len(display))} מתוך {len(display)}")
     st.caption(f"סה\"כ במאגר: {len(candidates)}")

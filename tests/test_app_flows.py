@@ -322,6 +322,105 @@ def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
     assert not any("### 🚫 אמנים ברשימה השחורה" in text for text in headers)
 
 
+# ---------- יציבות הסדר ----------
+
+BIG = {"loudness": 0.30, "low_end": 3.0, "onset_rate": 3.5, "dynamic_span": 6.0}
+SMALL = {"loudness": 0.08, "low_end": 0.8, "onset_rate": 0.8, "dynamic_span": 1.5}
+
+
+def _row_order(app) -> list:
+    return [(b.key or "").replace("btn_favorite_", "")
+            for b in app.button if (b.key or "").startswith("btn_favorite_")]
+
+
+def _thirty(genre_of=lambda i: "Soundtrack"):
+    return [track(f"A{i}", f"T{i}", f"u{i}", score=100 - i, genre=genre_of(i))
+            for i in range(30)]
+
+
+def test_arriving_measurements_do_not_move_the_rows(app):
+    """התלונה: "כל פעם שאני מנגן או לוחץ הכל קופץ".
+
+    מדידות האודיו חוזרות מהדפדפן שניות אחרי שהתוצאות כבר על המסך, והן מפתח
+    המיון הראשי. לפני ההקפאה נמדד שכל 20 השורות הנראות משנות מיקום ברגע
+    שהמדידות נכנסות.
+    """
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    before = _row_order(app)
+
+    app.session_state["bigness"] = {f"itunes-u{i}": (BIG if i in (5, 17, 19) else SMALL)
+                                    for i in range(20)}
+    app.run()
+
+    assert not app.exception
+    assert _row_order(app) == before
+
+
+def test_a_single_heart_does_not_push_songs_off_the_page(app):
+    """התלונה: "שירים נעלמים".
+
+    הם לא נמחקו — הדירוג מחדש דחף אותם אל מעבר ל-20 המוצגים. לפני ההקפאה
+    לחיצת ❤️ אחת הוציאה שלושה שירים מהחלון הנראה.
+    """
+    app.session_state["candidates"] = _thirty(
+        lambda i: "Metal" if i in (23, 27, 28) else "Soundtrack")
+    app.run()
+    before = _row_order(app)
+
+    app.session_state["favorites"] = {
+        "a23|t23": {"artist": "A23", "track": "T23", "genre": "Metal",
+                    "features": None, "added_at": 1_700_000_000.0}}
+    app.run()
+
+    assert not app.exception
+    assert _row_order(app) == before
+
+
+def test_changing_the_sort_still_reorders(app):
+    """ההקפאה לא הפכה את בורר המיון למת."""
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    before = _row_order(app)
+
+    picker = [s for s in app.selectbox if s.label == "מיון:"][0]
+    picker.set_value("אמן").run()
+
+    assert not app.exception
+    assert _row_order(app) != before
+    # מיון לפי אמן: A0, A1, A10, A11 … לקסיקוגרפי ולא מספרי
+    assert _row_order(app)[:3] == ["itunes-u0", "itunes-u1", "itunes-u10"]
+
+
+def test_a_new_search_recomputes_the_order(app, monkeypatch):
+    """ההקפאה חלה בתוך רשימה קיימת, לא בין חיפושים."""
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    generation = app.session_state["result_generation"]
+
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: ([track("New", "Fresh", "n1")], "src", None))
+    app.text_input(key="cover_title").set_value("Fresh").run()
+    [b for b in app.button if b.label == "🔎 חפש"][0].click().run()
+
+    assert not app.exception
+    assert app.session_state["result_generation"] > generation
+    assert _row_order(app) == ["itunes-n1"]
+
+
+def test_blocking_an_artist_drops_it_without_moving_the_rest(app):
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    before = _row_order(app)
+
+    app.button(key="btn_block_itunes-u3").click().run()
+
+    assert not app.exception
+    after = _row_order(app)
+    assert "itunes-u3" not in after
+    assert after == [uid for uid in before if uid != "itunes-u3"] + ["itunes-u20"]
+
+
 def test_taste_lifts_tracks_that_match_what_was_hearted(app):
     """הבדיקה שקובעת, ובכוונה נגד מיון הגודל.
 
@@ -350,9 +449,14 @@ def test_taste_lifts_tracks_that_match_what_was_hearted(app):
     order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert order.index("btn_favorite_itunes-calm") < order.index("btn_favorite_itunes-loud")
 
-    # ובלי הלמידה, אותם נתונים בדיוק נותנים את הסדר ההפוך
+    # ובלי הלמידה, אותם נתונים בדיוק נותנים את הסדר ההפוך — אבל רק אחרי
+    # "סדר מחדש": הסדר קפוא בזמן עיון כדי שהרשימה לא תזוז תוך כדי האזנה
     app.session_state["favorites"] = {}
     app.run()
+    frozen = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert frozen.index("btn_favorite_itunes-calm") < frozen.index("btn_favorite_itunes-loud")
+
+    [b for b in app.button if (b.label or "").startswith("🔄 סדר מחדש")][0].click().run()
     order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert order.index("btn_favorite_itunes-loud") < order.index("btn_favorite_itunes-calm")
 
