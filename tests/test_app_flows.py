@@ -242,3 +242,89 @@ def test_filters_thread_through_to_song_mode(app, monkeypatch):
 
     assert not app.exception
     assert seen["filters"] is not None
+
+
+# ---------- ❤️ פלייליסט וטעם נלמד ----------
+
+def test_heart_saves_to_the_playlist_and_persists(app):
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    app.button(key="btn_favorite_itunes-e1").click().run()
+
+    assert not app.exception
+    assert len(app.session_state["favorites"]) == 1
+    # נשמר לדיסק, לא רק ל-session (ה-fixture מפנה את DATA_DIR ל-tmp_path)
+    assert storage.load_favorites()
+    saved = list(app.session_state["favorites"].values())[0]
+    assert saved["artist"] == "2WEI"
+    assert saved["track"] == "Zombie (Epic)"
+
+
+def test_heart_toggles_off(app):
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    app.button(key="btn_favorite_itunes-e1").click().run()
+    assert len(app.session_state["favorites"]) == 1
+    app.button(key="btn_favorite_itunes-e1").click().run()
+
+    assert not app.exception
+    assert app.session_state["favorites"] == {}
+
+
+def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
+    headers = [m.value for m in app.markdown]
+    assert any("❤️ הפלייליסט שלי" in text for text in headers)
+    # החסימה עדיין קיימת — רק ירדה לאקספנדר מכווץ
+    assert not any("### 🚫 אמנים ברשימה השחורה" in text for text in headers)
+
+
+def test_taste_lifts_tracks_that_match_what_was_hearted(app):
+    """הבדיקה שקובעת, ובכוונה נגד מיון הגודל.
+
+    המשתמש אוהב גרסאות *רגועות*. מיון "גודל נמדד" היה מציב את הרועשת ראשונה
+    תמיד — ולכן אם הרגועה עולה, זה יכול לנבוע רק מהלמידה.
+    """
+    loud = {"loudness": 0.29, "low_end": 2.9, "onset_rate": 3.4, "dynamic_span": 5.8}
+    calm = {"loudness": 0.09, "low_end": 0.9, "onset_rate": 0.9, "dynamic_span": 2.0}
+
+    app.session_state["favorites"] = {
+        f"calm artist {i}|piano": {
+            "artist": f"Calm Artist {i}", "track": "Piano Cover",
+            "genre": "Classical", "year": "2019", "features": dict(calm),
+            "added_at": 1_700_000_000.0,
+        }
+        for i in range(6)
+    }
+    app.session_state["candidates"] = [
+        track("Loud Band", "Clocks (Epic Trailer Version)", "loud", genre="Soundtrack"),
+        track("Quiet Pianist", "Clocks (Solo Piano)", "calm", genre="Classical"),
+    ]
+    app.session_state["bigness"] = {"itunes-loud": loud, "itunes-calm": calm}
+    app.run()
+
+    assert not app.exception
+    order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert order.index("btn_favorite_itunes-calm") < order.index("btn_favorite_itunes-loud")
+
+    # ובלי הלמידה, אותם נתונים בדיוק נותנים את הסדר ההפוך
+    app.session_state["favorites"] = {}
+    app.run()
+    order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert order.index("btn_favorite_itunes-loud") < order.index("btn_favorite_itunes-calm")
+
+
+def test_without_favorites_the_default_sort_falls_back_to_measured_size(app):
+    big = {"loudness": 0.30, "low_end": 3.0, "onset_rate": 3.5, "dynamic_span": 6.0}
+    small = {"loudness": 0.08, "low_end": 0.8, "onset_rate": 0.8, "dynamic_span": 1.5}
+    app.session_state["candidates"] = [
+        track("Quiet", "A", "small"),
+        track("Loud", "B", "big"),
+    ]
+    app.session_state["bigness"] = {"itunes-small": small, "itunes-big": big}
+    app.run()
+
+    assert not app.exception
+    order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert order.index("btn_favorite_itunes-big") < order.index("btn_favorite_itunes-small")

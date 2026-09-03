@@ -19,6 +19,7 @@ import preview as preview_module
 import storage
 import search as search_module
 import suggest as suggest_module
+import taste
 from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
 
@@ -27,6 +28,10 @@ PAGE_SIZE = 20
 # שלושת מצבי החיפוש. "קאברים לשיר" ממזג שני מקורות (מאגר יחסי + חיפוש בחנויות)
 # תחת בחירה אחת — הם עונים בפועל על אותה שאלה. "קאברים לאמן" ו"חיפוש חופשי"
 # הם כוונות שונות באמת (קלט שונה; חיפוש רחב מכוון-פילטרים) ונשארים מצבים נפרדים.
+# מתחת לזה התג "מתאים לטעם שלך" הוא רעש: עם מעט לייקים כל הטראקים מקבלים
+# ציון נמוך דומה, ותג על כולם אינו אומר דבר
+TASTE_BADGE_THRESHOLD = 0.35
+
 MODE_SONG = "🎬 קאברים לשיר"
 MODE_ARTIST = "🎤 קאברים לאמן"
 MODE_FREE = "🔎 חיפוש חופשי + פילטרים"
@@ -98,6 +103,7 @@ def _init_state():
         "statuses": storage.load_statuses(),
         "blacklist": storage.load_blacklist(),
         "cache": storage.load_cache(),
+        "favorites": storage.load_favorites(),
         "candidates": [],
         "seen_keys": set(),
         "visible_count": PAGE_SIZE,
@@ -135,6 +141,46 @@ def is_blacklisted(artist: str) -> bool:
 
 def apply_blacklist(tracks: list[dict]) -> list[dict]:
     return [t for t in tracks if not is_blacklisted(t.get("artist", ""))]
+
+
+# ---------- ❤️ פלייליסט וטעם נלמד ----------
+
+# שדות שנשמרים בפלייליסט: מספיק כדי להציג את הגרסה מאוחר יותר, ומספיק כדי
+# ללמוד ממנה. שמירת הטראק המלא הייתה גוררת גם שדות רגעיים כמו `score`.
+FAVORITE_FIELDS = ("artist", "track", "album", "genre", "year", "duration_sec",
+                   "preview_url", "artwork", "source", "catalog_source",
+                   "trailer_indicator")
+
+
+def is_favorite(track: dict) -> bool:
+    return track_key(track.get("artist", ""), track.get("track", "")) in st.session_state["favorites"]
+
+
+def toggle_favorite(track: dict):
+    """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון של `taste`."""
+    favorites = st.session_state["favorites"]
+    key = track_key(track.get("artist", ""), track.get("track", ""))
+    if key in favorites:
+        favorites.pop(key)
+    else:
+        features = st.session_state["bigness"].get(track["uid"])
+        favorites[key] = {
+            **{field: track.get(field) for field in FAVORITE_FIELDS},
+            # המדידה נשמרת ברגע הלייק כדי שהלמידה לא תהיה תלויה בכך שהטראק
+            # יימדד שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
+            "features": features if audio.measured(features) else None,
+            "added_at": time.time(),
+        }
+    storage.save_favorites(favorites)
+
+
+def taste_profile(background: list[dict] | None = None) -> dict:
+    """הפרופיל הנלמד. הרקע הוא פול התוצאות המוצג, ובלעדיו זה מונה שכיחות."""
+    return taste.profile(list(st.session_state["favorites"].values()), background)
+
+
+def taste_of(track: dict, learned: dict) -> float:
+    return taste.match(track, st.session_state["bigness"].get(track["uid"]), learned)
 
 
 def status_of(track: dict) -> dict | None:
@@ -205,22 +251,38 @@ def verify_tracks(tracks: list[dict]):
 # ---------- סרגל צד ----------
 
 with st.sidebar:
-    st.markdown("### 🚫 אמנים ברשימה השחורה")
-    blacklist = sorted(st.session_state["blacklist"])
-    st.write(f"סה\"כ נחסמו: **{len(blacklist)}**")
+    st.markdown("### ❤️ הפלייליסט שלי")
+    favorites = st.session_state["favorites"]
+    st.write(f"גרסאות שמורות: **{len(favorites)}**")
 
-    for artist in blacklist:
-        col_name, col_undo = st.columns([3, 1])
-        col_name.write(artist)
-        if col_undo.button("↩️", key=f"unblock_{artist}", help="בטל חסימה"):
-            st.session_state["blacklist"].discard(artist)
-            storage.save_blacklist(st.session_state["blacklist"])
-            st.rerun()
+    if favorites:
+        learned_sidebar = taste_profile()
+        summary = taste.describe(learned_sidebar)
+        if summary:
+            st.caption(summary)
 
-    if blacklist and st.button("🗑️ נקה רשימה שחורה"):
-        st.session_state["blacklist"] = set()
-        storage.save_blacklist(st.session_state["blacklist"])
-        st.rerun()
+        for key, entry in sorted(favorites.items(),
+                                 key=lambda item: item[1].get("added_at", 0),
+                                 reverse=True):
+            col_name, col_remove = st.columns([4, 1])
+            col_name.caption(f"**{entry.get('artist', '')}** — {entry.get('track', '')}")
+            if col_remove.button("✕", key=f"unfav_{key}", help="הסר מהפלייליסט"):
+                favorites.pop(key)
+                storage.save_favorites(favorites)
+                st.rerun()
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["אמן", "שיר", "אלבום", "ז'אנר", "שנה", "preview"])
+        for entry in favorites.values():
+            writer.writerow([entry.get("artist", ""), entry.get("track", ""),
+                             entry.get("album", ""), entry.get("genre", ""),
+                             entry.get("year", ""), entry.get("preview_url", "")])
+        st.download_button("⬇️ ייצא פלייליסט", data=buffer.getvalue().encode("utf-8-sig"),
+                           file_name="playlist.csv", mime="text/csv")
+    else:
+        st.caption("סמן ❤️ ליד גרסה שאהבת. היא תישמר כאן, והדירוג ילמד "
+                   "מה מאפיין את מה שאתה אוהב ויעלה גרסאות כאלה לראש.")
 
     st.divider()
     st.markdown("### ⚙️ הגדרות")
@@ -316,6 +378,24 @@ with st.sidebar:
                 storage.save_charts({slug: chart for slug, chart in stored.items()
                                      if chart["title"] != to_remove})
                 st.rerun()
+
+    # החסימה עצמה נשארת פעילה; רק התצוגה שלה ירדה מהחזית לטובת הפלייליסט
+    with st.expander(f"🚫 רשימה שחורה ({len(st.session_state['blacklist'])})"):
+        blacklist = sorted(st.session_state["blacklist"])
+        if not blacklist:
+            st.caption("אין אמנים חסומים.")
+        for artist in blacklist:
+            col_name, col_undo = st.columns([3, 1])
+            col_name.write(artist)
+            if col_undo.button("↩️", key=f"unblock_{artist}", help="בטל חסימה"):
+                st.session_state["blacklist"].discard(artist)
+                storage.save_blacklist(st.session_state["blacklist"])
+                st.rerun()
+
+        if blacklist and st.button("🗑️ נקה רשימה שחורה"):
+            st.session_state["blacklist"] = set()
+            storage.save_blacklist(st.session_state["blacklist"])
+            st.rerun()
 
     if st.button("🧹 נקה קאש בדיקות"):
         st.session_state["cache"] = {}
@@ -446,15 +526,23 @@ def measure_via_server(tracks: list):
 
 # ---------- הצגת שיר בודד ----------
 
-def render_track(track: dict, index: int):
+def render_track(track: dict, index: int, learned: dict | None = None):
     uid = track["uid"]
     status = status_of(track)
     duration_min = round(track.get("duration_sec", 0) / 60, 1)
 
-    cols = st.columns([0.5, 3, 3, 2.2, 1.5, 1.2])
-    col_check, col_title, col_audio, col_status, col_btn_check, col_btn_block = cols
+    cols = st.columns([0.5, 0.6, 3, 3, 2.2, 1.5, 1.2])
+    (col_check, col_heart, col_title, col_audio, col_status,
+     col_btn_check, col_btn_block) = cols
 
     selected = col_check.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed")
+
+    favorited = is_favorite(track)
+    if col_heart.button("❤️" if favorited else "🤍", key=f"btn_favorite_{uid}",
+                        help="הסר מהפלייליסט" if favorited else
+                             "שמור לפלייליסט — והדירוג ילמד מזה מה אתה אוהב"):
+        toggle_favorite(track)
+        st.rerun()
 
     with col_title:
         features = st.session_state.get("bigness", {}).get(uid)
@@ -487,6 +575,11 @@ def render_track(track: dict, index: int):
             st.caption(f"⚪ טרם נמדד — {reason}")
         elif track.get("preview_url"):
             st.caption("⚪ טרם נמדד")
+        if learned and learned.get("count"):
+            # למה הטראק הזה עלה: אחרת שינוי הסדר נראה שרירותי
+            fit = taste_of(track, learned)
+            if fit >= TASTE_BADGE_THRESHOLD:
+                st.caption(f"❤️ {round(fit * 100)}% מתאים לטעם שלך")
         for item in evidence[:2]:
             st.caption(f"🎬 [{item['title'][:70]}]({item['url']}) — {item['channel']}")
         if track.get("origin_track"):
@@ -1039,13 +1132,27 @@ if candidates:
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", ["גודל (נמדד)", "ציון", "חדשים קודם",
-                                       "אורך (עולה)", "אורך (יורד)", "אמן"])
+    sort_by = col_b.selectbox("מיון:", ["❤️ הטעם שלי", "גודל (נמדד)", "ציון",
+                                       "חדשים קודם", "אורך (עולה)", "אורך (יורד)",
+                                       "אמן"])
 
     display = list(candidates)
     if only_approved:
         display = [t for t in display if (status_of(t) or {}).get("status") == federation.APPROVED]
-    if sort_by == "ציון":
+
+    # הפרופיל נבנה מול פול התוצאות המוצג — כך "אהבתי Soundtrack" נמדד מול
+    # כמה Soundtrack יש כאן ממילא, ולא כספירה גולמית
+    learned = taste_profile(display)
+
+    if sort_by == "❤️ הטעם שלי":
+        # ברירת המחדל, וזה מה שמעלה את הסגנון שהמשתמש אוהב לראש. בלי לייקים
+        # `taste_of` מחזיר 0 לכולם, והמיון מתקפל למיון לפי גודל נמדד
+        measurements = st.session_state.get("bigness", {})
+        display.sort(key=lambda t: (round(taste_of(t, learned), 3),
+                                    audio.bigness(measurements.get(t["uid"]))
+                                    if audio.measured(measurements.get(t["uid"])) else -1,
+                                    t.get("score", 0)), reverse=True)
+    elif sort_by == "ציון":
         display.sort(key=lambda t: t.get("score", 0), reverse=True)
     elif sort_by == "חדשים קודם":
         display.sort(key=lambda t: search_module.release_year(t), reverse=True)
@@ -1093,7 +1200,8 @@ if candidates:
 
     metrics_export(visible)
 
-    selected = [t for t in (render_track(track, i) for i, track in enumerate(visible)) if t]
+    selected = [t for t in (render_track(track, i, learned)
+                           for i, track in enumerate(visible)) if t]
 
     if selected and action_selected.button(f"🔍 בדוק את {len(selected)} המסומנים", type="secondary"):
         verify_tracks(selected)

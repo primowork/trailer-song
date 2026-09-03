@@ -47,6 +47,19 @@ def _scaled(value: float, floor: float, full_credit: float) -> float:
     return max(0.0, min((value - floor) / span, 1.0))
 
 
+def normalized(features: "dict | None") -> "dict | None":
+    """המדדים הגולמיים על סקאלה אחידה 0..1, או None כשאין מדידה.
+
+    הנרמול חי כאן ולא אצל הקורא כי הטווחים (`WEIGHTS`) הם ידע של המודול הזה.
+    `taste.py` משווה טראקים זה לזה במרחב הזה, ומדדים בסקאלות שונות (עוצמה
+    0.1–0.3 מול קשת 1.5–6.0) אינם ברי-השוואה בלי הנרמול.
+    """
+    if not measured(features):
+        return None
+    return {name: _scaled(features.get(name, 0.0), floor, full)
+            for name, (_, floor, full) in WEIGHTS.items()}
+
+
 def bigness(features: "dict | None") -> int:
     """ציון 0..100. מקבל את ה-dict שהרכיב בדפדפן החזיר."""
     if not features or features.get("error"):

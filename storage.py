@@ -158,6 +158,17 @@ def save_bigness(measurements: dict) -> bool:
     return _save_json("bigness.json", measurements)
 
 
+# הגרסאות שהמשתמש סימן ב-❤️. מאגר אחד שמשרת שתי מטרות: הפלייליסט האישי,
+# וגם דוגמאות האימון שמהן `taste.py` לומד מה המשתמש אוהב. מפתח לפי
+# `search.track_key` (זהות תוכן), כדי שאותו שיר מ-iTunes ומ-Deezer ייספר פעם אחת.
+def load_favorites() -> dict:
+    return _load_json("favorites.json", {}) or {}
+
+
+def save_favorites(favorites: dict) -> bool:
+    return _save_json("favorites.json", favorites)
+
+
 # מצעדים שיובאו מעמודי בילבורד שמורים. שם הקובץ נגזר משם המצעד, כדי שייבוא
 # חוזר של אותו מצעד יעדכן במקום לשכפל.
 IMPORTED_CHARTS = "imported_charts.json"
