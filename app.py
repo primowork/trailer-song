@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 import artists as artists_module
 import audio
 import billboard as billboard_module
-import charts as charts_module
+import classics as classics_module
 import covers as covers_module
 import youtube as youtube_module
 import federation
@@ -112,11 +112,13 @@ def _init_state():
         "all_inputs": [],
         "suggest_query": "",
         "suggestions": [],
+        "artist_preview_query": "",
+        "artist_preview_titles": [],
         "cors_retried": set(),
         "federation_probed": False,
         "similar_of": None,
         "pending_fields": None,
-        "index_source": "מצעד Deezer חי",
+        "index_source": "🎻 קלאסיקות (פופ/רוק)",
         "search_mode": MODE_SONG,
     }
     for key, value in defaults.items():
@@ -693,13 +695,36 @@ def suggestion_row(query: str):
 
 suggestion_row(cover_title)
 
+ARTIST_PREVIEW_COUNT = 20
+
+
+def _artist_preview_titles(artist: str) -> list[str]:
+    """עד 20 השירים המזוהים ביותר עם האמן, זול (קריאת iTunes אחת) ומקוצ'ר.
+
+    לחיצה על אמן ב-📇 אינדקס מצעדים לא צריכה להריץ מיד חיפוש קאברים יקר
+    (עד 8 חיפושים מקבילים) לפני שהמשתמש בכלל ראה אילו שירים נבחרו לו.
+    הקאש לפי שם מנורמל מונע קריאת iTunes חוזרת בכל rerun (checkbox, מדידת
+    אודיו וכו׳).
+    """
+    key = search_module.normalize_artist(artist)
+    if st.session_state["artist_preview_query"] != key:
+        st.session_state["artist_preview_query"] = key
+        search_module.reset_errors()
+        with st.spinner(f"מזהה שירים של {artist}..."):
+            st.session_state["artist_preview_titles"] = covers_module.artist_top_titles(
+                artist, limit=ARTIST_PREVIEW_COUNT)
+    return st.session_state["artist_preview_titles"]
+
+
 def _entry_grid(entries: list[dict], key_prefix: str):
     """רשת כפתורים משותפת לאמנים ולשירים, מכל אחד משלושת מקורות האינדקס.
 
-    לחיצה על אמן ממלאת את שדה האמן, קובעת מצב "קאברים לאמן" ומריצה אוטומטית.
-    לחיצה על שיר ממלאת שיר+אמן, קובעת מצב "קאברים לשיר" ומריצה אוטומטית.
-    שלושת המקורות (מצעד Deezer חי, רשימת בילבורד, מצעד מיובא) שונים בנתונים
-    אבל זהים בהתנהגות — לכן רכיב רינדור אחד במקום שלושה כמעט-זהים.
+    לחיצה על אמן ממלאת את שדה האמן וקובעת מצב "קאברים לאמן" — תצוגה מקדימה
+    זולה של שירי האמן מוצגת לפני שחיפוש הקאברים היקר רץ (ראו
+    `_artist_preview_titles`). לחיצה על שיר ממלאת שיר+אמן, קובעת מצב
+    "קאברים לשיר" ומריצה אוטומטית. שלושת המקורות (קלאסיקות סטטיות, רשימת
+    בילבורד, מצעד מיובא) שונים בנתונים אבל זהים בהתנהגות — לכן רכיב רינדור
+    אחד במקום שלושה כמעט-זהים.
     """
     is_song = any(entry["kind"] == "song" for entry in entries)
     per_row = 2 if is_song else 4
@@ -719,18 +744,23 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                                         use_container_width=True)
             if clicked:
                 if entry["kind"] == "artist":
-                    queue_fields(artist=entry["artist"], mode=MODE_ARTIST, auto_run=True)
+                    # לא auto_run: קודם מוצגת תצוגה מקדימה זולה של שירי האמן
+                    # (ראו את המקטע אחרי רדיו "סוג חיפוש") — חיפוש הקאברים
+                    # המלא יקר ולא צריך לרוץ לפני שהמשתמש בחר מה לחפש בפועל
+                    queue_fields(artist=entry["artist"], mode=MODE_ARTIST)
                 else:
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
 
 
-def _deezer_entries(genre_id, kind: str) -> list[dict]:
-    if kind == "שירים":
-        rows = charts_module.chart_tracks(genre_id)
-        return [{"kind": "song", "artist": t["artist"], "track": t["track"], "rank": index + 1}
-                for index, t in enumerate(rows)]
-    return [{"kind": "artist", "artist": name, "rank": None}
-            for name in charts_module.chart_artists(genre_id)]
+def _classics_entries(genre: str) -> list[dict]:
+    """קלאסיקות פופ/רוק, 1950–2020 — רשימה סטטית, לא מצעד חי.
+
+    מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימה כאן
+    קבועה בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
+    """
+    source = classics_module.POP_CLASSICS if genre == "פופ" else classics_module.ROCK_CLASSICS
+    return [{"kind": "song", "artist": entry["artist"], "track": entry["track"],
+            "rank": index + 1} for index, entry in enumerate(source)]
 
 
 def _goat_entries(filter_text: str) -> list[dict]:
@@ -754,21 +784,15 @@ with st.expander("📇 אינדקס מצעדים", expanded=False):
                "התוצאות — שם קובע מה שנמדד מהאודיו.")
 
     imported = storage.load_charts()
-    sources = ["מצעד Deezer חי", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
+    sources = ["🎻 קלאסיקות (פופ/רוק)", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
     sources += [f"מיובא: {chart['title']}" for chart in imported.values()]
     source = st.radio("מקור:", sources, horizontal=True, key="index_source")
 
     entries, key_prefix = [], ""
-    if source.startswith("מצעד Deezer"):
-        genre_list = charts_module.genres()
-        if not genre_list:
-            st.caption("המצעד לא נטען מהשרת כרגע. הרשימות האחרות עובדות בלי רשת.")
-        else:
-            names = {genre["name"]: genre["id"] for genre in genre_list}
-            picked = st.selectbox("קטגוריה:", list(names), key="index_genre")
-            kind = st.radio("להציג:", ["שירים", "אמנים"], horizontal=True, key="index_kind")
-            entries = _deezer_entries(names[picked], kind)
-            key_prefix = "chart_song" if kind == "שירים" else "chart_artist"
+    if source.startswith("🎻 קלאסיקות"):
+        genre = st.radio("ז'אנר:", ["פופ", "רוק"], horizontal=True, key="classics_genre")
+        entries = _classics_entries(genre)
+        key_prefix = "classic"
 
     elif source.startswith("בילבורד"):
         artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")
@@ -864,6 +888,23 @@ if search_mode == MODE_SONG:
         }
         picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
         chosen_work = labels[picked]
+
+elif search_mode == MODE_ARTIST and cover_artist.strip():
+    titles = _artist_preview_titles(cover_artist)
+    if titles:
+        st.caption(f"🎵 {len(titles)} השירים המזוהים ביותר עם {cover_artist} — "
+                   "לחיצה מריצה חיפוש קאברים לשיר הזה בלבד. '🔎 חפש' למטה "
+                   "סורק את כל השירים המובילים בבת אחת.")
+        _entry_grid([{"kind": "song", "artist": cover_artist, "track": title,
+                      "rank": index + 1} for index, title in enumerate(titles)],
+                    "artist_preview")
+    else:
+        failure = _lookup_failed()
+        if failure:
+            st.error(failure)
+        else:
+            st.caption("לא נמצאו שירים מזוהים עם האמן הזה. אפשר עדיין ללחוץ "
+                       "'🔎 חפש' לחיפוש קאברים ישיר.")
 
 run_search = st.button("🔎 חפש", type="primary") or st.session_state.pop("auto_run", False)
 

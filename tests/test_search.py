@@ -83,7 +83,7 @@ def test_length_filter_boundaries():
 
 
 def test_search_covers_excludes_seen_keys(monkeypatch):
-    pool = [make("2WEI", "Survivor", uid="a"), make("Hidden Citizens", "Paint It Black", uid="b")]
+    pool = [make("2WEI", "Survivor", uid="a"), make("Hidden Citizens", "Survivor (Epic Cover)", uid="b")]
     monkeypatch.setattr(search, "itunes_search", lambda *a, **k: list(pool))
     monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
 
@@ -94,6 +94,30 @@ def test_search_covers_excludes_seen_keys(monkeypatch):
         "survivor", exclude_keys={search.track_key("2WEI", "Survivor")}, include_seeds=False
     )
     assert {t["artist"] for t in excluded} == {"Hidden Citizens"}
+
+
+def test_relevance_penalizes_a_different_song_that_shares_two_words():
+    """'At Long Last, Love' הוא שיר אחר לגמרי, לא קאבר של 'At Last'."""
+    unrelated = make("Danny Elfman", "At Long Last, Love")
+    legit_cover = make("Etta James Tribute", "At Last (Epic Trailer Version)")
+    assert search.relevance(unrelated, "At Last") < search.RELEVANCE_FLOOR
+    assert search.relevance(legit_cover, "At Last") >= search.RELEVANCE_FLOOR
+
+
+def test_relevance_survives_version_tags_on_the_candidate_title():
+    """הכותרת מנוקה לפני ההשוואה — תג הגרסה לא מוריד את הציון."""
+    tagged = make("2WEI", "Zombie (Epic Trailer Version)")
+    assert search.relevance(tagged, "Zombie") == 100
+
+
+def test_search_covers_excludes_unrelated_titles_below_the_relevance_floor(monkeypatch):
+    pool = [make("Beyoncé", "At Last (Album Version)", uid="a"),
+           make("Danny Elfman", "At Long Last, Love", uid="b")]
+    monkeypatch.setattr(search, "itunes_search", lambda *a, **k: list(pool))
+    monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
+
+    results = search.search_covers("At Last", include_seeds=False)
+    assert {t["artist"] for t in results} == {"Beyoncé"}
 
 
 def test_search_covers_survives_failing_source(monkeypatch):
