@@ -322,6 +322,66 @@ def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
     assert not any("### 🚫 אמנים ברשימה השחורה" in text for text in headers)
 
 
+# ---------- עדות טריילר בדירוג ----------
+
+def _epic(uid="epic"):
+    return track("2WEI", "Zombie (Epic Trailer Version)", uid,
+                 album="Epic Covers", genre="Soundtrack")
+
+
+def _plain(uid="plain"):
+    return track("Some Band", "Zombie", uid, album="Greatest Hits", genre="Pop")
+
+
+def test_an_unmeasured_epic_version_outranks_a_measured_loud_cover(app):
+    """התלונה: "מלא שירים שרשום עליהם טריילר epic ועדיין הם תחתונים".
+
+    המפתח הקודם היה `(taste, measured_size, score)` לקסיקוגרפית. בלי לייקים
+    הטעם היה 0 לכולם, ולכן הגודל הנמדד הכריע לבדו — ו"טרם נמדד" היה 1-,
+    כלומר תחתית הרשימה. הטראק כאן נושא שני סימני טריילר וציון 130 מול 100,
+    והוא דורג אחרון.
+    """
+    app.session_state["candidates"] = [_epic(), _plain()]
+    app.session_state["bigness"] = {"itunes-plain": BIG}
+    app.run()
+
+    assert not app.exception
+    assert _row_order(app)[0] == "itunes-epic"
+
+
+def test_a_quiet_epic_version_outranks_a_loud_plain_cover(app):
+    """גרסה תזמורתית יכולה להימדד שקטה בקטע של 30 שניות. זה לא הופך אותה
+    לפחות טריילרית."""
+    app.session_state["candidates"] = [_epic(), _plain()]
+    app.session_state["bigness"] = {"itunes-epic": SMALL, "itunes-plain": BIG}
+    app.run()
+
+    assert not app.exception
+    assert _row_order(app)[0] == "itunes-epic"
+
+
+def test_the_reason_shown_is_the_reason_it_ranks(app):
+    """הדירוג נספר מאותם סימנים שמוצגים בשורה, ולא ממדד נסתר."""
+    import search as search_module
+
+    assert search_module.trailer_strength(_epic()) > search_module.trailer_strength(_plain())
+    app.session_state["candidates"] = [_epic()]
+    app.run()
+    assert any("סימן:" in (c.value or "") and "כותרת אפית" in (c.value or "")
+               for c in app.caption)
+
+
+def test_a_one_letter_artist_is_not_a_trailer_artist():
+    """`partial_ratio` מחזיר 100 על אות בודדת: האמן "X" נמצא זהה ל-"Extreme
+    Music". כשזה הפך לסימן מוצג ולמשקל בדירוג, הבאג נעשה גלוי."""
+    import search as search_module
+
+    assert not search_module.is_trailer_artist({"artist": "X"})
+    assert not search_module.is_trailer_artist({"artist": "The Verve"})
+    assert search_module.is_trailer_artist({"artist": "2WEI"})
+    assert search_module.is_trailer_artist({"artist": "Tommee Profitt"})
+
+
 # ---------- יציבות הסדר ----------
 
 BIG = {"loudness": 0.30, "low_end": 3.0, "onset_rate": 3.5, "dynamic_span": 6.0}
@@ -419,6 +479,43 @@ def test_blocking_an_artist_drops_it_without_moving_the_rest(app):
     after = _row_order(app)
     assert "itunes-u3" not in after
     assert after == [uid for uid in before if uid != "itunes-u3"] + ["itunes-u20"]
+
+
+def test_the_resort_control_never_appears_or_disappears(app):
+    """כפתור שצץ מעל הרשימה דוחף את כל מה שמתחתיו — וזה מזיז את המקום.
+
+    לכן הוא מצויר תמיד, ומושבת כשאין מה לסדר.
+    """
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    quiet = [b for b in app.button if (b.label or "").startswith("🔄")]
+    assert len(quiet) == 1 and quiet[0].disabled
+
+    app.session_state["bigness"] = {f"itunes-u{i}": (BIG if i in (5, 17, 19) else SMALL)
+                                    for i in range(20)}
+    app.run()
+    active = [b for b in app.button if (b.label or "").startswith("🔄")]
+    assert len(active) == 1 and not active[0].disabled
+    assert "יזוזו" in active[0].label
+
+
+def test_the_scroll_keeper_is_a_persistent_observer(app):
+    """נמדד ש-iframe לא מורכב מחדש ב-rerun, ולכן סקריפט-בטעינה לא נורה.
+
+    השומר חייב להיות MutationObserver שחי בדף, ולשחזר רק את הצירוף
+    "היינו עמוק בעמוד ואחרי בנייה מחדש אנחנו בראשו".
+    """
+    script = " ".join(str(e.proto) for e in app.get("iframe"))
+    assert "MutationObserver" in script
+    assert "saved > 200 && el.scrollTop < 40" in script
+
+
+def test_a_generation_marker_lets_the_keeper_forget_the_old_list(app):
+    app.session_state["candidates"] = _thirty()
+    app.run()
+    generation = app.session_state["result_generation"]
+    assert any(f"data-result-generation='{generation}'" in (m.value or "")
+               for m in app.markdown)
 
 
 def test_taste_lifts_tracks_that_match_what_was_hearted(app):

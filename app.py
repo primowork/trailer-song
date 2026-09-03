@@ -24,6 +24,10 @@ from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
 
 PAGE_SIZE = 20
+# ברירת המחדל של המיון. השם אומר במפורש שהעדות על טריילר חלק מהדירוג —
+# כשהתווית הבטיחה רק "הטעם שלי", לא היה מובן למה גרסה שכתוב עליה
+# "Epic Trailer Version" יושבת למטה
+SORT_BEST = "⭐ הכי מתאים (טעם + סימני טריילר)"
 
 # שלושת מצבי החיפוש. "קאברים לשיר" ממזג שני מקורות (מאגר יחסי + חיפוש בחנויות)
 # תחת בחירה אחת — הם עונים בפועל על אותה שאלה. "קאברים לאמן" ו"חיפוש חופשי"
@@ -118,6 +122,77 @@ def _only_one_audio_at_a_time():
         </script>
         """,
         # st.iframe דורש גובה חיובי, בניגוד ל-components.html שקיבל 0
+        height=1,
+    )
+
+
+def _keep_scroll_position():
+    """מחזיר את מקום הגלילה כשהעמוד נבנה מחדש, כדי שלא יקפוץ לראש.
+
+    כל לחיצה ב-Streamlit היא rerun, ולחיצת ❤️ מוסיפה עוד אחד מפורש (בלעדיו
+    הלב לא מתחלף עד הפעולה הבאה). בדפדפנים שבהם עוגן הגלילה לא מחזיק, הבנייה
+    מחדש של ה-DOM מקפיצה לראש והמשתמש מאבד את מקומו באמצע רשימה ארוכה.
+
+    השומר חייב להיות MutationObserver מתמשך ולא סקריפט שרץ בטעינה: נמדד
+    שה-iframe אינו מורכב מחדש ב-rerun (ה-srcdoc זהה), ולכן גרסה שרצה פעם
+    אחת בכניסה פשוט לא נורתה כשהיה בה צורך.
+
+    הוא פסיבי בכוונה — משחזר רק את הצירוף "היינו עמוק בעמוד, ואחרי בנייה
+    מחדש אנחנו בראשו". גלילה שהמשתמש עשה בעצמו מעדכנת את הזיכרון ולכן אינה
+    נגררת אחורה, וחיפוש חדש מאפס אותו דרך סמן הדור שב-DOM.
+    """
+    renderer = getattr(st, "iframe", None) or components.html
+    renderer(
+        """
+        <script>
+        (function () {
+            const doc = window.parent.document;
+            if (doc.__scrollKeeperBound) return;
+            doc.__scrollKeeperBound = true;
+
+            const target = () => {
+                const main = doc.querySelector('[data-testid="stMain"]');
+                return (main && main.scrollHeight > main.clientHeight)
+                    ? main : doc.scrollingElement;
+            };
+
+            let saved = 0, lastBuild = 0, generation = null, pending = null;
+
+            doc.addEventListener("scroll", function () {
+                if (pending) return;
+                pending = setTimeout(function () {
+                    pending = null;
+                    const el = target();
+                    if (!el) return;
+                    // אפס שמגיע מיד אחרי בנייה מחדש הוא הקפיצה עצמה, לא
+                    // גלילה של המשתמש — ולכן אינו נכנס לזיכרון
+                    if (el.scrollTop >= 40 || Date.now() - lastBuild > 600) {
+                        saved = Math.round(el.scrollTop);
+                    }
+                }, 120);
+            }, true);
+
+            new MutationObserver(function () {
+                lastBuild = Date.now();
+                const marker = doc.querySelector("[data-result-generation]");
+                const now = marker ? marker.getAttribute("data-result-generation") : null;
+                if (now !== generation) {
+                    // רשימה חדשה: אין לאן לחזור, ומקום ברשימה הקודמת חסר משמעות
+                    generation = now;
+                    saved = 0;
+                    return;
+                }
+                const el = target();
+                if (el && saved > 200 && el.scrollTop < 40) {
+                    requestAnimationFrame(function () {
+                        const back = target();
+                        if (back) back.scrollTop = saved;
+                    });
+                }
+            }).observe(doc.body, {childList: true, subtree: true});
+        })();
+        </script>
+        """,
         height=1,
     )
 
@@ -613,6 +688,43 @@ def measure_via_server(tracks: list):
 
 # ---------- סדר התצוגה ----------
 
+# משקלי הדירוג הראשי. שלושתם באותה סקאלה 0..1, ולכן הם מתחרים ולא
+# מבטלים זה את זה — בניגוד למיון לקסיקוגרפי, שבו המפתח הראשון מכריע לבדו.
+# המשקלים כוילו מול שלושה מקרים ולא לפי תחושה:
+#   א. בלי שום למידה, גרסה שכתוב עליה "Epic Trailer Version" חייבת לעלות
+#      מעל קאבר פופ רועש — גם כשהיא עצמה טרם נמדדה  (0.30 מול 0.10)
+#   ב. אחרי שישה ❤️ על סגנון רגוע, גרסה רגועה חייבת לנצח גרסה "אפית"
+#      רועשת עם שני סימני טריילר                     (0.41 מול 0.34)
+#   ג. אחרי ארבעה 👎 על סגנון, טראק מאותו סגנון יורד (0.46 מול 0.29)
+# משקל טעם של 0.40 נכשל ב-(ג), 0.55 נכשל ב-(ב), 0.65 עובר את שלושתם
+# במרווח נוח. הפריור על טריילר הוא מה שקובע כשאין עדיין מה ללמוד ממנו:
+# `taste_of` מחזיר 0 לכולם עד הלייק הראשון.
+RANK_TASTE = 0.65      # מה שהמשתמש לימד בפועל — גובר על הפריור
+RANK_TRAILER = 0.25    # עדות מפורשת שזו גרסת טריילר — הסיבה שהאפליקציה קיימת
+RANK_SIZE = 0.10       # המדידה בדפדפן. יש גם מיון מפורש "גודל (נמדד)"
+# "טרם נמדד" אינו "קטן". הערך הקודם היה -1, ולכן כל טראק שהמדידה לא הגיעה
+# אליו (אין preview, חסימת CORS, כישלון) צנח לתחתית — גם כשכתוב עליו
+# במפורש "Epic Trailer Version" ויש לו שני סימני טריילר.
+NEUTRAL_SIZE = 0.5
+
+
+def rank_score(track: dict, learned: dict, measurements: dict) -> float:
+    """הדירוג הראשי: טעם, עדות טריילר ומדידה — ביחד ולא בזה אחר זה.
+
+    קודם המפתח היה `(taste, measured_size, score)` לקסיקוגרפית. בלי לייקים
+    הטעם היה 0 לכולם, ולכן הגודל הנמדד הכריע לבדו ו-`score` — שכולל את
+    `epic_bonus` — לא נגע בסדר בפועל. נמדד: טראק בשם "Zombie (Epic Trailer
+    Version)", ז'אנר Soundtrack, ציון 130 מול 100, דורג **אחרון** מול קאבר
+    פופ רגיל שנמדד רועש. זה ההפך ממה שהאפליקציה אמורה לעשות.
+    """
+    features = measurements.get(track["uid"])
+    size = (audio.bigness(features) / 100.0 if audio.measured(features)
+            else NEUTRAL_SIZE)
+    return (RANK_TASTE * taste_of(track, learned)
+            + RANK_TRAILER * search_module.trailer_strength(track)
+            + RANK_SIZE * size)
+
+
 def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
     """הסדר המבוקש, מחושב על הנתונים שיש **ברגע זה**."""
     ranked = list(tracks)
@@ -620,13 +732,12 @@ def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
 
     def measured_size(track):
         features = measurements.get(track["uid"])
-        # מי שטרם נמדד יורד לתחתית ולא מתחזה ל"קטן"
+        # במיון המפורש לפי גודל, "טרם נמדד" באמת יורד לתחתית ולא מתחזה למדוד
         return audio.bigness(features) if audio.measured(features) else -1
 
-    if sort_by == "❤️ הטעם שלי":
-        # ברירת המחדל, וזה מה שמעלה את הסגנון שהמשתמש אוהב לראש. בלי לייקים
-        # `taste_of` מחזיר 0 לכולם, והמיון מתקפל למיון לפי גודל נמדד
-        ranked.sort(key=lambda t: (round(taste_of(t, learned), 3), measured_size(t),
+    if sort_by == SORT_BEST:
+        # ברירת המחדל. `score` נשאר רק כשובר שוויון
+        ranked.sort(key=lambda t: (round(rank_score(t, learned, measurements), 4),
                                    t.get("score", 0)), reverse=True)
     elif sort_by == "גודל (נמדד)":
         ranked.sort(key=lambda t: (measured_size(t), t.get("score", 0)), reverse=True)
@@ -687,9 +798,13 @@ def resort_button(display: list, sort_by: str, learned: dict):
     fresh = [t["uid"] for t in sorted_by(display, sort_by, learned)]
     current = [t["uid"] for t in display]
     moving = sum(1 for old, new in zip(current, fresh) if old != new)
-    if not moving:
-        return
-    if st.button(f"🔄 סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)",
+
+    # הכפתור מצויר תמיד, גם כשאין מה לסדר — כפתור שמופיע ונעלם מעל הרשימה
+    # דוחף את כל מה שמתחתיו (נמדד: 17px בכל לחיצת ❤️), וזה בדיוק מה שמזיז
+    # את המקום שבו המשתמש היה
+    label = (f"🔄 סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)" if moving
+             else "🔄 הסדר מעודכן")
+    if st.button(label, disabled=not moving,
                  help="הסדר קפוא בזמן עיון כדי שהרשימה לא תזוז תוך כדי האזנה. "
                       "כאן מיישמים את מה שנלמד מאז — מדידות אודיו חדשות ולייקים."):
         st.session_state["display_order"] = fresh
@@ -908,6 +1023,7 @@ def metrics_export(tracks: list[dict]):
 # ---------- מסך חיפוש מאוחד ----------
 
 _only_one_audio_at_a_time()
+_keep_scroll_position()
 
 st.title("🎵 סורק קאברים לטריילרים")
 st.write(
@@ -1319,6 +1435,11 @@ if st.session_state["covers_source"]:
 candidates = st.session_state["candidates"]
 
 if candidates:
+    # סמן הדור עבור שומר הגלילה: כל עוד הוא לא השתנה, מקום הגלילה שווה
+    # שחזור. חיפוש חדש מחליף אותו, והשומר מוותר על המקום הישן.
+    st.markdown(
+        f"<span data-result-generation='{st.session_state['result_generation']}' hidden></span>",
+        unsafe_allow_html=True)
     st.divider()
     # שתי עמודות ולא שלוש: בטלפון Streamlit עורם עמודות לרוחב מלא, ו"סה"כ
     # במאגר" כ-st.metric תפס מסך שלם בשביל מספר אחד. הוא ירד לשורת caption
@@ -1327,7 +1448,7 @@ if candidates:
     # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
     # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
     only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", ["❤️ הטעם שלי", "גודל (נמדד)", "ציון",
+    sort_by = col_b.selectbox("מיון:", [SORT_BEST, "גודל (נמדד)", "ציון",
                                        "חדשים קודם", "אורך (עולה)", "אורך (יורד)",
                                        "אמן"])
 
