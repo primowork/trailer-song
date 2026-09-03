@@ -122,6 +122,77 @@ def _only_one_audio_at_a_time():
     )
 
 
+def _keep_scroll_position():
+    """מחזיר את מקום הגלילה כשהעמוד נבנה מחדש, כדי שלא יקפוץ לראש.
+
+    כל לחיצה ב-Streamlit היא rerun, ולחיצת ❤️ מוסיפה עוד אחד מפורש (בלעדיו
+    הלב לא מתחלף עד הפעולה הבאה). בדפדפנים שבהם עוגן הגלילה לא מחזיק, הבנייה
+    מחדש של ה-DOM מקפיצה לראש והמשתמש מאבד את מקומו באמצע רשימה ארוכה.
+
+    השומר חייב להיות MutationObserver מתמשך ולא סקריפט שרץ בטעינה: נמדד
+    שה-iframe אינו מורכב מחדש ב-rerun (ה-srcdoc זהה), ולכן גרסה שרצה פעם
+    אחת בכניסה פשוט לא נורתה כשהיה בה צורך.
+
+    הוא פסיבי בכוונה — משחזר רק את הצירוף "היינו עמוק בעמוד, ואחרי בנייה
+    מחדש אנחנו בראשו". גלילה שהמשתמש עשה בעצמו מעדכנת את הזיכרון ולכן אינה
+    נגררת אחורה, וחיפוש חדש מאפס אותו דרך סמן הדור שב-DOM.
+    """
+    renderer = getattr(st, "iframe", None) or components.html
+    renderer(
+        """
+        <script>
+        (function () {
+            const doc = window.parent.document;
+            if (doc.__scrollKeeperBound) return;
+            doc.__scrollKeeperBound = true;
+
+            const target = () => {
+                const main = doc.querySelector('[data-testid="stMain"]');
+                return (main && main.scrollHeight > main.clientHeight)
+                    ? main : doc.scrollingElement;
+            };
+
+            let saved = 0, lastBuild = 0, generation = null, pending = null;
+
+            doc.addEventListener("scroll", function () {
+                if (pending) return;
+                pending = setTimeout(function () {
+                    pending = null;
+                    const el = target();
+                    if (!el) return;
+                    // אפס שמגיע מיד אחרי בנייה מחדש הוא הקפיצה עצמה, לא
+                    // גלילה של המשתמש — ולכן אינו נכנס לזיכרון
+                    if (el.scrollTop >= 40 || Date.now() - lastBuild > 600) {
+                        saved = Math.round(el.scrollTop);
+                    }
+                }, 120);
+            }, true);
+
+            new MutationObserver(function () {
+                lastBuild = Date.now();
+                const marker = doc.querySelector("[data-result-generation]");
+                const now = marker ? marker.getAttribute("data-result-generation") : null;
+                if (now !== generation) {
+                    // רשימה חדשה: אין לאן לחזור, ומקום ברשימה הקודמת חסר משמעות
+                    generation = now;
+                    saved = 0;
+                    return;
+                }
+                const el = target();
+                if (el && saved > 200 && el.scrollTop < 40) {
+                    requestAnimationFrame(function () {
+                        const back = target();
+                        if (back) back.scrollTop = saved;
+                    });
+                }
+            }).observe(doc.body, {childList: true, subtree: true});
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
+
 # ---------- מצב ----------
 
 def _init_state():
@@ -687,9 +758,13 @@ def resort_button(display: list, sort_by: str, learned: dict):
     fresh = [t["uid"] for t in sorted_by(display, sort_by, learned)]
     current = [t["uid"] for t in display]
     moving = sum(1 for old, new in zip(current, fresh) if old != new)
-    if not moving:
-        return
-    if st.button(f"🔄 סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)",
+
+    # הכפתור מצויר תמיד, גם כשאין מה לסדר — כפתור שמופיע ונעלם מעל הרשימה
+    # דוחף את כל מה שמתחתיו (נמדד: 17px בכל לחיצת ❤️), וזה בדיוק מה שמזיז
+    # את המקום שבו המשתמש היה
+    label = (f"🔄 סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)" if moving
+             else "🔄 הסדר מעודכן")
+    if st.button(label, disabled=not moving,
                  help="הסדר קפוא בזמן עיון כדי שהרשימה לא תזוז תוך כדי האזנה. "
                       "כאן מיישמים את מה שנלמד מאז — מדידות אודיו חדשות ולייקים."):
         st.session_state["display_order"] = fresh
@@ -908,6 +983,7 @@ def metrics_export(tracks: list[dict]):
 # ---------- מסך חיפוש מאוחד ----------
 
 _only_one_audio_at_a_time()
+_keep_scroll_position()
 
 st.title("🎵 סורק קאברים לטריילרים")
 st.write(
@@ -1319,6 +1395,11 @@ if st.session_state["covers_source"]:
 candidates = st.session_state["candidates"]
 
 if candidates:
+    # סמן הדור עבור שומר הגלילה: כל עוד הוא לא השתנה, מקום הגלילה שווה
+    # שחזור. חיפוש חדש מחליף אותו, והשומר מוותר על המקום הישן.
+    st.markdown(
+        f"<span data-result-generation='{st.session_state['result_generation']}' hidden></span>",
+        unsafe_allow_html=True)
     st.divider()
     # שתי עמודות ולא שלוש: בטלפון Streamlit עורם עמודות לרוחב מלא, ו"סה"כ
     # במאגר" כ-st.metric תפס מסך שלם בשביל מספר אחד. הוא ירד לשורת caption
