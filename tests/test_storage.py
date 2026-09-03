@@ -23,6 +23,21 @@ def test_blacklist_roundtrip(tmp_path, monkeypatch):
     assert storage.load_blacklist() == {"2wei", "hidden citizens"}
 
 
+def test_favorites_roundtrip(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    assert storage.load_favorites() == {}
+    saved = {"2wei|zombie": {"artist": "2WEI", "track": "Zombie", "added_at": 1.0}}
+    assert storage.save_favorites(saved)
+    assert storage.load_favorites() == saved
+
+
+def test_corrupt_favorites_file_returns_empty(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    (tmp_path / "favorites.json").write_text("{ not json")
+    assert storage.load_favorites() == {}
+    assert storage.warnings
+
+
 def test_cache_drops_expired_entries(tmp_path, monkeypatch):
     storage = _fresh_storage(tmp_path, monkeypatch)
     import time
