@@ -73,13 +73,13 @@ def test_score_penalizes_missing_preview():
 
 
 def test_length_filter_boundaries():
-    assert search._passes_length_filter(120, search.LENGTH_SHORT)
-    assert not search._passes_length_filter(200, search.LENGTH_SHORT)
-    assert search._passes_length_filter(200, search.LENGTH_MEDIUM)
-    assert search._passes_length_filter(300, search.LENGTH_LONG)
+    assert search.passes_length_filter(120, search.LENGTH_SHORT)
+    assert not search.passes_length_filter(200, search.LENGTH_SHORT)
+    assert search.passes_length_filter(200, search.LENGTH_MEDIUM)
+    assert search.passes_length_filter(300, search.LENGTH_LONG)
     # "הכל" ואורך לא ידוע לא מסננים כלום
-    assert search._passes_length_filter(1, search.ALL)
-    assert search._passes_length_filter(0, search.LENGTH_LONG)
+    assert search.passes_length_filter(1, search.ALL)
+    assert search.passes_length_filter(0, search.LENGTH_LONG)
 
 
 def test_search_covers_excludes_seen_keys(monkeypatch):

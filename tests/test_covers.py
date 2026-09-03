@@ -211,6 +211,49 @@ def test_unplayable_original_is_used_when_nothing_else_exists():
     assert covers.pick_original(versions)["artist"] == "Helen Jepson"
 
 
+# ---------- מיזוג קטלוג + חנויות ----------
+
+def test_find_all_covers_merges_and_tags_both_sources(monkeypatch):
+    catalog = [make("MB Cover", "Zombie", uid="c1")]
+    store = [make("Store Cover", "Zombie (Epic Trailer Version)", uid="s1")]
+    monkeypatch.setattr(covers, "find_covers",
+                        lambda title, artist="", limit=80, work_id="": (catalog, "MusicBrainz", None))
+    monkeypatch.setattr(covers, "find_epic_versions",
+                        lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0:
+                            (store, "חיפוש בחנויות"))
+
+    results, source, original = covers.find_all_covers("Zombie")
+    assert {t["artist"] for t in results} == {"MB Cover", "Store Cover"}
+    assert {t["catalog_source"] for t in results} == {"MusicBrainz", "חיפוש בחנויות"}
+    assert "MusicBrainz" in source and "חיפוש בחנויות" in source
+
+
+def test_find_all_covers_dedupes_the_same_track_from_both_sources(monkeypatch):
+    same_from_catalog = make("2WEI", "Zombie", uid="db-2wei-zombie")
+    same_from_store = make("2WEI", "Zombie", uid="itunes-x")
+    monkeypatch.setattr(covers, "find_covers",
+                        lambda title, artist="", limit=80, work_id="": ([same_from_catalog], "MusicBrainz", None))
+    monkeypatch.setattr(covers, "find_epic_versions",
+                        lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0:
+                            ([same_from_store], "חיפוש בחנויות"))
+
+    results, _, _ = covers.find_all_covers("Zombie")
+    assert len(results) == 1
+
+
+def test_find_all_covers_when_one_source_is_empty(monkeypatch):
+    monkeypatch.setattr(covers, "find_covers",
+                        lambda title, artist="", limit=80, work_id="": ([], "", None))
+    store = [make("Store Cover", "Zombie (Epic)", uid="s1")]
+    monkeypatch.setattr(covers, "find_epic_versions",
+                        lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0:
+                            (store, "חיפוש בחנויות"))
+
+    results, source, _ = covers.find_all_covers("Zombie")
+    assert [t["artist"] for t in results] == ["Store Cover"]
+    assert source == "חיפוש בחנויות"
+
+
 # ---------- חיפוש לפי אמן ----------
 
 def _song(artist, track, uid="x"):
@@ -257,7 +300,8 @@ def test_find_artist_covers_tags_and_dedupes(monkeypatch):
         "Clocks": [dict(shared)],
     }
     monkeypatch.setattr(covers, "find_epic_versions",
-                        lambda title, artist, limit=12: ([dict(t) for t in per_title[title]], "x"))
+                        lambda title, artist, limit=12, filters=None, prefer_new=False, min_year=0:
+                            ([dict(t) for t in per_title[title]], "x"))
 
     results, source, titles = covers.find_artist_covers("Coldplay")
     assert titles == ["Yellow", "Clocks"]
@@ -292,12 +336,13 @@ def test_famous_recording_without_a_match_is_none(monkeypatch):
 def test_more_covers_of_uses_the_origin_title(monkeypatch):
     seen = {}
 
-    def fake(title, artist="", limit=40):
+    def fake(title, artist="", limit=40, filters=None, prefer_new=False, min_year=0):
         seen["title"] = title
         return [_song("Other", "Yellow (Cinematic)", "o1"),
                 _song("Self", "Yellow (Epic)", "self")], "x"
 
     monkeypatch.setattr(covers, "find_epic_versions", fake)
+    monkeypatch.setattr(covers, "find_covers", lambda *a, **k: ([], "", None))
     track = _song("Self", "Yellow (Epic Trailer Version)", "self")
     results, _ = covers.more_covers_of(track)
     # הכותרת מנוקה לשם השיר המקורי, והטראק עצמו אינו חוזר כהצעה לעצמו
@@ -309,7 +354,9 @@ def test_more_covers_of_uses_the_origin_title(monkeypatch):
 def test_more_covers_of_prefers_the_declared_origin(monkeypatch):
     seen = {}
     monkeypatch.setattr(covers, "find_epic_versions",
-                        lambda title, artist="", limit=40: (seen.update(title=title) or [], "x"))
+                        lambda title, artist="", limit=40, filters=None, prefer_new=False, min_year=0:
+                            (seen.update(title=title) or [], "x"))
+    monkeypatch.setattr(covers, "find_covers", lambda *a, **k: ([], "", None))
     covers.more_covers_of({**_song("A", "Something Else", "z"), "origin_track": "Clocks"})
     assert seen["title"] == "Clocks"
 

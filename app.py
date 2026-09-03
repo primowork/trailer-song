@@ -24,6 +24,14 @@ from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
 
 PAGE_SIZE = 20
 
+# שלושת מצבי החיפוש. "קאברים לשיר" ממזג שני מקורות (מאגר יחסי + חיפוש בחנויות)
+# תחת בחירה אחת — הם עונים בפועל על אותה שאלה. "קאברים לאמן" ו"חיפוש חופשי"
+# הם כוונות שונות באמת (קלט שונה; חיפוש רחב מכוון-פילטרים) ונשארים מצבים נפרדים.
+MODE_SONG = "🎬 קאברים לשיר"
+MODE_ARTIST = "🎤 קאברים לאמן"
+MODE_FREE = "🔎 חיפוש חופשי + פילטרים"
+SEARCH_MODES = [MODE_SONG, MODE_ARTIST, MODE_FREE]
+
 # פילטר "חדשות": התווית וסף השנה שהיא מייצגת. 0 = בלי סינון.
 RECENCY_OPTIONS = {
     "הכל": 0,
@@ -107,10 +115,9 @@ def _init_state():
         "cors_retried": set(),
         "federation_probed": False,
         "similar_of": None,
-        "run_artist_search": False,
         "pending_fields": None,
-        "run_epic_search": False,
         "index_source": "מצעד Deezer חי",
+        "search_mode": MODE_SONG,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -483,6 +490,9 @@ def render_track(track: dict, index: int):
         if track.get("origin_track"):
             st.caption(f"🎤 קאבר ל: {track['origin_track']}")
         parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
+        if track.get("catalog_source"):
+            # ממצב "קאברים לשיר" הממוזג: מאיזה חצי (מאגר רשמי / חיפוש בחנויות) זה הגיע
+            parts.append(f"התגלה דרך: {track['catalog_source']}")
         if track.get("year"):
             parts.append(f"שנה: {track['year']}")
         if track.get("album"):
@@ -612,24 +622,30 @@ _only_one_audio_at_a_time()
 
 st.title("🎵 סורק קאברים לטריילרים")
 st.write(
-    "שיר אחד, שלוש דרכים לחפש אותו: כל גרסאות הכיסוי מהמאגר, רק הגרסאות "
-    "האפיות מהחנויות, או חיפוש חופשי רחב."
+    "שם שיר או אמן, ומצב חיפוש אחד: קאברים לשיר (מהמאגר וגם מהחנויות), "
+    "קאברים לכל הקטלוג של אמן, או חיפוש חופשי עם פילטרים."
 )
 
-def queue_fields(title: str = "", artist: str = ""):
-    """קובע את שדות החיפוש מכפתור, ומרענן.
+def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
+                 auto_run: bool = False):
+    """קובע את שדות החיפוש (ואופציונלית מצב + הרצה אוטומטית) מכפתור, ומרענן.
 
     Streamlit אוסר על שינוי session_state של widget אחרי שהוא נוצר, ולכן אי אפשר
     לכתוב לשדה מתוך כפתור שמצויר מתחתיו. הערך נשמר כאן ומוחל בתחילת הריצה הבאה,
-    לפני שהשדות נוצרים.
+    לפני שהשדות/הרדיו נוצרים.
     """
-    st.session_state["pending_fields"] = (title, artist)
+    st.session_state["pending_fields"] = (title, artist, mode, auto_run)
     st.rerun()
 
 
 _pending = st.session_state.pop("pending_fields", None)
 if _pending:
-    st.session_state["cover_title"], st.session_state["cover_artist"] = _pending
+    _title, _artist, _mode, _auto_run = _pending
+    st.session_state["cover_title"], st.session_state["cover_artist"] = _title, _artist
+    if _mode:
+        st.session_state["search_mode"] = _mode
+    if _auto_run:
+        st.session_state["auto_run"] = True
 
 col_title, col_artist = st.columns(2)
 cover_title = col_title.text_input(
@@ -677,42 +693,72 @@ def suggestion_row(query: str):
 
 suggestion_row(cover_title)
 
-def _artist_grid(names: list[str], key_prefix: str, ranks: dict | None = None):
-    """רשת כפתורי אמנים. לחיצה ממלאת את שדה האמן ומריצה חיפוש קאברים."""
-    for row_start in range(0, len(names), 4):
-        columns = st.columns(4)
-        for column, name in zip(columns, names[row_start:row_start + 4]):
-            rank = (ranks or {}).get(name)
-            label = f"{rank}. {name}" if rank else name
-            if column.button(label, key=f"{key_prefix}_{row_start}_{name[:30]}",
-                             use_container_width=True):
-                st.session_state["run_artist_search"] = True
-                queue_fields(artist=name)
+def _entry_grid(entries: list[dict], key_prefix: str):
+    """רשת כפתורים משותפת לאמנים ולשירים, מכל אחד משלושת מקורות האינדקס.
 
-
-def _song_grid(entries: list[dict], key_prefix: str):
-    """רשת כפתורי שירים. לחיצה ממלאת שיר+אמן ומריצה חיפוש גרסאות טריילר."""
-    for row_start in range(0, len(entries), 2):
-        columns = st.columns(2)
-        for column, entry in zip(columns, entries[row_start:row_start + 2]):
+    לחיצה על אמן ממלאת את שדה האמן, קובעת מצב "קאברים לאמן" ומריצה אוטומטית.
+    לחיצה על שיר ממלאת שיר+אמן, קובעת מצב "קאברים לשיר" ומריצה אוטומטית.
+    שלושת המקורות (מצעד Deezer חי, רשימת בילבורד, מצעד מיובא) שונים בנתונים
+    אבל זהים בהתנהגות — לכן רכיב רינדור אחד במקום שלושה כמעט-זהים.
+    """
+    is_song = any(entry["kind"] == "song" for entry in entries)
+    per_row = 2 if is_song else 4
+    for row_start in range(0, len(entries), per_row):
+        columns = st.columns(per_row)
+        for column, entry in zip(columns, entries[row_start:row_start + per_row]):
             rank = entry.get("rank")
-            label = (f"{rank}. " if rank else "") + f"{entry['track']} — {entry['artist']}"
-            if column.button(label[:60], key=f"{key_prefix}_{row_start}_{entry['track'][:25]}",
-                             help=label, use_container_width=True):
-                st.session_state["run_epic_search"] = True
-                queue_fields(entry["track"], entry["artist"])
+            if entry["kind"] == "artist":
+                name = entry["artist"]
+                label = f"{rank}. {name}" if rank else name
+                key = f"{key_prefix}_{row_start}_{name[:30]}"
+                clicked = column.button(label, key=key, use_container_width=True)
+            else:
+                full_label = (f"{rank}. " if rank else "") + f"{entry['track']} — {entry['artist']}"
+                key = f"{key_prefix}_{row_start}_{entry['track'][:25]}"
+                clicked = column.button(full_label[:60], key=key, help=full_label,
+                                        use_container_width=True)
+            if clicked:
+                if entry["kind"] == "artist":
+                    queue_fields(artist=entry["artist"], mode=MODE_ARTIST, auto_run=True)
+                else:
+                    queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
+
+
+def _deezer_entries(genre_id, kind: str) -> list[dict]:
+    if kind == "שירים":
+        rows = charts_module.chart_tracks(genre_id)
+        return [{"kind": "song", "artist": t["artist"], "track": t["track"], "rank": index + 1}
+                for index, t in enumerate(rows)]
+    return [{"kind": "artist", "artist": name, "rank": None}
+            for name in charts_module.chart_artists(genre_id)]
+
+
+def _goat_entries(filter_text: str) -> list[dict]:
+    ranks = {name: index + 1 for index, name in enumerate(artists_module.GREATEST_ARTISTS)}
+    return [{"kind": "artist", "artist": name, "rank": ranks.get(name)}
+            for name in artists_module.search_artists(filter_text)]
+
+
+def _imported_entries(chart: dict) -> list[dict]:
+    if chart["kind"] == billboard_module.ARTISTS:
+        return [{"kind": "artist", "artist": e["artist"], "rank": e.get("rank")}
+                for e in chart["entries"]]
+    return [{"kind": "song", "artist": e["artist"], "track": e["track"], "rank": e.get("rank")}
+            for e in chart["entries"]]
 
 
 with st.expander("📇 אינדקס מצעדים", expanded=False):
-    st.caption("נקודת פתיחה לחיפוש: לחיצה על אמן מריצה חיפוש קאברים לשירים שלו, "
-               "ולחיצה על שיר מריצה חיפוש גרסאות טריילר לשיר עצמו. "
-               "המיקום במצעד אינו משפיע על דירוג התוצאות — שם קובע מה שנמדד מהאודיו.")
+    st.caption("נקודת פתיחה לחיפוש: לחיצה על אמן מריצה 'קאברים לאמן', "
+               "ולחיצה על שיר מריצה 'קאברים לשיר' — לשתיהן אותה תוצאה כמו מילוי "
+               "השדות למעלה ולחיצה על 🔎 חפש. המיקום במצעד אינו משפיע על דירוג "
+               "התוצאות — שם קובע מה שנמדד מהאודיו.")
 
     imported = storage.load_charts()
     sources = ["מצעד Deezer חי", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
     sources += [f"מיובא: {chart['title']}" for chart in imported.values()]
     source = st.radio("מקור:", sources, horizontal=True, key="index_source")
 
+    entries, key_prefix = [], ""
     if source.startswith("מצעד Deezer"):
         genre_list = charts_module.genres()
         if not genre_list:
@@ -721,32 +767,26 @@ with st.expander("📇 אינדקס מצעדים", expanded=False):
             names = {genre["name"]: genre["id"] for genre in genre_list}
             picked = st.selectbox("קטגוריה:", list(names), key="index_genre")
             kind = st.radio("להציג:", ["שירים", "אמנים"], horizontal=True, key="index_kind")
-            genre_id = names[picked]
-            if kind == "שירים":
-                rows = charts_module.chart_tracks(genre_id)
-                _song_grid([{"rank": index + 1, "track": t["track"], "artist": t["artist"]}
-                            for index, t in enumerate(rows)], "chart_song")
-            else:
-                _artist_grid(charts_module.chart_artists(genre_id), "chart_artist")
+            entries = _deezer_entries(names[picked], kind)
+            key_prefix = "chart_song" if kind == "שירים" else "chart_artist"
 
     elif source.startswith("בילבורד"):
         artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")
-        matches = artists_module.search_artists(artist_filter)
-        if not matches:
+        entries = _goat_entries(artist_filter)
+        key_prefix = "goat"
+        if not entries:
             st.caption("אין אמן בשם הזה ברשימה. אפשר להקליד ידנית בשדה האמן.")
-        else:
-            _artist_grid(matches, "goat", {name: index + 1 for index, name
-                                           in enumerate(artists_module.GREATEST_ARTISTS)})
 
     else:
         chart = next((c for c in imported.values() if source.endswith(c["title"])), None)
         if not chart:
             st.caption("המצעד לא נמצא. ייבא אותו מחדש מסרגל הצד.")
-        elif chart["kind"] == billboard_module.ARTISTS:
-            _artist_grid([e["artist"] for e in chart["entries"]], f"imp_{chart['slug']}",
-                         {e["artist"]: e["rank"] for e in chart["entries"]})
         else:
-            _song_grid(chart["entries"], f"imp_{chart['slug']}")
+            entries = _imported_entries(chart)
+            key_prefix = f"imp_{chart['slug']}"
+
+    if entries:
+        _entry_grid(entries, key_prefix)
 
 with st.expander("🎛️ פילטרים", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -761,7 +801,12 @@ with st.expander("🎛️ פילטרים", expanded=False):
         help="בונוס טריות שיורד מ-25 לאפס על פני חמש שנים.")
     fresh_only = col6.checkbox(
         "רק מה שלא ראיתי", value=False,
-        help="בחיפוש החופשי: מדלג על תוצאות שכבר הוצגו, כדי להביא חומר חדש.")
+        help="מדלג על תוצאות שכבר הוצגו בסבב הזה, כדי להביא חומר חדש.")
+
+    if st.session_state.get("search_mode") == MODE_SONG:
+        st.caption("סגנון וקצב משפיעים רק על החלק שמגיע מחיפוש בחנויות. המאגר "
+                   "הרשמי (SecondHandSongs/MusicBrainz) לא תומך בסינון כזה — "
+                   "הגרסאות משם יופיעו תמיד.")
 
 filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
@@ -778,54 +823,49 @@ def _lookup_failed() -> str:
     return "החיפוש לא הושלם: " + " · ".join(unique[:3])
 
 
-if st.button("🔎 אילו שירים בשם הזה?"):
-    if not cover_title.strip():
-        st.warning("הכנס שם שיר")
-    else:
-        search_module.reset_errors()
-        with st.spinner("מחפש יצירות..."):
-            st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
-                cover_title, cover_artist)
-        if not st.session_state["work_candidates"]:
-            failure = _lookup_failed()
-            if failure:
-                st.error(failure + " — נסה שוב")
-            else:
-                st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתורים למטה.")
+search_mode = st.radio(
+    "סוג חיפוש:", SEARCH_MODES, horizontal=True, key="search_mode",
+    help=f"{MODE_SONG}: ממזג את מאגר הגרסאות הרשמי (SecondHandSongs/MusicBrainz) "
+         "עם חיפוש בחנויות אחרי טראקים 'Epic/Trailer/Cinematic'. "
+         f"{MODE_ARTIST}: מזהה את השירים המזוהים ביותר עם האמן ומביא קאברים לכל "
+         f"אחד. {MODE_FREE}: חיפוש רחב עם הפילטרים למעלה, בלי להיצמד ליצירה מסוימת.")
 
 chosen_work = ""
-work_candidates = st.session_state.get("work_candidates") or []
-if work_candidates:
-    # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
-    # בלי בחירה מפורשת נלקחה הראשונה והוחזרו עשרים גרסאות קאנטרי.
-    hint = covers_module.famous_recording(cover_title)
-    if hint:
-        # הבורר מציג מלחינים, ומשתמש שמחפש "Umbrella" מזהה את השיר לפי המבצע.
-        # בלי השורה הזאת נראה שהיצירה הנכונה חסרה, בעוד שהיא ראשונה ברשימה.
-        st.caption(f"🎧 השיר המוכר בשם הזה: **{hint['artist']}** — {hint['track']}"
-                   + (f" ({hint['year']})" if hint.get("year") else ""))
-    labels = {
-        f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
-        + (f" · מלחינים: {c['writers']}" if c["writers"] else ""): c["id"]
-        for c in work_candidates
-    }
-    picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
-    chosen_work = labels[picked]
+if search_mode == MODE_SONG:
+    if st.button("🔎 אילו שירים בשם הזה?"):
+        if not cover_title.strip():
+            st.warning("הכנס שם שיר")
+        else:
+            search_module.reset_errors()
+            with st.spinner("מחפש יצירות..."):
+                st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
+                    cover_title, cover_artist)
+            if not st.session_state["work_candidates"]:
+                failure = _lookup_failed()
+                if failure:
+                    st.error(failure + " — נסה שוב")
+                else:
+                    st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתור 🔎 חפש.")
 
-col_all, col_epic, col_artist_btn, col_free = st.columns(4)
-search_all = col_all.button("🎬 כל הגרסאות", type="primary",
-                            help="כל גרסאות הכיסוי של היצירה מהמאגר היחסי.")
-search_epic = st.session_state.pop("run_epic_search", False) or col_epic.button(
-    "🎥 גרסאות טריילר אפיות",
-    help="חיפוש בחנויות אחרי טראקים שמציגים את עצמם כ-Epic / Trailer / Cinematic, "
-         "או שיושבים על אלבום של סדרה או סרט. זה חיפוש ולא סיווג.")
-search_artist = st.session_state.pop("run_artist_search", False) or col_artist_btn.button(
-    "🎤 קאברים לאמן",
-    help="שם אמן או להקה בלבד: מזהה את השירים המזוהים איתם ביותר, ומביא את "
-         "הקאברים הגדולים לכל אחד מהם.")
-search_free = col_free.button(
-    "🔎 חיפוש חופשי",
-    help="חיפוש רחב בחנויות עם הפילטרים למעלה, בלי להיצמד ליצירה מסוימת.")
+    work_candidates = st.session_state.get("work_candidates") or []
+    if work_candidates:
+        # "Sweet Dreams" הוא גם סטנדרט קאנטרי מ-1955 וגם Eurythmics 1983.
+        # בלי בחירה מפורשת נלקחה הראשונה והוחזרו עשרים גרסאות קאנטרי.
+        hint = covers_module.famous_recording(cover_title)
+        if hint:
+            # הבורר מציג מלחינים, ומשתמש שמחפש "Umbrella" מזהה את השיר לפי המבצע.
+            # בלי השורה הזאת נראה שהיצירה הנכונה חסרה, בעוד שהיא ראשונה ברשימה.
+            st.caption(f"🎧 השיר המוכר בשם הזה: **{hint['artist']}** — {hint['track']}"
+                       + (f" ({hint['year']})" if hint.get("year") else ""))
+        labels = {
+            f"{c['title']}" + (f" — {c['disambiguation']}" if c["disambiguation"] else "")
+            + (f" · מלחינים: {c['writers']}" if c["writers"] else ""): c["id"]
+            for c in work_candidates
+        }
+        picked = st.radio("איזו יצירה התכוונת?", list(labels), index=0)
+        chosen_work = labels[picked]
+
+run_search = st.button("🔎 חפש", type="primary") or st.session_state.pop("auto_run", False)
 
 
 def _run_similar():
@@ -871,21 +911,25 @@ def _store_results(results, source, original=None):
 
 _run_similar()
 
-if search_all or search_epic or search_free or search_artist:
+if run_search:
     search_module.reset_errors()
 
-if (search_all or search_epic or search_free) and not (
+if run_search and search_mode == MODE_ARTIST and not cover_artist.strip():
+    st.warning("החיפוש הזה הוא לפי אמן — מלא את שדה האמן")
+
+elif run_search and search_mode != MODE_ARTIST and not (
         cover_title.strip() or cover_artist.strip()):
     st.warning("הכנס שם שיר או אמן")
 
-elif search_artist and not cover_artist.strip():
-    st.warning("החיפוש הזה הוא לפי אמן — מלא את שדה האמן")
-
-elif search_artist:
+elif run_search and search_mode == MODE_ARTIST:
     with st.spinner("מזהה את השירים של האמן ומחפש להם קאברים..."):
-        results, source_used, titles = covers_module.find_artist_covers(cover_artist)
+        results, source_used, titles = covers_module.find_artist_covers(
+            cover_artist, filters=filters, prefer_new=prefer_new,
+            min_year=RECENCY_OPTIONS[recency])
         results = apply_blacklist(results)
     _store_results(results, source_used)
+    for track in results:
+        st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
     if not results:
         failure = _lookup_failed()
         if failure:
@@ -895,18 +939,22 @@ elif search_artist:
     else:
         st.caption("🎤 נסרקו השירים: " + " · ".join(titles))
 
-elif search_epic:
-    with st.spinner("מחפש גרסאות אפיות..."):
-        results, source_used = covers_module.find_epic_versions(cover_title, cover_artist)
+elif run_search and search_mode == MODE_SONG:
+    with st.spinner("מחפש במאגר הגרסאות הרשמי ובחנויות..."):
+        results, source_used, original = covers_module.find_all_covers(
+            cover_title, cover_artist, filters=filters, prefer_new=prefer_new,
+            min_year=RECENCY_OPTIONS[recency], work_id=chosen_work)
         results = apply_blacklist(results)
-    _store_results(results, source_used)
+    _store_results(results, source_used, original)
+    for track in results:
+        st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
     declared = sum(1 for t in results if t.get("trailer_indicator"))
     if not results:
         failure = _lookup_failed()
         if failure:
             st.error(failure)
         else:
-            st.info("לא נמצאו גרסאות לשיר הזה. נסה 'כל הגרסאות'.")
+            st.info("לא נמצאו קאברים לשיר הזה. נסה 'חיפוש חופשי'.")
     else:
         st.caption(
             f"📣 {declared} גרסאות עם סימן טריילר. השאר נשארות ברשימה — רמיקס "
@@ -914,20 +962,7 @@ elif search_epic:
             "ומי שנמדד כגדול מסומן 🔊."
         )
 
-elif search_all:
-    with st.spinner("שולף גרסאות מהמאגר..."):
-        results, source_used, original = covers_module.find_covers(
-            cover_title, cover_artist, work_id=chosen_work)
-        results = apply_blacklist(results)
-    _store_results(results, source_used, original)
-    if not results:
-        failure = _lookup_failed()
-        if failure:
-            st.error(failure)
-        else:
-            st.info("לא נמצאו גרסאות. ייתכן שהיצירה לא במאגר. נסה 'חיפוש חופשי'.")
-
-elif search_free:
+elif run_search:  # MODE_FREE
     with st.spinner("סורק את iTunes ו-Deezer..."):
         exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
         results = apply_blacklist(search_covers(

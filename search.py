@@ -456,7 +456,7 @@ def score_track(track: dict, query: str, prefer_new: bool = False) -> int:
     return int(score)
 
 
-def _passes_length_filter(duration_sec: float, length_filter: str | None) -> bool:
+def passes_length_filter(duration_sec: float, length_filter: str | None) -> bool:
     if not length_filter or length_filter == ALL:
         return True
     if not duration_sec:
@@ -532,7 +532,7 @@ def search_covers(query: str, filters: dict | None = None,
 
     scored = []
     for track in collected:
-        if not _passes_length_filter(track.get("duration_sec", 0), (filters or {}).get("length")):
+        if not passes_length_filter(track.get("duration_sec", 0), (filters or {}).get("length")):
             continue
         if track_key(track.get("artist", ""), track.get("track", "")) in exclude_keys:
             continue
