@@ -490,6 +490,9 @@ def render_track(track: dict, index: int):
         if track.get("origin_track"):
             st.caption(f"🎤 קאבר ל: {track['origin_track']}")
         parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
+        if track.get("catalog_source"):
+            # ממצב "קאברים לשיר" הממוזג: מאיזה חצי (מאגר רשמי / חיפוש בחנויות) זה הגיע
+            parts.append(f"התגלה דרך: {track['catalog_source']}")
         if track.get("year"):
             parts.append(f"שנה: {track['year']}")
         if track.get("album"):
