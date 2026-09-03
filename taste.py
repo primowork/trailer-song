@@ -53,8 +53,14 @@ FISHER_STRENGTH = 3.0
 REJECT_PENALTY = 0.7
 # מספר הדחיות שבו הן שוקלות כמו הרקע כקבוצת ייחוס קטגוריאלית
 REJECT_REFERENCE_HALF = 5.0
+# כמה לייקים צריכים לשאת תכונה כדי שהיא תוצג כ"הטעם שלך". תכונה מדוגמה
+# בודדת עשויה לקבל lift גבוה ועדיין להיות מקרית
+MIN_SUPPORT = 2.0
 
-DIMENSIONS = tuple(audio.WEIGHTS)
+# המימדים אינם קבועים: מדידה שנשמרה לפני שמדדי הגוון נוספו מתארת ארבעה
+# מימדים, ומדידה חדשה תשעה. הפרופיל נבנה על מה שקיים בפועל בכל הדוגמאות,
+# וההשוואה רצה על החיתוך — כך שמדידות ישנות נשארות שימושיות במקום להיזרק.
+DIMENSIONS = tuple(audio.WEIGHTS) + tuple(audio.TIMBRE_RANGES)
 
 # תווית לכל קצה של כל מימד, ל-describe
 _DIMENSION_LABELS = {
@@ -62,6 +68,11 @@ _DIMENSION_LABELS = {
     "low_end": ("בס חזק", "בס מינימלי"),
     "onset_rate": ("קצב מהיר", "קצב איטי"),
     "dynamic_span": ("קשת דינמית רחבה", "דינמיקה שטוחה"),
+    "centroid": ("צליל בהיר", "צליל אפל"),
+    "flatness": ("מרקם רועש ומעוות", "מרקם טונאלי ונקי"),
+    "air": ("אוויר וברק בגבהים", "גבהים מרוסנים"),
+    "presence": ("חוד ונוכחות באמצע-גבוה", "אמצע-גבוה רך"),
+    "flux": ("ספקטרום נע — פרקושן קצבי", "ספקטרום יציב — מתמשך ולגאטו"),
 }
 _TRAIT_LABELS = {"genre": "ז'אנר", "artist": "אמן", "source": "מקור",
                  "mark": "סימן", "decade": "שנות"}
@@ -122,9 +133,12 @@ def _moments(entries: list, weights: list) -> tuple:
     if not vectors:
         return {}, {}, 0
 
+    # רק מימדים שקיימים בכל הדוגמאות: ממוצע שחושב על תת-קבוצה אחרת בכל מימד
+    # אינו מרכז של אותו ענן נקודות
+    shared = [d for d in DIMENSIONS if all(d in vector for vector in vectors)]
     total = sum(vector_weights) or 1.0
     mean, spread = {}, {}
-    for dimension in DIMENSIONS:
+    for dimension in shared:
         values = [vector[dimension] for vector in vectors]
         mu = sum(v * w for v, w in zip(values, vector_weights)) / total
         variance = sum(w * (v - mu) ** 2
@@ -178,18 +192,19 @@ def profile(favorites: list, background: list | None = None,
     dimension_weights = {}
     if mean:
         # בסיס: מימד שהמשתמש עקבי בו (σ קטן) מגדיר את הטעם יותר ממימד מפוזר
-        raw = {d: 1.0 / (spread[d] ** 2) for d in DIMENSIONS}
-        if reject_mean:
-            # ובנוכחות דחיות, מה שבאמת חשוב הוא מה ש*מפריד* בין השתיים.
+        raw = {d: 1.0 / (spread[d] ** 2) for d in mean}
+        for dimension in mean:
+            if dimension not in reject_mean:
+                continue
+            # בנוכחות דחיות, מה שבאמת חשוב הוא מה ש*מפריד* בין השתיים.
             # קריטריון פישר: מרחק בין המרכזים ביחס לפיזור המשותף. מימד שבו
             # האהובים והדחויים יושבים באותו מקום אינו מלמד כלום, גם אם
             # המשתמש עקבי בו לחלוטין.
-            for dimension in DIMENSIONS:
-                gap = (mean[dimension] - reject_mean[dimension]) ** 2
-                pooled = spread[dimension] ** 2 + reject_spread[dimension] ** 2
-                raw[dimension] *= 1.0 + FISHER_STRENGTH * gap / pooled
+            gap = (mean[dimension] - reject_mean[dimension]) ** 2
+            pooled = spread[dimension] ** 2 + reject_spread[dimension] ** 2
+            raw[dimension] *= 1.0 + FISHER_STRENGTH * gap / pooled
         total_raw = sum(raw.values()) or 1.0
-        dimension_weights = {d: raw[d] / total_raw for d in DIMENSIONS}
+        dimension_weights = {d: value / total_raw for d, value in raw.items()}
 
     # --- יחס סבירות קטגוריאלי, מול הרקע ומול הדחיות ---
     # הכתיב המקורי נאסף משתי הקבוצות: `describe` מציג גם את מה שנאהב וגם את
@@ -226,6 +241,12 @@ def profile(favorites: list, background: list | None = None,
         "spread": spread,
         "dimension_weights": dimension_weights,
         "lift": lift,
+        # כמה מהלייקים באמת נשאו כל תכונה. `describe` משתמש בזה כדי לא להכריז
+        # על אמן שהופיע פעם אחת כעל "הטעם שלך" — lift גבוה על מדגם של אחד
+        # הוא רעש, גם כשהחישוב עצמו נכון
+        "support": {trait: rate * total_weight for trait, rate in liked_rate.items()},
+        "reject_support": {trait: rate * (sum(reject_weights) or 1.0)
+                          for trait, rate in rejected_rate.items()},
         "labels": labels,
         "reject_mean": reject_mean,
         "reject_spread": reject_spread,
@@ -237,8 +258,18 @@ def profile(favorites: list, background: list | None = None,
 
 def _similarity(normalized: dict, mean: dict, spread: dict,
                 dimension_weights: dict) -> float:
-    distance = sum(dimension_weights[d] * (normalized[d] - mean[d]) ** 2
-                   / (2 * spread[d] ** 2) for d in DIMENSIONS)
+    """דמיון גאוסיאני על החיתוך בין מימדי הטראק למימדי הפרופיל.
+
+    המשקלים מנורמלים מחדש על החיתוך, אחרת טראק שנמדד לפני שמדדי הגוון נוספו
+    היה מקבל מרחק קטן מלאכותית (סכום על פחות מימדים) ומדורג גבוה מדי.
+    """
+    shared = [d for d in mean if d in normalized]
+    total = sum(dimension_weights.get(d, 0.0) for d in shared)
+    if not shared or total <= 0:
+        return NEUTRAL
+    distance = sum((dimension_weights.get(d, 0.0) / total)
+                   * (normalized[d] - mean[d]) ** 2 / (2 * spread[d] ** 2)
+                   for d in shared)
     return math.exp(-distance)
 
 
@@ -292,35 +323,42 @@ def describe(learned: dict) -> str:
 
     parts = []
     dimension_weights = learned.get("dimension_weights") or {}
-    if dimension_weights:
-        average = sum(dimension_weights.values()) / len(dimension_weights)
-        for dimension, weight in sorted(dimension_weights.items(),
-                                        key=lambda item: item[1], reverse=True):
-            mu = learned["mean"][dimension]
-            # רק מימד שגם חשוב (משקל מעל הממוצע) וגם מוכרע (לא באמצע)
-            if weight <= average or 0.35 < mu < 0.65:
-                continue
-            high, low = _DIMENSION_LABELS[dimension]
-            parts.append(high if mu >= 0.65 else low)
+    # מימד ראוי לאזכור כשהוא גם משמעותי בפרופיל וגם מוכרע (לא יושב באמצע).
+    # דירוג לפי המכפלה, ולא סינון לפי "מעל הממוצע": כשהמשתמש עקבי בכל
+    # המימדים כולם שווים, אף אחד אינו מעל הממוצע, ולא היה נאמר דבר
+    ranked = sorted(((weight * abs(learned["mean"][dimension] - 0.5), dimension)
+                     for dimension, weight in dimension_weights.items()),
+                    reverse=True)
+    for _, dimension in ranked[:2]:
+        mu = learned["mean"][dimension]
+        if 0.35 < mu < 0.65:
+            continue
+        high, low = _DIMENSION_LABELS[dimension]
+        parts.append(high if mu >= 0.65 else low)
 
     display = learned.get("labels") or {}
+    support = learned.get("support") or {}
     for trait, value in sorted((learned.get("lift") or {}).items(),
-                               key=lambda item: item[1], reverse=True)[:3]:
-        if value <= 0.2:
+                               key=lambda item: item[1], reverse=True):
+        # תכונה שנשענת על דוגמה אחת אינה "הטעם שלך", גם אם ה-lift שלה גבוה
+        if value <= 0.2 or support.get(trait, 0) < MIN_SUPPORT:
             continue
         kind, _, name = trait.partition(":")
         label = _TRAIT_LABELS.get(kind, kind)
         parts.append(f"{label} {display.get(trait, name)}".strip())
+        if len(parts) >= 5:
+            break
 
     source = f"{learned['count']} לייקים"
     if learned.get("reject_count"):
         source += f" ו-{learned['reject_count']} דחיות"
 
+    reject_support = learned.get("reject_support") or {}
     avoided = [f"{_TRAIT_LABELS.get(t.partition(':')[0], '')} "
                f"{display.get(t, t.partition(':')[2])}".strip()
                for t, value in sorted((learned.get("lift") or {}).items(),
-                                      key=lambda item: item[1])[:2]
-               if value <= -0.4]
+                                      key=lambda item: item[1])
+               if value <= -0.4 and reject_support.get(t, 0) >= MIN_SUPPORT][:2]
 
     if not parts and not avoided:
         return f"לומד מ-{source} — עדיין אין דפוס מובהק"

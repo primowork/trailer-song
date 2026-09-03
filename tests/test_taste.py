@@ -228,3 +228,74 @@ def test_describe_names_what_is_avoided():
     text = taste.describe(taste.profile(favorites, rejections=rejections))
     assert "דחיות" in text
     assert "נמנע מ" in text and "Classical" in text
+
+
+# ---------- מדדי גוון ----------
+
+def timbral(centroid=0.10, flatness=0.05, air=0.03, presence=0.12, flux=0.20, **energy):
+    return {**features(**energy), "centroid": centroid, "flatness": flatness,
+            "air": air, "presence": presence, "flux": flux}
+
+
+def test_timbre_separates_tracks_that_energy_alone_cannot():
+    """הבדיקה שקובעת מול הביקורת: אותה עוצמה בדיוק, גוון הפוך.
+
+    ארבעת מדדי העוצמה זהים לחלוטין בשלושת הטראקים — braam אפל, מקהלה בהירה.
+    בלי מדדי הגוון המודל היה נותן לשניהם בדיוק אותו ציון.
+    """
+    dark = {"centroid": 0.04, "flatness": 0.02, "air": 0.005, "presence": 0.04, "flux": 0.08}
+    bright = {"centroid": 0.16, "flatness": 0.03, "air": 0.08, "presence": 0.26, "flux": 0.10}
+
+    favorites = [{**song(), "features": {**features(), **dark}} for _ in range(6)]
+    learned = taste.profile(favorites)
+
+    like_dark = taste.match(song(), {**features(), **dark}, learned)
+    like_bright = taste.match(song(), {**features(), **bright}, learned)
+    assert like_dark > like_bright
+
+    # ולראיה שזה הגוון ולא העוצמה: המדדים האנרגטיים זהים בשניהם
+    assert {k: v for k, v in features().items()} == {
+        k: v for k, v in {**features(), **bright}.items() if k in features()}
+
+
+def test_a_timbre_dimension_can_dominate_the_profile():
+    """אם המשתמש עקבי בבהירות ומפוזר בכל השאר, הבהירות היא הטעם."""
+    favorites = [
+        {**song(), "features": timbral(centroid=0.15, flux=0.10 + i * 0.08,
+                                       loudness=0.12 + i * 0.04)}
+        for i in range(4)
+    ]
+    learned = taste.profile(favorites)
+    assert learned["dimension_weights"]["centroid"] > learned["dimension_weights"]["flux"]
+    assert learned["dimension_weights"]["centroid"] > learned["dimension_weights"]["loudness"]
+
+
+def test_old_measurements_without_timbre_still_work():
+    """מדידות שנשמרו לפני שהגוון נוסף אינן נזרקות — הן פשוט מתארות פחות."""
+    favorites = [liked(feature_fields={"low_end": 2.8}) for _ in range(5)]
+    learned = taste.profile(favorites)
+    assert set(learned["mean"]) == set(taste.audio.WEIGHTS)
+
+    # וטראק חדש *עם* גוון עדיין נמדד מולם, על החיתוך
+    score = taste.match(song(), timbral(low_end=2.8), learned)
+    assert 0 < score <= 1
+
+
+def test_a_new_measurement_is_compared_fairly_against_an_old_profile():
+    """טראק שנמדד בפחות מימדים לא מקבל יתרון מלאכותי מסכום קצר יותר."""
+    favorites = [{**song(), "features": timbral(centroid=0.15)} for _ in range(6)]
+    learned = taste.profile(favorites)
+
+    matching_full = taste.match(song(), timbral(centroid=0.15), learned)
+    matching_old = taste.match(song(), features(), learned)   # בלי מדדי גוון
+    # הישן מושווה רק על מה שיש לו, ולכן אינו מנצח את המלא שתואם לחלוטין
+    assert matching_full >= matching_old
+
+
+def test_describe_can_name_a_timbre_trait():
+    favorites = [{**song(), "features": timbral(centroid=0.17,
+                                                loudness=0.10 + i * 0.05,
+                                                low_end=1.0 + i * 0.6)}
+                 for i in range(4)]
+    text = taste.describe(taste.profile(favorites))
+    assert "בהיר" in text
