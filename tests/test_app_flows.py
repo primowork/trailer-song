@@ -11,7 +11,6 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import artists
-import charts
 import covers
 import storage
 import search as search_module
@@ -28,10 +27,8 @@ def track(artist, title, uid, **extra):
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    """האינדקס מרונדר בכל טעינה גם כשהוא סגור — בלי זה כל טסט משלם קריאות רשת."""
-    monkeypatch.setattr(charts.storage, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(charts, "get_json", lambda *a, **k: None)
-    charts._cache = {}
+    """מבודד כל טסט מהדיסק המשותף — בלי זה טסטים חולקים קאש/רשימה שחורה בין ריצות."""
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
 
 
 @pytest.fixture
@@ -41,6 +38,29 @@ def app():
 
 def test_the_page_renders(app):
     assert not app.exception
+
+
+def test_classics_is_the_default_index_source_and_needs_no_network(app):
+    # אין כאן שום monkeypatch לרשת — קלאסיקות היא רשימה סטטית
+    assert app.radio(key="index_source").value.startswith("🎻 קלאסיקות")
+    assert any((b.key or "").startswith("classic_") for b in app.button)
+
+
+def test_classics_song_click_runs_a_focused_song_search(app, monkeypatch):
+    import classics
+    first = classics.POP_CLASSICS[0]
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track(first["artist"], f"{title} (Cover)", "c1")], "src", None))
+
+    classics_button = [b for b in app.button if (b.key or "").startswith("classic_")][0]
+    classics_button.click().run()
+
+    assert not app.exception
+    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["cover_title"] == first["track"]
+    assert app.session_state["cover_artist"] == first["artist"]
+    assert app.session_state["candidates"]
 
 
 def test_greatest_artist_click_shows_a_preview_before_searching(app, monkeypatch):

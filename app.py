@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 import artists as artists_module
 import audio
 import billboard as billboard_module
-import charts as charts_module
+import classics as classics_module
 import covers as covers_module
 import youtube as youtube_module
 import federation
@@ -118,7 +118,7 @@ def _init_state():
         "federation_probed": False,
         "similar_of": None,
         "pending_fields": None,
-        "index_source": "מצעד Deezer חי",
+        "index_source": "🎻 קלאסיקות (פופ/רוק)",
         "search_mode": MODE_SONG,
     }
     for key, value in defaults.items():
@@ -719,10 +719,12 @@ def _artist_preview_titles(artist: str) -> list[str]:
 def _entry_grid(entries: list[dict], key_prefix: str):
     """רשת כפתורים משותפת לאמנים ולשירים, מכל אחד משלושת מקורות האינדקס.
 
-    לחיצה על אמן ממלאת את שדה האמן, קובעת מצב "קאברים לאמן" ומריצה אוטומטית.
-    לחיצה על שיר ממלאת שיר+אמן, קובעת מצב "קאברים לשיר" ומריצה אוטומטית.
-    שלושת המקורות (מצעד Deezer חי, רשימת בילבורד, מצעד מיובא) שונים בנתונים
-    אבל זהים בהתנהגות — לכן רכיב רינדור אחד במקום שלושה כמעט-זהים.
+    לחיצה על אמן ממלאת את שדה האמן וקובעת מצב "קאברים לאמן" — תצוגה מקדימה
+    זולה של שירי האמן מוצגת לפני שחיפוש הקאברים היקר רץ (ראו
+    `_artist_preview_titles`). לחיצה על שיר ממלאת שיר+אמן, קובעת מצב
+    "קאברים לשיר" ומריצה אוטומטית. שלושת המקורות (קלאסיקות סטטיות, רשימת
+    בילבורד, מצעד מיובא) שונים בנתונים אבל זהים בהתנהגות — לכן רכיב רינדור
+    אחד במקום שלושה כמעט-זהים.
     """
     is_song = any(entry["kind"] == "song" for entry in entries)
     per_row = 2 if is_song else 4
@@ -750,13 +752,15 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
 
 
-def _deezer_entries(genre_id, kind: str) -> list[dict]:
-    if kind == "שירים":
-        rows = charts_module.chart_tracks(genre_id)
-        return [{"kind": "song", "artist": t["artist"], "track": t["track"], "rank": index + 1}
-                for index, t in enumerate(rows)]
-    return [{"kind": "artist", "artist": name, "rank": None}
-            for name in charts_module.chart_artists(genre_id)]
+def _classics_entries(genre: str) -> list[dict]:
+    """קלאסיקות פופ/רוק, 1950–2020 — רשימה סטטית, לא מצעד חי.
+
+    מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימה כאן
+    קבועה בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
+    """
+    source = classics_module.POP_CLASSICS if genre == "פופ" else classics_module.ROCK_CLASSICS
+    return [{"kind": "song", "artist": entry["artist"], "track": entry["track"],
+            "rank": index + 1} for index, entry in enumerate(source)]
 
 
 def _goat_entries(filter_text: str) -> list[dict]:
@@ -780,21 +784,15 @@ with st.expander("📇 אינדקס מצעדים", expanded=False):
                "התוצאות — שם קובע מה שנמדד מהאודיו.")
 
     imported = storage.load_charts()
-    sources = ["מצעד Deezer חי", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
+    sources = ["🎻 קלאסיקות (פופ/רוק)", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
     sources += [f"מיובא: {chart['title']}" for chart in imported.values()]
     source = st.radio("מקור:", sources, horizontal=True, key="index_source")
 
     entries, key_prefix = [], ""
-    if source.startswith("מצעד Deezer"):
-        genre_list = charts_module.genres()
-        if not genre_list:
-            st.caption("המצעד לא נטען מהשרת כרגע. הרשימות האחרות עובדות בלי רשת.")
-        else:
-            names = {genre["name"]: genre["id"] for genre in genre_list}
-            picked = st.selectbox("קטגוריה:", list(names), key="index_genre")
-            kind = st.radio("להציג:", ["שירים", "אמנים"], horizontal=True, key="index_kind")
-            entries = _deezer_entries(names[picked], kind)
-            key_prefix = "chart_song" if kind == "שירים" else "chart_artist"
+    if source.startswith("🎻 קלאסיקות"):
+        genre = st.radio("ז'אנר:", ["פופ", "רוק"], horizontal=True, key="classics_genre")
+        entries = _classics_entries(genre)
+        key_prefix = "classic"
 
     elif source.startswith("בילבורד"):
         artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")
