@@ -5,6 +5,7 @@
 כפילויות ודירוג רלוונטיות.
 """
 import datetime as _dt
+import os
 import re
 import threading
 import time
@@ -266,6 +267,10 @@ def build_queries(query: str, filters: dict | None = None,
 
 # ---------- שכבת HTTP: כישלון אינו "אין תוצאות" ----------
 
+USER_AGENT = os.environ.get(
+    "TRAILER_SONG_USER_AGENT",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
 HTTP_ATTEMPTS = 3
 HTTP_BACKOFF = 0.6      # שניות, מוכפל בכל ניסיון
 RETRY_STATUSES = (429, 500, 502, 503, 504)
@@ -296,6 +301,10 @@ def get_json(url: str, client: httpx.Client | None = None, timeout: float = 10.0
     זו ההבחנה שהחסרה שלה גרמה ל"לא נמצאו תוצאות" על כישלון רשת: חנות שהחזירה
     429 או 503 נראתה בדיוק כמו חיפוש שלא מצא כלום, והלחיצה השנייה "עבדה".
     """
+    # User-Agent אמיתי כברירת מחדל: iTunes מחזיר 403 לבקשות עם ה-UA הדיפולטי
+    # של httpx, במיוחד מכתובות של דאטה-סנטר. זה לא מעקף חסימה אלא זיהוי תקין —
+    # בקשה בלי UA כלל היא מה שנראה חריג
+    headers = {"User-Agent": USER_AGENT, **(headers or {})}
     last = ""
     for attempt in range(HTTP_ATTEMPTS):
         try:

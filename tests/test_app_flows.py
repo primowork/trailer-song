@@ -48,7 +48,8 @@ def test_classics_is_the_default_index_source_and_needs_no_network(app):
 
 def test_classics_song_click_runs_a_focused_song_search(app, monkeypatch):
     import classics
-    first = classics.POP_CLASSICS[0]
+    # הקטגוריה הראשונה היא ברירת המחדל של ה-selectbox
+    first = classics.CATEGORIES[next(iter(classics.CATEGORIES))][0]
     monkeypatch.setattr(covers, "find_all_covers",
                         lambda title, artist="", **k: (
                             [track(first["artist"], f"{title} (Cover)", "c1")], "src", None))
@@ -373,3 +374,69 @@ def test_thumbs_down_button_saves_and_clears_the_heart(app):
     assert app.session_state["favorites"] == {}
     assert len(app.session_state["rejections"]) == 1
     assert storage.load_rejections()
+
+
+def test_switching_classics_category_changes_the_songs(app):
+    import classics
+    labels = list(classics.CATEGORIES)
+
+    picker = app.selectbox(key="classics_category")
+    assert picker.options == labels
+
+    picker.set_value("50's").run()
+    assert not app.exception
+    fifties = {b.label for b in app.button if (b.key or "").startswith("classic_")}
+
+    picker.set_value("2000's").run()
+    assert not app.exception
+    two_thousands = {b.label for b in app.button if (b.key or "").startswith("classic_")}
+
+    assert fifties and two_thousands
+    assert not (fifties & two_thousands)
+
+
+def test_blues_category_is_reachable(app):
+    picker = app.selectbox(key="classics_category")
+    picker.set_value("🎺 בלוז").run()
+
+    assert not app.exception
+    labels = " ".join(b.label for b in app.button if (b.key or "").startswith("classic_"))
+    assert "Muddy Waters" in labels
+
+
+def test_a_saved_version_is_clickable_and_searches_for_it_again(app, monkeypatch):
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track("Someone", f"{title} (Cover)", "c1")], "src", None))
+    app.session_state["favorites"] = {
+        "2wei|zombie": {"artist": "2WEI", "track": "Zombie", "genre": "Soundtrack",
+                        "year": "2018", "features": None, "added_at": 1.0}
+    }
+    app.run()
+
+    app.button(key="fav_open_2wei|zombie").click().run()
+
+    assert not app.exception
+    assert app.session_state["cover_title"] == "Zombie"
+    assert app.session_state["cover_artist"] == "2WEI"
+    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["candidates"]
+
+
+def test_a_saved_artist_ranks_their_other_covers_higher(app):
+    """הבקשה: קאבר של אמן ששמור עולה, גם כשזה קאבר לשיר אחר."""
+    app.session_state["favorites"] = {
+        f"violet orlandi|song {i}": {
+            "artist": "Violet Orlandi", "track": f"Song {i}", "genre": "Rock",
+            "year": "2019", "features": None, "added_at": 1.0}
+        for i in range(4)
+    }
+    app.session_state["candidates"] = [
+        track("Unknown Cover Band", "Clocks (Cover)", "unknown", genre="Rock"),
+        track("Violet Orlandi", "Clocks (Cover)", "known", genre="Rock"),
+    ]
+    app.run()
+
+    assert not app.exception
+    keys = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert keys.index("btn_favorite_itunes-known") < keys.index("btn_favorite_itunes-unknown")

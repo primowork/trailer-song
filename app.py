@@ -125,7 +125,7 @@ def _init_state():
         "federation_probed": False,
         "similar_of": None,
         "pending_fields": None,
-        "index_source": "🎻 קלאסיקות (פופ/רוק)",
+        "index_source": "🎻 קלאסיקות",
         "search_mode": MODE_SONG,
     }
     for key, value in defaults.items():
@@ -274,6 +274,18 @@ def verify_tracks(tracks: list[dict]):
     progress.progress(1.0, text="הסתיים")
 
 
+def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
+                 auto_run: bool = False):
+    """קובע את שדות החיפוש (ואופציונלית מצב + הרצה אוטומטית) מכפתור, ומרענן.
+
+    Streamlit אוסר על שינוי session_state של widget אחרי שהוא נוצר, ולכן אי אפשר
+    לכתוב לשדה מתוך כפתור שמצויר מתחתיו. הערך נשמר כאן ומוחל בתחילת הריצה הבאה,
+    לפני שהשדות/הרדיו נוצרים.
+    """
+    st.session_state["pending_fields"] = (title, artist, mode, auto_run)
+    st.rerun()
+
+
 # ---------- סרגל צד ----------
 
 with st.sidebar:
@@ -291,11 +303,19 @@ with st.sidebar:
                                  key=lambda item: item[1].get("added_at", 0),
                                  reverse=True):
             col_name, col_remove = st.columns([4, 1])
-            col_name.caption(f"**{entry.get('artist', '')}** — {entry.get('track', '')}")
+            label = f"{entry.get('artist', '')} — {entry.get('track', '')}"
+            # לחיצה על גרסה שמורה מחזירה אליה: ממלאת את השדות ומריצה חיפוש
+            # לשיר הזה, כדי שאפשר יהיה למצוא אותה ואת מה שדומה לה שוב
+            if col_name.button(label[:48], key=f"fav_open_{key}", help=label,
+                               use_container_width=True):
+                queue_fields(entry.get("track", ""), entry.get("artist", ""),
+                             mode=MODE_SONG, auto_run=True)
             if col_remove.button("✕", key=f"unfav_{key}", help="הסר מהפלייליסט"):
                 favorites.pop(key)
                 storage.save_favorites(favorites)
                 st.rerun()
+            if entry.get("preview_url"):
+                st.audio(entry["preview_url"])
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
@@ -765,18 +785,6 @@ st.write(
     "קאברים לכל הקטלוג של אמן, או חיפוש חופשי עם פילטרים."
 )
 
-def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
-                 auto_run: bool = False):
-    """קובע את שדות החיפוש (ואופציונלית מצב + הרצה אוטומטית) מכפתור, ומרענן.
-
-    Streamlit אוסר על שינוי session_state של widget אחרי שהוא נוצר, ולכן אי אפשר
-    לכתוב לשדה מתוך כפתור שמצויר מתחתיו. הערך נשמר כאן ומוחל בתחילת הריצה הבאה,
-    לפני שהשדות/הרדיו נוצרים.
-    """
-    st.session_state["pending_fields"] = (title, artist, mode, auto_run)
-    st.rerun()
-
-
 _pending = st.session_state.pop("pending_fields", None)
 if _pending:
     _title, _artist, _mode, _auto_run = _pending
@@ -889,13 +897,13 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
 
 
-def _classics_entries(genre: str) -> list[dict]:
-    """קלאסיקות פופ/רוק, 1950–2020 — רשימה סטטית, לא מצעד חי.
+def _classics_entries(category: str) -> list[dict]:
+    """קלאסיקות לפי ז'אנר או עשור, 1950–2020 — רשימה סטטית, לא מצעד חי.
 
-    מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימה כאן
-    קבועה בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
+    מצעד Deezer חי הציג טרנדים עדכניים שהמשתמש לרוב לא מזהה. הרשימות כאן
+    קבועות בקוד (`classics.py`), באותה שיטה כמו `GREATEST_ARTISTS`.
     """
-    source = classics_module.POP_CLASSICS if genre == "פופ" else classics_module.ROCK_CLASSICS
+    source = classics_module.CATEGORIES.get(category, ())
     return [{"kind": "song", "artist": entry["artist"], "track": entry["track"],
             "rank": index + 1} for index, entry in enumerate(source)]
 
@@ -921,15 +929,19 @@ with st.expander("📇 אינדקס מצעדים", expanded=False):
                "התוצאות — שם קובע מה שנמדד מהאודיו.")
 
     imported = storage.load_charts()
-    sources = ["🎻 קלאסיקות (פופ/רוק)", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
+    sources = ["🎻 קלאסיקות", f"בילבורד: האמנים הגדולים ({len(artists_module.GREATEST_ARTISTS)})"]
     sources += [f"מיובא: {chart['title']}" for chart in imported.values()]
     source = st.radio("מקור:", sources, horizontal=True, key="index_source")
 
     entries, key_prefix = [], ""
     if source.startswith("🎻 קלאסיקות"):
-        genre = st.radio("ז'אנר:", ["פופ", "רוק"], horizontal=True, key="classics_genre")
-        entries = _classics_entries(genre)
+        # selectbox ולא radio: שלוש-עשרה קטגוריות בשורה אחת אינן קריאות
+        category = st.selectbox("קטגוריה:", list(classics_module.CATEGORIES),
+                                key="classics_category")
+        entries = _classics_entries(category)
         key_prefix = "classic"
+        st.caption(f"{len(entries)} שירים · העשורים והקטגוריות הקלאסיות הם "
+                   "חתכים של אותן רשימות לפי שנה, ולכן שיר יכול להופיע בכמה מהן.")
 
     elif source.startswith("בילבורד"):
         artist_filter = st.text_input("סנן ברשימה:", key="artist_filter", placeholder="beatles")

@@ -1,4 +1,4 @@
-"""רשימות קלאסיקות סטטיות — פופ ורוק, 1950–2020.
+"""רשימות קלאסיקות סטטיות — פופ, רוק ובלוז, 1950–2020.
 
 מחליפות את מצעד ה-Deezer החי באינדקס המצעדים: מצעד "חי" מציג טרנדים
 עדכניים שהמשתמש לרוב לא מזהה, בעוד שהמטרה כאן היא נקודת פתיחה של שירים
@@ -432,3 +432,149 @@ ROCK_CLASSICS: tuple[dict, ...] = (
     {"artist": "The Strokes", "track": "Bad Decisions", "year": 2020},
     {"artist": "AC/DC", "track": "Shot in the Dark", "year": 2020},
 )
+
+BLUES_CLASSICS: tuple[dict, ...] = (
+    # 1950s
+    {"artist": "Muddy Waters", "track": "Hoochie Coochie Man", "year": 1954},
+    {"artist": "Muddy Waters", "track": "I Just Want to Make Love to You", "year": 1954},
+    {"artist": "Muddy Waters", "track": "Mannish Boy", "year": 1955},
+    {"artist": "Howlin' Wolf", "track": "Evil", "year": 1954},
+    {"artist": "Howlin' Wolf", "track": "Smokestack Lightnin'", "year": 1956},
+    {"artist": "B.B. King", "track": "Three O'Clock Blues", "year": 1951},
+    {"artist": "B.B. King", "track": "Every Day I Have the Blues", "year": 1955},
+    {"artist": "Elmore James", "track": "Dust My Broom", "year": 1951},
+    {"artist": "Big Mama Thornton", "track": "Hound Dog", "year": 1952},
+    {"artist": "Little Walter", "track": "Juke", "year": 1952},
+    {"artist": "Little Walter", "track": "My Babe", "year": 1955},
+    {"artist": "Ray Charles", "track": "I Got a Woman", "year": 1954},
+    {"artist": "Ray Charles", "track": "What'd I Say", "year": 1959},
+    {"artist": "Bo Diddley", "track": "Bo Diddley", "year": 1955},
+    {"artist": "Screamin' Jay Hawkins", "track": "I Put a Spell on You", "year": 1956},
+    {"artist": "Jimmy Reed", "track": "Baby What You Want Me to Do", "year": 1959},
+    {"artist": "Guitar Slim", "track": "The Things That I Used to Do", "year": 1954},
+    {"artist": "Willie Dixon", "track": "Little Red Rooster", "year": 1961},
+    # 1960s
+    {"artist": "Etta James", "track": "At Last", "year": 1960},
+    {"artist": "Etta James", "track": "I'd Rather Go Blind", "year": 1968},
+    {"artist": "Howlin' Wolf", "track": "Spoonful", "year": 1960},
+    {"artist": "Howlin' Wolf", "track": "Killing Floor", "year": 1964},
+    {"artist": "John Lee Hooker", "track": "Boom Boom", "year": 1962},
+    {"artist": "Freddie King", "track": "Hide Away", "year": 1961},
+    {"artist": "Buddy Guy", "track": "Stone Crazy", "year": 1962},
+    {"artist": "Junior Wells", "track": "Messin' with the Kid", "year": 1960},
+    {"artist": "B.B. King", "track": "Sweet Little Angel", "year": 1964},
+    {"artist": "Albert King", "track": "Born Under a Bad Sign", "year": 1967},
+    {"artist": "Albert King", "track": "Crosscut Saw", "year": 1967},
+    {"artist": "Paul Butterfield Blues Band", "track": "Born in Chicago", "year": 1965},
+    {"artist": "John Mayall & the Bluesbreakers", "track": "All Your Love", "year": 1966},
+    {"artist": "Cream", "track": "Crossroads", "year": 1968},
+    {"artist": "Cream", "track": "Born Under a Bad Sign", "year": 1968},
+    {"artist": "Jimi Hendrix", "track": "Red House", "year": 1967},
+    {"artist": "Canned Heat", "track": "On the Road Again", "year": 1968},
+    {"artist": "Fleetwood Mac", "track": "Black Magic Woman", "year": 1968},
+    {"artist": "Fleetwood Mac", "track": "Oh Well", "year": 1969},
+    {"artist": "Led Zeppelin", "track": "You Shook Me", "year": 1969},
+    {"artist": "Janis Joplin", "track": "Ball and Chain", "year": 1968},
+    {"artist": "Ten Years After", "track": "I'm Going Home", "year": 1969},
+    {"artist": "Taj Mahal", "track": "Statesboro Blues", "year": 1968},
+    {"artist": "Otis Rush", "track": "I Can't Quit You Baby", "year": 1966},
+    {"artist": "Magic Sam", "track": "All Your Love", "year": 1967},
+    # 1970s
+    {"artist": "B.B. King", "track": "The Thrill Is Gone", "year": 1970},
+    {"artist": "The Allman Brothers Band", "track": "Statesboro Blues", "year": 1971},
+    {"artist": "The Allman Brothers Band", "track": "Whipping Post", "year": 1971},
+    {"artist": "Derek and the Dominos", "track": "Layla", "year": 1970},
+    {"artist": "Freddie King", "track": "Going Down", "year": 1971},
+    {"artist": "Johnny Winter", "track": "Highway 61 Revisited", "year": 1970},
+    {"artist": "ZZ Top", "track": "La Grange", "year": 1973},
+    {"artist": "ZZ Top", "track": "Tush", "year": 1975},
+    {"artist": "Bobby Bland", "track": "Ain't No Love in the Heart of the City", "year": 1974},
+    {"artist": "Albert Collins", "track": "Frosty", "year": 1978},
+    {"artist": "Rory Gallagher", "track": "Bullfrog Blues", "year": 1972},
+    {"artist": "George Thorogood", "track": "One Bourbon, One Scotch, One Beer", "year": 1977},
+    {"artist": "The J. Geils Band", "track": "Whammer Jammer", "year": 1972},
+    {"artist": "Little Feat", "track": "Dixie Chicken", "year": 1973},
+    {"artist": "Eric Clapton", "track": "Cocaine", "year": 1977},
+    {"artist": "Muddy Waters", "track": "I'm Ready", "year": 1978},
+    {"artist": "Peter Green", "track": "In the Skies", "year": 1979},
+    # 1980s
+    {"artist": "Stevie Ray Vaughan", "track": "Pride and Joy", "year": 1983},
+    {"artist": "Stevie Ray Vaughan", "track": "Texas Flood", "year": 1983},
+    {"artist": "Stevie Ray Vaughan", "track": "Cold Shot", "year": 1984},
+    {"artist": "Stevie Ray Vaughan", "track": "Crossfire", "year": 1989},
+    {"artist": "George Thorogood", "track": "Bad to the Bone", "year": 1982},
+    {"artist": "Robert Cray", "track": "Smoking Gun", "year": 1986},
+    {"artist": "Robert Cray", "track": "Phone Booth", "year": 1983},
+    {"artist": "The Fabulous Thunderbirds", "track": "Tuff Enuff", "year": 1986},
+    {"artist": "John Lee Hooker", "track": "The Healer", "year": 1989},
+    {"artist": "Bonnie Raitt", "track": "Thing Called Love", "year": 1989},
+    {"artist": "Gary Moore", "track": "Oh Pretty Woman", "year": 1990},
+    {"artist": "Albert Collins", "track": "Same Old Thing", "year": 1986},
+    # 1990s
+    {"artist": "Gary Moore", "track": "Still Got the Blues", "year": 1990},
+    {"artist": "Buddy Guy", "track": "Damn Right, I've Got the Blues", "year": 1991},
+    {"artist": "Bonnie Raitt", "track": "I Can't Make You Love Me", "year": 1991},
+    {"artist": "Eric Clapton", "track": "Tears in Heaven", "year": 1992},
+    {"artist": "Eric Clapton", "track": "Change the World", "year": 1996},
+    {"artist": "Keb' Mo'", "track": "Am I Wrong", "year": 1994},
+    {"artist": "Jonny Lang", "track": "Lie to Me", "year": 1997},
+    {"artist": "Kenny Wayne Shepherd", "track": "Blue on Black", "year": 1997},
+    {"artist": "Susan Tedeschi", "track": "It Hurt So Bad", "year": 1998},
+    {"artist": "Ben Harper", "track": "Ground on Down", "year": 1997},
+    {"artist": "John Lee Hooker", "track": "Chill Out", "year": 1995},
+    {"artist": "Corey Harris", "track": "Between Midnight and Day", "year": 1995},
+    # 2000s
+    {"artist": "The White Stripes", "track": "Ball and Biscuit", "year": 2003},
+    {"artist": "The Black Keys", "track": "Thickfreakness", "year": 2003},
+    {"artist": "The Black Keys", "track": "Your Touch", "year": 2006},
+    {"artist": "Joe Bonamassa", "track": "Sloe Gin", "year": 2007},
+    {"artist": "North Mississippi Allstars", "track": "Shake 'Em On Down", "year": 2000},
+    {"artist": "The Derek Trucks Band", "track": "Down in the Flood", "year": 2002},
+    {"artist": "Susan Tedeschi", "track": "Alone", "year": 2002},
+    {"artist": "Seasick Steve", "track": "Dog House Boogie", "year": 2006},
+    {"artist": "Buddy Guy", "track": "Skin Deep", "year": 2008},
+    {"artist": "Eric Clapton", "track": "Riding with the King", "year": 2000},
+    # 2010s–2020
+    {"artist": "Gary Clark Jr.", "track": "Bright Lights", "year": 2011},
+    {"artist": "Gary Clark Jr.", "track": "This Land", "year": 2019},
+    {"artist": "Joe Bonamassa", "track": "Dust Bowl", "year": 2011},
+    {"artist": "Tedeschi Trucks Band", "track": "Midnight in Harlem", "year": 2011},
+    {"artist": "Rival Sons", "track": "Keep On Swinging", "year": 2011},
+    {"artist": "Larkin Poe", "track": "Preachin' Blues", "year": 2018},
+    {"artist": "Christone \"Kingfish\" Ingram", "track": "Outside of This Town", "year": 2019},
+    {"artist": "Fantastic Negrito", "track": "Plastic Hamburgers", "year": 2018},
+    {"artist": "Marcus King", "track": "The Well", "year": 2020},
+    {"artist": "Samantha Fish", "track": "Bulletproof", "year": 2017},
+)
+
+
+# ---------- קטגוריות ----------
+
+# העשורים והקטגוריות ה"קלאסיות" אינן רשימות נפרדות אלא חתכים של אותם נתונים:
+# לכל רשומה יש `year`, ולכן "אולדיס" או "80's" הם סינון ולא תחזוקה כפולה.
+# רק ז'אנר חדש דורש רשימה חדשה.
+ALL_CLASSICS: tuple[dict, ...] = POP_CLASSICS + ROCK_CLASSICS + BLUES_CLASSICS
+
+
+def in_years(entries: tuple, first: int, last: int) -> tuple:
+    return tuple(entry for entry in entries if first <= entry["year"] <= last)
+
+
+# הגבולות אינם שרירותיים אלא פורמטי רדיו מקובלים: "אולדיס" הוא 50s–60s,
+# "רוק קלאסי" הוא הרוק שבין הפלישה הבריטית לגראנג', ו"פופ קלאסי" הוא הפופ
+# שלפני עידן ה-CD. מי שרוצה חתך אחר יכול לבחור עשור ישירות.
+CATEGORIES: dict[str, tuple] = {
+    "🎤 פופ": POP_CLASSICS,
+    "🎸 רוק": ROCK_CLASSICS,
+    "🎺 בלוז": BLUES_CLASSICS,
+    "🎤 פופ קלאסי": in_years(POP_CLASSICS, 1950, 1989),
+    "🎸 רוק קלאסי": in_years(ROCK_CLASSICS, 1965, 1995),
+    "📻 אולדיס": in_years(ALL_CLASSICS, 1950, 1969),
+    "50's": in_years(ALL_CLASSICS, 1950, 1959),
+    "60's": in_years(ALL_CLASSICS, 1960, 1969),
+    "70's": in_years(ALL_CLASSICS, 1970, 1979),
+    "80's": in_years(ALL_CLASSICS, 1980, 1989),
+    "90's": in_years(ALL_CLASSICS, 1990, 1999),
+    "2000's": in_years(ALL_CLASSICS, 2000, 2009),
+    "2010's": in_years(ALL_CLASSICS, 2010, 2020),
+}

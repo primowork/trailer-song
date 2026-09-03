@@ -181,6 +181,9 @@ def test_a_track_near_the_rejected_centre_is_pushed_down():
     favorites = [liked(feature_fields={"low_end": 2.8}) for _ in range(5)]
     rejections = [liked(feature_fields={"low_end": 0.9}) for _ in range(5)]
     sounds_rejected = features(low_end=0.9)
+    # אמן שאינו מוכר לפרופיל, אחרת בונוס האמן השמור מערפל את מה שנבדק כאן:
+    # ההפרדה לפי *צליל*
+    probe = song(artist="Unknown Artist")
 
     without = taste.profile(favorites)
     with_rejections = taste.profile(favorites, rejections=rejections)
@@ -188,8 +191,8 @@ def test_a_track_near_the_rejected_centre_is_pushed_down():
     # הדחיות מגדילות את הביטחון (יותר דוגמאות), ולכן ההשוואה היא על ההפרדה
     # ולא על הערך המוחלט: כמה הדחוי נמוך ביחס לאהוב
     def separation(learned):
-        return (taste.match(song(), sounds_rejected, learned)
-                / taste.match(song(), features(low_end=2.8), learned))
+        return (taste.match(probe, sounds_rejected, learned)
+                / taste.match(probe, features(low_end=2.8), learned))
 
     assert separation(with_rejections) < separation(without)
     assert separation(with_rejections) < 0.5
@@ -299,3 +302,39 @@ def test_describe_can_name_a_timbre_trait():
                  for i in range(4)]
     text = taste.describe(taste.profile(favorites))
     assert "בהיר" in text
+
+
+# ---------- אמן שכבר שמור בפלייליסט ----------
+
+def test_a_saved_artist_lifts_their_other_songs_too():
+    """הבקשה המפורשת: אמן ששמור מקבל עדיפות גם על קאבר לשיר אחר לגמרי."""
+    favorites = [liked({"artist": "Violet Orlandi", "track": "Zombie"}),
+                 liked({"artist": "Violet Orlandi", "track": "Creep"}),
+                 liked({"artist": "Violet Orlandi", "track": "Toxicity"})]
+    learned = taste.profile(favorites)
+
+    # שיר אחר לגמרי, אותו אמן
+    known = taste.match(song(artist="Violet Orlandi", track="Something Else"),
+                        features(), learned)
+    stranger = taste.match(song(artist="Nobody At All", track="Something Else"),
+                           features(), learned)
+    assert known > stranger
+
+
+def test_the_artist_boost_survives_a_track_that_otherwise_matches_poorly():
+    """דווקא כאן הוא נדרש: הצליל לא מתאים, אבל האמן שמור."""
+    favorites = [liked({"artist": "Violet Orlandi", "track": f"Song {i}"},
+                       {"low_end": 2.8}) for i in range(4)]
+    learned = taste.profile(favorites)
+    off_style = features(low_end=0.85, loudness=0.08, onset_rate=0.8, dynamic_span=1.6)
+
+    known = taste.match(song(artist="Violet Orlandi", genre="Pop"), off_style, learned)
+    stranger = taste.match(song(artist="Nobody At All", genre="Pop"), off_style, learned)
+    assert known > stranger * 1.15
+
+
+def test_the_artist_boost_cannot_push_past_one():
+    favorites = [liked() for _ in range(40)]
+    learned = taste.profile(favorites)
+    assert taste.match(song(), features(), learned) <= 1.0
+    assert taste.bonus(song(), features(), learned) <= taste.MAX_TASTE_BONUS

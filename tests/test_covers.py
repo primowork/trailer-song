@@ -378,3 +378,29 @@ def test_more_like_style_searches_genre_and_artist(monkeypatch):
     assert terms == ["Soundtrack", "2WEI"]
     assert source and len(results) == 2
     assert "itunes-src" not in {t["uid"] for t in results}
+
+
+def test_artist_titles_fall_back_to_deezer_when_itunes_fails(monkeypatch):
+    """iTunes החזיר 403 מהדיפלוימנט, ומצב 'קאברים לאמן' מת לגמרי.
+
+    זה היה המקור היחיד לזיהוי השירים של האמן, בעוד ש-Deezer עונה על אותה
+    שאלה בדיוק ועבד באותו רגע.
+    """
+    monkeypatch.setattr(covers.search_module, "itunes_search", lambda *a, **k: [])
+    monkeypatch.setattr(covers.search_module, "deezer_search",
+                        lambda *a, **k: [make("Coldplay", "Yellow", uid=str(i))
+                                         for i in range(3)]
+                                        + [make("Coldplay", "Clocks", uid="c")])
+
+    assert covers.artist_top_titles("Coldplay") == ["Yellow", "Clocks"]
+
+
+def test_deezer_is_not_called_when_itunes_answers(monkeypatch):
+    monkeypatch.setattr(covers.search_module, "itunes_search",
+                        lambda *a, **k: [make("Coldplay", "Yellow", uid="1")])
+
+    def boom(*a, **k):
+        raise AssertionError("אין סיבה לפנות ל-Deezer כש-iTunes ענה")
+
+    monkeypatch.setattr(covers.search_module, "deezer_search", boom)
+    assert covers.artist_top_titles("Coldplay") == ["Yellow"]

@@ -56,6 +56,8 @@ REJECT_REFERENCE_HALF = 5.0
 # כמה לייקים צריכים לשאת תכונה כדי שהיא תוצג כ"הטעם שלך". תכונה מדוגמה
 # בודדת עשויה לקבל lift גבוה ועדיין להיות מקרית
 MIN_SUPPORT = 2.0
+# תוספת ישירה לטראק שהאמן שלו כבר שמור בפלייליסט, גם אם זה קאבר לשיר אחר
+KNOWN_ARTIST_BOOST = 0.25
 
 # המימדים אינם קבועים: מדידה שנשמרה לפני שמדדי הגוון נוספו מתארת ארבעה
 # מימדים, ומדידה חדשה תשעה. הפרופיל נבנה על מה שקיים בפועל בכל הדוגמאות,
@@ -304,6 +306,17 @@ def match(track: dict, features: dict | None, learned: dict) -> float:
         categorical_match = NEUTRAL
 
     combined = AUDIO_WEIGHT * audio_match + CATEGORICAL_WEIGHT * categorical_match
+
+    # אמן ששמור בפלייליסט הוא אות ישיר וחזק, גם כשהקאבר הוא לשיר אחר לגמרי:
+    # "אהבתי משהו של האמן הזה" הוא בדיוק סוג ההיכרות שהמשתמש רוצה שיעלה. דרך
+    # ה-lift הממוצע לבד האות הזה נבלע — הוא מתחלק במספר התכונות של הטראק
+    # הבונוס נלקח מהמרווח שנותר ולא נוסף וחתוך: כשהציון כבר קרוב ל-1 תוספת
+    # קבועה נבלעת בתקרה ולא משנה דבר, וזה בדיוק המצב שבו האמן השמור אמור
+    # להכריע בין שתי תוצאות טובות
+    artist = f"artist:{normalize_artist(track.get('artist', ''))}"
+    if (learned.get("support") or {}).get(artist):
+        combined += KNOWN_ARTIST_BOOST * (1.0 - combined)
+
     return learned["confidence"] * combined
 
 

@@ -423,8 +423,15 @@ def artist_top_titles(artist: str, limit: int = ARTIST_TOP_TITLES) -> list[str]:
         return []
 
     target = normalize_artist(artist)
+    catalog = search_module.itunes_search(artist, limit=200)
+    if not catalog:
+        # iTunes נופל לפעמים (403 מכתובת של דאטה-סנטר), ואז מצב "קאברים לאמן"
+        # מת לגמרי — בעוד ש-Deezer עונה על אותה שאלה בדיוק. `search_covers`
+        # כבר סובל נפילה של מקור אחד; כאן זה היה מקור יחיד.
+        catalog = search_module.deezer_search(artist, limit=100)
+
     counts: dict[str, dict] = {}
-    for item in search_module.itunes_search(artist, limit=200):
+    for item in catalog:
         if fuzz.token_set_ratio(target, normalize_artist(item.get("artist", ""))) < ARTIST_MATCH_THRESHOLD:
             continue
         title = clean_track_title(item.get("track", "")) or item.get("track", "")
