@@ -104,8 +104,52 @@ st.markdown(
         font-size: 0.79rem;
         line-height: 1.45;
     }
-    /* נגן האודיו של הדפדפן היה הרכיב הרועש ביותר בכרטיס */
-    [data-testid="stMain"] audio { height: 34px; }
+    /* נגן מותאם. נגן ה-<audio controls> של הדפדפן יושב ב-shadow DOM שלא
+       ניתן לעיצוב, ולכן הוא הגיע בפלטה של הדפדפן ולא של האפליקציה — פס אפור
+       שהיה הרכיב הרועש ביותר בכרטיס. כאן ה-<audio> נשאר אבל מוסתר, והפקדים
+       שלנו. אלמנט אודיו אמיתי הוא מה שמשמר "רק נגן אחד בכל רגע". */
+    .ts-player { display: flex; align-items: center; gap: 10px; max-width: 340px; }
+    .ts-player audio { display: none; }
+    /* המשולש והמקפים מצוירים ב-CSS ולא ב-SVG: Streamlit מסנן <svg> מתוך
+       st.html, ואייקון מוטמע פשוט לא מגיע לדף (נבדק בדפדפן) */
+    .ts-play {
+        width: 32px; height: 32px; flex: none; border: none; cursor: pointer;
+        border-radius: 50%; background: #FFB020;
+        display: flex; align-items: center; justify-content: center; padding: 0;
+    }
+    .ts-play:hover { background: #FFC65C; }
+    .ts-play::before {
+        content: ""; width: 0; height: 0; border-style: solid;
+        border-width: 6px 0 6px 10px;
+        border-color: transparent transparent transparent #0B0D12;
+        margin-inline-start: 2px;
+    }
+    .ts-play.is-playing::before {
+        width: 9px; height: 11px; border: none; margin: 0;
+        background: linear-gradient(90deg, #0B0D12 0 3px, transparent 3px 6px,
+                                    #0B0D12 6px 9px);
+    }
+    .ts-bar {
+        flex-grow: 1; height: 12px; cursor: pointer; position: relative;
+        display: flex; align-items: center;
+    }
+    .ts-bar::before {
+        content: ""; position: absolute; inset-inline: 0; height: 3px;
+        border-radius: 2px; background: #262B38;
+    }
+    .ts-fill {
+        position: relative; height: 3px; border-radius: 2px;
+        background: #6C7488; width: 0%;
+    }
+    .ts-time { flex: none; font-size: 0.72rem; color: #8A91A3; }
+
+    /* עטיפה חסרה: גרדיאנט וגליף במקום ריבוע אפור שטוח שמושך את העין */
+    .ts-art-blank {
+        border-radius: 8px; border: 1px solid #262B38;
+        background: linear-gradient(135deg, #232936, #14171F);
+        display: flex; align-items: center; justify-content: center;
+        color: #3C4457;
+    }
     @media (max-width: 640px) {
         [data-testid="stMainBlockContainer"] {
             padding: 1.25rem 0.9rem 3rem;
@@ -120,12 +164,13 @@ st.markdown(
 
 
 
-def _only_one_audio_at_a_time():
-    """עוצר כל נגן אחר ברגע שמתחילים לנגן אחד.
+def _audio_behaviour():
+    """מפעיל את הנגנים המותאמים, ומשאיר רק אחד מנגן בכל רגע.
 
-    Streamlit מרנדר <audio> נייטיבי לכל שיר, וכולם יכולים לנגן במקביל — מה
-    שהופך את ההאזנה לחסרת תועלת. הסקריפט רץ בתוך iframe ולכן ניגש למסמך
-    האב, ומאזין ב-capture כדי לתפוס גם נגנים שנוספו אחרי הרינדור.
+    שתי סיבות ל-delegation על ה-document ולא ל-binding לכל נגן: הכרטיסים
+    נבנים מחדש בכל rerun (וב-Streamlit כל לחיצה היא rerun), וה-iframe הזה
+    אינו מורכב מחדש כשה-srcdoc זהה — כלומר סקריפט שרץ פעם אחת בכניסה לא
+    ימצא אף נגן שנוצר אחריו. זה בדיוק הכשל שנמדד קודם בשומר הגלילה.
     """
     renderer = getattr(st, "iframe", None) or components.html
     renderer(
@@ -133,15 +178,57 @@ def _only_one_audio_at_a_time():
         <script>
         (function () {
             const doc = window.parent.document;
-            if (doc.__singleAudioBound) return;
-            doc.__singleAudioBound = true;
+            if (doc.__audioBehaviourBound) return;
+            doc.__audioBehaviourBound = true;
+
+            const clock = function (seconds) {
+                if (!isFinite(seconds)) return "0:00";
+                const m = Math.floor(seconds / 60);
+                const s = Math.floor(seconds % 60);
+                return m + ":" + (s < 10 ? "0" : "") + s;
+            };
+            const paint = function (audio) {
+                const box = audio.closest(".ts-player");
+                if (!box) return;
+                const fill = box.querySelector(".ts-fill");
+                const time = box.querySelector(".ts-time");
+                const button = box.querySelector(".ts-play");
+                const ratio = audio.duration ? audio.currentTime / audio.duration : 0;
+                if (fill) fill.style.width = (ratio * 100).toFixed(1) + "%";
+                if (time) time.textContent = clock(audio.currentTime) + " / " + clock(audio.duration);
+                if (button) button.classList.toggle("is-playing", !audio.paused);
+            };
+
+            doc.addEventListener("click", function (event) {
+                const button = event.target.closest(".ts-play");
+                if (button) {
+                    const audio = button.closest(".ts-player").querySelector("audio");
+                    if (audio) { audio.paused ? audio.play() : audio.pause(); }
+                    return;
+                }
+                // דילוג: המיקום נגזר מהיחס ברוחב הפס, ולכן עובד גם ב-RTL
+                const bar = event.target.closest(".ts-bar");
+                if (bar) {
+                    const audio = bar.closest(".ts-player").querySelector("audio");
+                    const box = bar.getBoundingClientRect();
+                    if (audio && audio.duration) {
+                        audio.currentTime = ((event.clientX - box.left) / box.width) * audio.duration;
+                    }
+                }
+            }, true);
+
+            ["timeupdate", "loadedmetadata", "pause", "ended"].forEach(function (name) {
+                doc.addEventListener(name, function (event) {
+                    if (event.target instanceof window.parent.HTMLMediaElement) paint(event.target);
+                }, true);
+            });
+
             doc.addEventListener("play", function (event) {
                 const started = event.target;
                 if (!(started instanceof window.parent.HTMLMediaElement)) return;
+                paint(started);
                 doc.querySelectorAll("audio, video").forEach(function (other) {
-                    if (other !== started && !other.paused) {
-                        other.pause();
-                    }
+                    if (other !== started && !other.paused) other.pause();
                 });
             }, true);
         })();
@@ -223,6 +310,23 @@ def _keep_scroll_position():
     )
 
 
+def audio_player(url: str):
+    """נגן בשפה של האפליקציה. ההתנהגות מגיעה מ-`_audio_behaviour`.
+
+    `st.audio` מרנדר `<audio controls>`, ופקדי הדפדפן יושבים ב-shadow DOM
+    שלא ניתן לעצב — ולכן הוא נראה כמו הדפדפן ולא כמו האפליקציה. כאן
+    ה-`<audio>` נשאר (וזה מה שמשמר "רק נגן אחד בכל רגע"), רק הפקדים שלנו.
+    `preload="none"` כדי שעשרים תוצאות לא ימשכו עשרים קבצים מראש.
+    """
+    st.html(
+        "<div class='ts-player'>"
+        "<button class='ts-play' type='button' aria-label='נגן'></button>"
+        "<div class='ts-bar'><div class='ts-fill'></div></div>"
+        "<span class='ts-time'>0:00</span>"
+        f"<audio preload='none' src='{url}'></audio>"
+        "</div>")
+
+
 # ---------- מצב ----------
 
 def _init_state():
@@ -297,10 +401,45 @@ def is_rejected(track: dict) -> bool:
     return track_key(track.get("artist", ""), track.get("track", "")) in st.session_state["rejections"]
 
 
+def origin_of(track: dict) -> dict:
+    """השיר המקורי שהגרסה הזו מכסה — המפתח שלפיו הפלייליסט מקובץ.
+
+    `origin_track` מסומן ב-`covers.py` בחיפוש לפי אמן וב"עוד קאברים", אבל
+    לא בחיפוש רגיל לפי שיר; שם הכותרת עצמה נושאת את התשובה אחרי ניקוי
+    תגיות הגרסה (`clean_track_title` הקיימת: "Yellow (Epic Trailer
+    Version)" ← "Yellow"). האמן המקורי הוא מה שהמשתמש הקליד בשדה האמן,
+    או שאת הקטלוג שלו סרקנו — ולכן `cover_artist`.
+    """
+    # מה שהמשתמש חיפש קודם לניקוי הכותרת: שתי גרסאות של אותו שיר יכולות
+    # להיקרא "Bitter Sweet Symphony" ו-"Bittersweet Symphony", והניקוי לבדו
+    # היה מפצל אותן לשתי קבוצות. השאילתה זהה לשתיהן, ולכן היא המפתח הנכון.
+    title = (track.get("origin_track")
+             or (st.session_state.get("cover_title") or "").strip()
+             or search_module.clean_track_title(track.get("track", ""))
+             or track.get("track", ""))
+    return {"track": title.strip(),
+            "artist": (st.session_state.get("cover_artist") or "").strip()}
+
+
+def origin_key(entry: dict) -> str:
+    """מפתח הקיבוץ. לרשומות שנשמרו לפני שהשדה נוסף — נגזר בקריאה.
+
+    זה מה שמייתר סקריפט מיגרציה: פלייליסט קיים מתקבץ נכון בלי לגעת
+    ב-`favorites.json` של המשתמש.
+    """
+    origin = entry.get("origin") or {}
+    title = (origin.get("track")
+             or search_module.clean_track_title(entry.get("track", ""))
+             or entry.get("track", ""))
+    return track_key(origin.get("artist", ""), title)
+
+
 def _snapshot(track: dict) -> dict:
     features = st.session_state["bigness"].get(track["uid"])
     return {
         **{field: track.get(field) for field in FAVORITE_FIELDS},
+        # שיר המקור, כדי שהפלייליסט יוכל לשרשר את כל הגרסאות שלו יחד
+        "origin": origin_of(track),
         # המדידה נשמרת ברגע התיוג כדי שהלמידה לא תהיה תלויה בכך שהטראק יימדד
         # שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
         "features": features if audio.measured(features) else None,
@@ -422,6 +561,31 @@ def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
     st.rerun()
 
 
+def _render_saved_versions(versions: list, favorites: dict):
+    """הגרסאות של שיר מקור אחד. אותה שורה כמו קודם, רק תחת כותרת קבוצה."""
+    for key, entry in versions:
+        label = entry.get("artist", "") or entry.get("track", "")
+        row = st.container(horizontal=True, wrap=False, vertical_alignment="center")
+        with row:
+            # לחיצה על גרסה שמורה מחזירה אליה: ממלאת את השדות ומריצה חיפוש
+            # לשיר הזה, כדי שאפשר יהיה למצוא אותה ואת מה שדומה לה שוב
+            if st.button(label[:34], key=f"fav_open_{key}",
+                         help=f"{entry.get('artist', '')} — {entry.get('track', '')}",
+                         width="stretch"):
+                queue_fields(entry.get("track", ""), entry.get("artist", ""),
+                             mode=MODE_SONG, auto_run=True)
+            if entry.get("preview_url"):
+                # בתוך אותה שורה ולא מתחתיה: אחרת חמש-עשרה שמורות הן
+                # שלושים שורות בסרגל
+                with st.popover("", icon=":material/play_arrow:", width=54):
+                    audio_player(entry["preview_url"])
+            if st.button("", key=f"unfav_{key}", icon=":material/close:",
+                         help="הסר מהפלייליסט"):
+                favorites.pop(key)
+                storage.save_favorites(favorites)
+                st.rerun()
+
+
 # ---------- סרגל צד ----------
 
 with st.sidebar:
@@ -435,37 +599,36 @@ with st.sidebar:
         if summary:
             st.caption(summary)
 
-        for key, entry in sorted(favorites.items(),
-                                 key=lambda item: item[1].get("added_at", 0),
-                                 reverse=True):
-            label = f"{entry.get('artist', '')} — {entry.get('track', '')}"
-            # שורה אחת לכל גרסה, בלי נגן פתוח. חמש-עשרה שמורות פירושן היו
-            # חמישה-עשר נגני דפדפן זה מתחת לזה — קיר אפור שהסתיר את הרשימה.
-            # ההאזנה עברה ל-expander לפי דרישה.
-            row = st.container(horizontal=True, wrap=False, vertical_alignment="center")
-            with row:
-                # לחיצה על גרסה שמורה מחזירה אליה: ממלאת את השדות ומריצה חיפוש
-                # לשיר הזה, כדי שאפשר יהיה למצוא אותה ואת מה שדומה לה שוב
-                if st.button(label[:42], key=f"fav_open_{key}", help=label,
-                             width="stretch"):
-                    queue_fields(entry.get("track", ""), entry.get("artist", ""),
-                                 mode=MODE_SONG, auto_run=True)
-                if entry.get("preview_url"):
-                    # בתוך אותה שורה ולא מתחתיה: אחרת חמש-עשרה שמורות הן
-                    # שלושים שורות בסרגל
-                    with st.popover("", icon=":material/play_arrow:", width=54):
-                        st.audio(entry["preview_url"])
-                if st.button("", key=f"unfav_{key}", icon=":material/close:",
-                             help="הסר מהפלייליסט"):
-                    favorites.pop(key)
-                    storage.save_favorites(favorites)
-                    st.rerun()
+        # מקובץ לפי שיר המקור, ולא רשימה שטוחה: כל הגרסאות של אותו שיר
+        # יושבות יחד, וזו גם הדרך שבה חושבים על פלייליסט של קאברים.
+        groups: dict[str, list[tuple[str, dict]]] = {}
+        for key, entry in favorites.items():
+            groups.setdefault(origin_key(entry), []).append((key, entry))
+
+        def newest(items) -> float:
+            return max(entry.get("added_at", 0) for _, entry in items)
+
+        for versions in sorted(groups.values(), key=newest, reverse=True):
+            versions.sort(key=lambda item: item[1].get("added_at", 0), reverse=True)
+            origin = versions[0][1].get("origin") or {}
+            song = (origin.get("track")
+                    or search_module.clean_track_title(versions[0][1].get("track", ""))
+                    or versions[0][1].get("track", ""))
+            by = origin.get("artist")
+            st.markdown(f"**{song}**" + (f" · {by}" if by else "")
+                        + f" &nbsp;:gray[{len(versions)}]")
+            _render_saved_versions(versions, favorites)
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerow(["אמן", "שיר", "אלבום", "ז'אנר", "שנה", "preview"])
-        for entry in favorites.values():
-            writer.writerow([entry.get("artist", ""), entry.get("track", ""),
+        writer.writerow(["שיר מקור", "אמן מקור", "אמן", "שיר", "אלבום",
+                         "ז'אנר", "שנה", "preview"])
+        # ממוין באותו קיבוץ כמו במסך, אחרת הקובץ מאבד את מה שהסרגל מראה
+        for _, entry in sorted(favorites.items(), key=lambda item: (
+                origin_key(item[1]), -item[1].get("added_at", 0))):
+            origin = entry.get("origin") or {}
+            writer.writerow([origin.get("track", ""), origin.get("artist", ""),
+                             entry.get("artist", ""), entry.get("track", ""),
                              entry.get("album", ""), entry.get("genre", ""),
                              entry.get("year", ""), entry.get("preview_url", "")])
         st.download_button("ייצא פלייליסט", icon=":material/download:",
@@ -898,11 +1061,10 @@ def _artwork(track: dict):
     if art:
         st.image(art, width=ARTWORK_SIZE)
     else:
-        # ריבוע ריק ולא כלום: בלעדיו כל השורות מתחתיו מתיישרות אחרת
-        st.markdown(
-            f"<div style='width:{ARTWORK_SIZE}px;height:{ARTWORK_SIZE}px;border-radius:8px;"
-            "background:#1B1F2A;border:1px solid #262B38;'></div>",
-            unsafe_allow_html=True)
+        # ריבוע ולא כלום: בלעדיו כל השורות מתחתיו מתיישרות אחרת
+        st.html(
+            f"<div class='ts-art-blank' style='width:{ARTWORK_SIZE}px;"
+            f"height:{ARTWORK_SIZE}px;'></div>")
 
 
 def render_track(track: dict, index: int, learned: dict | None = None):
@@ -961,9 +1123,7 @@ def render_track(track: dict, index: int, learned: dict | None = None):
 
     with card:
         if track.get("preview_url"):
-            # רוחב קבוע: נגן הדפדפן ברוחב מלא היה הרכיב הרועש ביותר בכרטיס
-            # והתחרה בכותרת על תשומת הלב
-            st.audio(track["preview_url"], width=340)
+            audio_player(track["preview_url"])
 
         # `horizontal` נשען על flex ולא על רשת עמודות, ולכן הכפתורים נשארים
         # זה לצד זה גם ברוחב של 390px ונשברים לשורה שנייה בעת הצורך
@@ -1106,7 +1266,7 @@ def metrics_export(tracks: list[dict]):
 
 # ---------- מסך חיפוש מאוחד ----------
 
-_only_one_audio_at_a_time()
+_audio_behaviour()
 _keep_scroll_position()
 
 st.title("🎵 סורק קאברים לטריילרים")
