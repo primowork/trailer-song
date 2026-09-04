@@ -28,7 +28,7 @@ PAGE_SIZE = 20
 # ברירת המחדל של המיון. השם אומר במפורש שהעדות על טריילר חלק מהדירוג —
 # כשהתווית הבטיחה רק "הטעם שלי", לא היה מובן למה גרסה שכתוב עליה
 # "Epic Trailer Version" יושבת למטה
-SORT_BEST = "⭐ הכי מתאים (טעם + סימני טריילר)"
+SORT_BEST = "הכי מתאים (טעם + סימני טריילר)"
 
 # שלושת מצבי החיפוש. "קאברים לשיר" ממזג שני מקורות (מאגר יחסי + חיפוש בחנויות)
 # תחת בחירה אחת — הם עונים בפועל על אותה שאלה. "קאברים לאמן" ו"חיפוש חופשי"
@@ -37,9 +37,9 @@ SORT_BEST = "⭐ הכי מתאים (טעם + סימני טריילר)"
 # ציון נמוך דומה, ותג על כולם אינו אומר דבר
 TASTE_BADGE_THRESHOLD = 0.35
 
-MODE_SONG = "🎬 קאברים לשיר"
-MODE_ARTIST = "🎤 קאברים לאמן"
-MODE_FREE = "🔎 חיפוש חופשי + פילטרים"
+MODE_SONG = "קאברים לשיר"
+MODE_ARTIST = "קאברים לאמן"
+MODE_FREE = "חיפוש חופשי + פילטרים"
 SEARCH_MODES = [MODE_SONG, MODE_ARTIST, MODE_FREE]
 
 # פילטר "חדשות": התווית וסף השנה שהיא מייצגת. 0 = בלי סינון.
@@ -64,6 +64,10 @@ st.set_page_config(page_title="סורק קאברים - IFPI Israel", page_icon="
 st.markdown(
     """
     <style>
+    /* הגופנים נטענים כאן ולא ב-config.toml: ה-theme מקבל שם משפחה, לא כתובת.
+       Heebo לכותרות (יש לה משקל 800 שנושא היררכיה), Assistant לגוף. */
+    @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=Assistant:wght@400;600&display=swap');
+
     /* על מסך רחב הכיווניות חלה על השורש, כדי שהסרגל יישב מימין כמו שמצופה
        בעברית. בטלפון היא נשארת מחוץ לשורש — ראו ההסבר מעל. */
     @media (min-width: 768px) {
@@ -81,6 +85,27 @@ st.markdown(
         max-width: 1180px;
         padding-top: 2.5rem;
     }
+
+    /* מספרים בטבלה אחת: ציון 87 ו-ציון 9 חייבים להתחיל באותו מקום, אחרת
+       העין קופצת בין השורות */
+    [data-testid="stMain"] { font-variant-numeric: tabular-nums; }
+
+    /* כרטיס תוצאה: מרווח פנימי הדוק יותר מברירת המחדל, כדי שיותר תוצאות
+       ייכנסו למסך — זו הייתה התלונה המרכזית על הצפיפות */
+    [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 12px;
+    }
+    [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] > div > div {
+        padding: 0.15rem 0;
+    }
+    /* טקסט משני אמיתי ולא אפור-על-אפור: היררכיה במקום שש שורות זהות */
+    [data-testid="stMain"] [data-testid="stCaptionContainer"] p {
+        color: #8A91A3;
+        font-size: 0.79rem;
+        line-height: 1.45;
+    }
+    /* נגן האודיו של הדפדפן היה הרכיב הרועש ביותר בכרטיס */
+    [data-testid="stMain"] audio { height: 34px; }
     @media (max-width: 640px) {
         [data-testid="stMainBlockContainer"] {
             padding: 1.25rem 0.9rem 3rem;
@@ -400,7 +425,7 @@ def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
 # ---------- סרגל צד ----------
 
 with st.sidebar:
-    st.markdown("### ❤️ הפלייליסט שלי")
+    st.markdown("### הפלייליסט שלי")
     favorites = st.session_state["favorites"]
     st.write(f"גרסאות שמורות: **{len(favorites)}**")
 
@@ -413,20 +438,28 @@ with st.sidebar:
         for key, entry in sorted(favorites.items(),
                                  key=lambda item: item[1].get("added_at", 0),
                                  reverse=True):
-            col_name, col_remove = st.columns([4, 1])
             label = f"{entry.get('artist', '')} — {entry.get('track', '')}"
-            # לחיצה על גרסה שמורה מחזירה אליה: ממלאת את השדות ומריצה חיפוש
-            # לשיר הזה, כדי שאפשר יהיה למצוא אותה ואת מה שדומה לה שוב
-            if col_name.button(label[:48], key=f"fav_open_{key}", help=label,
-                               use_container_width=True):
-                queue_fields(entry.get("track", ""), entry.get("artist", ""),
-                             mode=MODE_SONG, auto_run=True)
-            if col_remove.button("✕", key=f"unfav_{key}", help="הסר מהפלייליסט"):
-                favorites.pop(key)
-                storage.save_favorites(favorites)
-                st.rerun()
-            if entry.get("preview_url"):
-                st.audio(entry["preview_url"])
+            # שורה אחת לכל גרסה, בלי נגן פתוח. חמש-עשרה שמורות פירושן היו
+            # חמישה-עשר נגני דפדפן זה מתחת לזה — קיר אפור שהסתיר את הרשימה.
+            # ההאזנה עברה ל-expander לפי דרישה.
+            row = st.container(horizontal=True, wrap=False, vertical_alignment="center")
+            with row:
+                # לחיצה על גרסה שמורה מחזירה אליה: ממלאת את השדות ומריצה חיפוש
+                # לשיר הזה, כדי שאפשר יהיה למצוא אותה ואת מה שדומה לה שוב
+                if st.button(label[:42], key=f"fav_open_{key}", help=label,
+                             width="stretch"):
+                    queue_fields(entry.get("track", ""), entry.get("artist", ""),
+                                 mode=MODE_SONG, auto_run=True)
+                if entry.get("preview_url"):
+                    # בתוך אותה שורה ולא מתחתיה: אחרת חמש-עשרה שמורות הן
+                    # שלושים שורות בסרגל
+                    with st.popover("", icon=":material/play_arrow:", width=54):
+                        st.audio(entry["preview_url"])
+                if st.button("", key=f"unfav_{key}", icon=":material/close:",
+                             help="הסר מהפלייליסט"):
+                    favorites.pop(key)
+                    storage.save_favorites(favorites)
+                    st.rerun()
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
@@ -435,14 +468,15 @@ with st.sidebar:
             writer.writerow([entry.get("artist", ""), entry.get("track", ""),
                              entry.get("album", ""), entry.get("genre", ""),
                              entry.get("year", ""), entry.get("preview_url", "")])
-        st.download_button("⬇️ ייצא פלייליסט", data=buffer.getvalue().encode("utf-8-sig"),
+        st.download_button("ייצא פלייליסט", icon=":material/download:",
+                           data=buffer.getvalue().encode("utf-8-sig"),
                            file_name="playlist.csv", mime="text/csv")
     else:
         st.caption("סמן ❤️ ליד גרסה שאהבת. היא תישמר כאן, והדירוג ילמד "
                    "מה מאפיין את מה שאתה אוהב ויעלה גרסאות כאלה לראש.")
 
     st.divider()
-    st.markdown("### ⚙️ הגדרות")
+    st.markdown("### הגדרות")
     st.session_state["debug_mode"] = st.checkbox(
         "מצב דיבאג (שמירת HTML מהפדרציה)", value=st.session_state["debug_mode"]
     )
@@ -451,7 +485,7 @@ with st.sidebar:
 
     st.caption(f"רפרטואר: `{federation.FEDERATION_URL}`")
 
-    with st.expander("🌉 בדיקה ידנית דרך הדפדפן שלך"):
+    with st.expander("בדיקה ידנית דרך הדפדפן שלך", icon=":material/link:"):
         st.caption(
             "האתר חוסם את השרת אבל נטען בדפדפן שלך. המסלול הזה מנתב דרכו: "
             "פעם אחת מלמדים את שמות השדות, ואז כל שיר נבדק בקליק והדבקה."
@@ -489,7 +523,7 @@ with st.sidebar:
                 st.session_state["all_inputs"] = []
                 st.rerun()
 
-    if st.button("🩺 בדוק חיבור לפדרציה"):
+    if st.button("בדוק חיבור לפדרציה", icon=":material/monitor_heart:"):
         with st.spinner("בודק..."):
             report = federation.diagnose()
         html = report.pop("html", "")
@@ -498,7 +532,7 @@ with st.sidebar:
             path = storage.save_debug_html(html, "diagnose")
             if path:
                 st.caption(f"HTML נשמר: `{path}`")
-                st.download_button("⬇️ הורד את ה-HTML", data=html.encode("utf-8"),
+                st.download_button("הורד את ה-HTML", icon=":material/download:", data=html.encode("utf-8"),
                                    file_name="ifpi_search.html", mime="text/html")
         else:
             st.error("השרת לא הצליח להגיע לאתר הפדרציה. "
@@ -507,7 +541,7 @@ with st.sidebar:
     if not youtube_module.available():
         # מידע על פיצ'ר כבוי, לא שלב במסלול — ולכן כאן ולא בין התוצאות
         st.caption("אימות שימוש בטריילר כבוי (הגדר YOUTUBE_API_KEY)")
-    with st.expander("📥 ייבוא מצעד בילבורד"):
+    with st.expander("ייבוא מצעד בילבורד", icon=":material/upload:"):
         st.caption("שמור עמוד מצעד מהדפדפן (Ctrl+S / Cmd+S) והעלה אותו כאן. "
                    "אין ל-billboard.com API ציבורי, והם חוסמים שרתים — לכן הייבוא "
                    "עובר דרך הדפדפן שלך, שבו העמוד כבר נטען.")
@@ -541,7 +575,7 @@ with st.sidebar:
         with st.expander(f"👎 סימנת 'לא זה' ({len(st.session_state['rejections'])})"):
             st.caption("הדחיות אינן מוסתרות מהתוצאות — הן רק מלמדות את הדירוג "
                        "להתרחק מהסגנון הזה. להסתרה מלאה יש 🚫 חסום אמן.")
-            if st.button("🗑️ נקה דחיות"):
+            if st.button("נקה דחיות", icon=":material/delete:"):
                 st.session_state["rejections"] = {}
                 storage.save_rejections({})
                 st.rerun()
@@ -559,12 +593,12 @@ with st.sidebar:
                 storage.save_blacklist(st.session_state["blacklist"])
                 st.rerun()
 
-        if blacklist and st.button("🗑️ נקה רשימה שחורה"):
+        if blacklist and st.button("נקה רשימה שחורה", icon=":material/delete:"):
             st.session_state["blacklist"] = set()
             storage.save_blacklist(st.session_state["blacklist"])
             st.rerun()
 
-    if st.button("🧹 נקה קאש בדיקות"):
+    if st.button("נקה קאש בדיקות", icon=":material/mop:"):
         st.session_state["cache"] = {}
         storage.save_cache({})
         st.toast("הקאש נוקה", icon="🧹")
@@ -807,9 +841,9 @@ def resort_button(display: list, sort_by: str, learned: dict):
     # הכפתור מצויר תמיד, גם כשאין מה לסדר — כפתור שמופיע ונעלם מעל הרשימה
     # דוחף את כל מה שמתחתיו (נמדד: 17px בכל לחיצת ❤️), וזה בדיוק מה שמזיז
     # את המקום שבו המשתמש היה
-    label = (f"🔄 סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)" if moving
-             else "🔄 הסדר מעודכן")
-    if st.button(label, disabled=not moving,
+    label = (f"סדר מחדש לפי {sort_by} ({moving} שירים יזוזו)" if moving
+             else "הסדר מעודכן")
+    if st.button(label, disabled=not moving, icon=":material/sort:",
                  help="הסדר קפוא בזמן עיון כדי שהרשימה לא תזוז תוך כדי האזנה. "
                       "כאן מיישמים את מה שנלמד מאז — מדידות אודיו חדשות ולייקים."):
         st.session_state["display_order"] = fresh
@@ -818,93 +852,119 @@ def resort_button(display: list, sort_by: str, learned: dict):
 
 # ---------- הצגת שיר בודד ----------
 
+# מדרגות הציון, וכל אחת עם צבע התג שלה. ענבר שמור ל"גדול" בלבד — אקסנט
+# שמופיע על כל שורה מפסיק לסמן משהו.
+SCORE_TIERS = (
+    (audio.BIG_VERSION_THRESHOLD, "orange", "גדול"),
+    (audio.MID_VERSION_THRESHOLD, "gray", "בינוני"),
+    (0, "gray", "רגוע"),
+)
+ARTWORK_SIZE = 56
+
+
+def _score_badge(features: dict | None):
+    """הציון כתג ולא כשורת טקסט אפור. זה הנתון שהאפליקציה קיימת בשבילו."""
+    if audio.measured(features):
+        score = audio.bigness(features)
+        color, _ = next((c, l) for threshold, c, l in SCORE_TIERS if score >= threshold)
+        # המספר בלבד: הצבע כבר נושא את המדרגה (ענבר = גדול), ומילה נוספת
+        # הרחיבה את התג עד ששורת המטא נשברה לשתי שורות בטלפון
+        st.badge(str(score), icon=":material/graphic_eq:", color=color)
+    elif (features or {}).get("error") == "cors_failed":
+        st.badge("נמדד דרך השרת", icon=":material/hourglass_empty:", color="gray")
+    else:
+        st.badge("טרם נמדד", icon=":material/hourglass_empty:", color="gray")
+
+
+def _status_line(status: dict | None) -> str:
+    """סטטוס הרפרטואר כטקסט קצר בשורת המטא, לא כתיבה צבעונית בגובה חצי כרטיס."""
+    if status is None:
+        return ":gray[טרם נבדק]"
+    if status["status"] == federation.APPROVED:
+        return f":green[ברפרטואר · {status['confidence']}%]"
+    if status["status"] == federation.NOT_FOUND:
+        return ":red[לא ברפרטואר]"
+    return ":orange[הבדיקה נכשלה]"
+
+
+def _artwork(track: dict):
+    """עטיפת האלבום — סימן הזיהוי המהיר ביותר בכלי מוזיקה.
+
+    הכתובת חוזרת מ-iTunes ומ-Deezer מאז ומעולם (`search.py`) ופשוט לא הוצגה.
+    `st.image` מעביר את ה-URL לדפדפן כמו שהוא, ולכן הטעינה היא של המשתמש ולא
+    של השרת — מה שחשוב כאן, כי השרת חסום מול חלק מהחנויות.
+    """
+    art = track.get("artwork")
+    if art:
+        st.image(art, width=ARTWORK_SIZE)
+    else:
+        # ריבוע ריק ולא כלום: בלעדיו כל השורות מתחתיו מתיישרות אחרת
+        st.markdown(
+            f"<div style='width:{ARTWORK_SIZE}px;height:{ARTWORK_SIZE}px;border-radius:8px;"
+            "background:#1B1F2A;border:1px solid #262B38;'></div>",
+            unsafe_allow_html=True)
+
+
 def render_track(track: dict, index: int, learned: dict | None = None):
     uid = track["uid"]
     status = status_of(track)
-    duration_min = round(track.get("duration_sec", 0) / 60, 1)
+    features = st.session_state.get("bigness", {}).get(uid)
+    evidence = st.session_state.get("evidence", {}).get(uid) or []
+    indicators = search_module.trailer_indicators(track)
 
     # כרטיס אחד לכל תוצאה, ולא שורה של שמונה עמודות. Streamlit לא מכווץ
     # עמודות בטלפון אלא **עורם** אותן לרוחב מלא, כך שכל תוצאה הפכה לשמונה
     # בלוקים נפרדים — עשרים תוצאות היו 160 בלוקים, ומכאן "לא עובד בפלאפון".
-    # כאן התוכן זורם לרוחב הכרטיס, והפעולות יושבות בשורה אופקית אחת
-    # (`horizontal=True`) שנשברת לשורה נוספת במקום להיערם.
     card = st.container(border=True)
     with card:
-        col_title, col_side = st.columns([3, 2], vertical_alignment="top")
+        # מכולה אופקית ולא עמודות: Streamlit עורם עמודות לרוחב מלא במסך צר,
+        # ואז העטיפה, הטקסט והציון היו הופכים לשלוש שורות נפרדות בטלפון.
+        # flex שומר אותם זה לצד זה בשני הרוחבים, בדיוק כמו בעיצוב.
+        head = st.container(horizontal=True, wrap=False, vertical_alignment="top", gap="medium")
+        with head:
+            col_art = st.container(width=ARTWORK_SIZE)
+            col_main = st.container(width="stretch")
+            col_score = st.container(width="content")
 
-    with col_title:
-        features = st.session_state.get("bigness", {}).get(uid)
-        evidence = st.session_state.get("evidence", {}).get(uid) or []
-        badge = " 🎬" if evidence else ""
-        if audio.is_big_version(features):
-            badge += " 🔊"          # נמדדה כגרסה גדולה, לא משנה מה הכותרת אומרת
-        indicators = search_module.trailer_indicators(track)
-        if indicators and not audio.is_big_version(features):
-            badge += " 📣"
-        st.markdown(f"**{track['artist']}**{badge} - {track['track']}")
+    with col_art:
+        _artwork(track)
+
+    with col_main:
+        # האמן ראשון ובולט: בחיפוש קאברים לשיר אחד, מה שמבדיל בין התוצאות
+        # הוא מי ביצע — לא שם השיר, שחוזר על עצמו בכל השורות
+        st.markdown(f"**{track['artist']}** &nbsp;{track['track']}")
+
+        meta = [part for part in (
+            track.get("genre"),
+            str(track.get("year") or "") or None,
+            f"{int(track.get('duration_sec', 0) // 60)}:{int(track.get('duration_sec', 0) % 60):02d}"
+            if track.get("duration_sec") else None,
+        ) if part]
+        st.caption(" · ".join(meta + [_status_line(status)]))
+
         if indicators:
-            # להראות איזה סימן תפס, לא רק שתפס משהו
-            st.caption("סימן: " + " · ".join(indicators))
-        if audio.measured(features):
-            score = audio.bigness(features)
-            # שלוש מדרגות ולא שתיים: הסף כויל על מדגם קטן, ו"רגוע" על ציון 45
-            # הוא קביעה חזקה מכפי שהנתונים מצדיקים
-            if score >= audio.BIG_VERSION_THRESHOLD:
-                label = "🔊 גדול"
-            elif score >= audio.MID_VERSION_THRESHOLD:
-                label = "🎚️ בינוני"
-            else:
-                label = "🌙 רגוע"
-            st.caption(f"{label} {score}/100 · {audio.describe(features)}")
-        elif features:
-            reason = ("החנות חוסמת מדידה ישירה (CORS) — נמדד דרך השרת"
-                      if features.get("error") == "cors_failed"
-                      else features.get("error", ""))
-            st.caption(f"⚪ טרם נמדד — {reason}")
-        elif track.get("preview_url"):
-            st.caption("⚪ טרם נמדד")
+            # הסיבה לדירוג, גלויה: `trailer_strength` נספר בדיוק מהרשימה הזו
+            st.markdown(" ".join(f":orange-badge[{sign}]" for sign in indicators))
+
+        for item in evidence[:2]:
+            st.caption(f":material/movie: [{item['title'][:70]}]({item['url']}) — {item['channel']}")
+        if track.get("origin_track"):
+            st.caption(f"קאבר ל: {track['origin_track']}")
+
+    with col_score:
+        _score_badge(features)
         if learned and learned.get("count"):
             # למה הטראק הזה עלה: אחרת שינוי הסדר נראה שרירותי
             fit = taste_of(track, learned)
             if fit >= TASTE_BADGE_THRESHOLD:
-                st.caption(f"❤️ {round(fit * 100)}% מתאים לטעם שלך")
-        for item in evidence[:2]:
-            st.caption(f"🎬 [{item['title'][:70]}]({item['url']}) — {item['channel']}")
-        if track.get("origin_track"):
-            st.caption(f"🎤 קאבר ל: {track['origin_track']}")
-        parts = [f"אורך: {duration_min} דק'", f"מקור: {track['source']}", f"ציון: {track.get('score', 0)}"]
-        if track.get("catalog_source"):
-            # ממצב "קאברים לשיר" הממוזג: מאיזה חצי (מאגר רשמי / חיפוש בחנויות) זה הגיע
-            parts.append(f"התגלה דרך: {track['catalog_source']}")
-        if track.get("year"):
-            parts.append(f"שנה: {track['year']}")
-        if track.get("album"):
-            parts.append(f"אלבום: {track['album']}")
-        st.caption(" · ".join(parts))
-
-    with col_side:
-        # תג ולא st.info/success/error: התיבות הצבעוניות תפסו את מרבית גובה
-        # הכרטיס ודחקו את מה שבאמת מבדיל בין תוצאות — הכותרת והמדידה
-        if status is None:
-            st.badge("⚪ טרם נבדק", color="gray")
-        elif status["status"] == federation.APPROVED:
-            st.badge(f"🟢 ברפרטואר · {status['confidence']}%", color="green")
-            st.caption(status["publisher"])
-            if status.get("matched_row"):
-                with st.popover("שורה מהפדרציה"):
-                    st.code(status["matched_row"])
-        elif status["status"] == federation.NOT_FOUND:
-            st.badge("🔴 לא ברפרטואר", color="red")
-        else:
-            st.badge("🟠 הבדיקה נכשלה", color="orange")
-            st.caption(status.get("error", "")[:150])
-
-        if track.get("preview_url"):
-            st.audio(track["preview_url"])
-        else:
-            st.caption("אין תצוגה מקדימה")
+                st.caption(f"{round(fit * 100)}% לטעם שלך")
 
     with card:
+        if track.get("preview_url"):
+            # רוחב קבוע: נגן הדפדפן ברוחב מלא היה הרכיב הרועש ביותר בכרטיס
+            # והתחרה בכותרת על תשומת הלב
+            st.audio(track["preview_url"], width=340)
+
         # `horizontal` נשען על flex ולא על רשת עמודות, ולכן הכפתורים נשארים
         # זה לצד זה גם ברוחב של 390px ונשברים לשורה שנייה בעת הצורך
         with st.container(horizontal=True, wrap=True, vertical_alignment="center"):
@@ -912,22 +972,58 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                                    help="סמן לבדיקה קבוצתית")
 
             favorited, rejected = is_favorite(track), is_rejected(track)
-            if st.button("❤️" if favorited else "🤍", key=f"btn_favorite_{uid}",
+            if st.button("", key=f"btn_favorite_{uid}",
+                         icon=":material/favorite:" if favorited else ":material/favorite_border:",
+                         type="primary" if favorited else "secondary",
                          help="הסר מהפלייליסט" if favorited else
                               "שמור לפלייליסט — והדירוג ילמד מזה מה אתה אוהב"):
                 toggle_favorite(track)
                 st.rerun()
             # דוגמה שלילית שווה יותר מדוגמה חיובית נוספת: היא נותנת ללמידה כיוון,
             # בעוד שעוד לייק רק מהדק מרכז כובד שכבר ידוע
-            if st.button("👎", key=f"btn_reject_{uid}",
+            if st.button("", key=f"btn_reject_{uid}", icon=":material/thumb_down:",
                          type="primary" if rejected else "secondary",
                          help="בטל את הסימון" if rejected else
                               "לא זה — הדירוג ילמד להתרחק מסגנון כזה"):
                 toggle_rejection(track)
                 st.rerun()
 
-            if st.session_state.get("federation_blocked"):
-                with st.popover("🔗 בדוק ידנית"):
+            if not st.session_state.get("federation_blocked"):
+                if st.button("בדוק", key=f"btn_check_{uid}", icon=":material/search:"):
+                    with st.spinner("בודק..."):
+                        verify_tracks([track])
+                    st.rerun()
+
+            # תפריט אחד לכל מה שנדיר: קודם כל פעולה תפסה כפתור משלה בכל שורה,
+            # ושש שורות טקסט אפור נאבקו על אותה תשומת לב
+            with st.popover("", icon=":material/more_horiz:", width=54):
+                st.caption(f"עוד כמו **{track['track']}**")
+                if st.button("עוד קאברים לשיר הזה", key=f"more_covers_{uid}",
+                             icon=":material/library_music:", use_container_width=True):
+                    st.session_state["similar_of"] = ("covers", track)
+                    st.rerun()
+                if st.button("עוד באותו סגנון", key=f"more_style_{uid}",
+                             icon=":material/palette:", use_container_width=True,
+                             help="לפי הז'אנר והאמן של הטראק הזה. המדידה בדפדפן ממיינת "
+                                  "את מה שחוזר לפי גודל."):
+                    st.session_state["similar_of"] = ("style", track)
+                    st.rerun()
+
+                st.divider()
+                details = [f"מקור: {track['source']}", f"ציון רלוונטיות: {track.get('score', 0)}"]
+                if track.get("catalog_source"):
+                    details.append(f"התגלה דרך: {track['catalog_source']}")
+                if track.get("album"):
+                    details.append(f"אלבום: {track['album']}")
+                st.caption(" · ".join(details))
+                if audio.measured(features):
+                    st.caption(audio.describe(features))
+                if status and status.get("matched_row"):
+                    st.caption("השורה מהפדרציה:")
+                    st.code(status["matched_row"])
+
+                if st.session_state.get("federation_blocked"):
+                    st.divider()
                     url = federation.build_search_url(track["artist"], track["track"])
                     st.markdown(f"[פתח חיפוש בפדרציה]({url})")
                     st.caption("אם הטופס לא מולא מראש, העתק:")
@@ -939,32 +1035,15 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                             pasted, track["artist"], track["track"]))
                         storage.save_debug_html(pasted, "results_page")
                         st.rerun()
-            elif st.button("🔍 בדוק", key=f"btn_check_{uid}"):
-                with st.spinner("בודק..."):
-                    verify_tracks([track])
-                st.rerun()
 
-            # רוחב מפורש: בתוך מכולה אופקית Streamlit מכווץ את ה-popover
-            # ומקצץ את התווית ל-"🔁 …"
-            with st.popover("🔁 עוד", width=110):
-                st.caption(f"עוד כמו **{track['track']}**")
-                if st.button("🎼 עוד קאברים לשיר הזה", key=f"more_covers_{uid}",
-                             use_container_width=True):
-                    st.session_state["similar_of"] = ("covers", track)
+                st.divider()
+                if st.button("חסום אמן", key=f"btn_block_{uid}",
+                             icon=":material/block:", use_container_width=True):
+                    st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
+                    storage.save_blacklist(st.session_state["blacklist"])
+                    st.session_state["candidates"] = apply_blacklist(st.session_state["candidates"])
+                    st.toast(f"האמן '{track['artist']}' הועבר לרשימה השחורה", icon="🚫")
                     st.rerun()
-                if st.button("🎨 עוד באותו סגנון", key=f"more_style_{uid}",
-                             use_container_width=True,
-                             help="לפי הז'אנר והאמן של הטראק הזה. המדידה בדפדפן ממיינת "
-                                  "את מה שחוזר לפי גודל."):
-                    st.session_state["similar_of"] = ("style", track)
-                    st.rerun()
-
-            if st.button("🚫 חסום אמן", key=f"btn_block_{uid}"):
-                st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
-                storage.save_blacklist(st.session_state["blacklist"])
-                st.session_state["candidates"] = apply_blacklist(st.session_state["candidates"])
-                st.toast(f"האמן '{track['artist']}' הועבר לרשימה השחורה", icon="🚫")
-                st.rerun()
 
     return track if selected else None
 
@@ -985,7 +1064,7 @@ def export_button(tracks: list[dict], label_prefix: str):
             track.get("preview_url", ""),
         ])
     st.download_button(
-        f"⬇️ ייצוא {len(rows)} שירים שברפרטואר ל-CSV",
+        f"ייצוא {len(rows)} שירים שברפרטואר ל-CSV", icon=":material/download:",
         data=buffer.getvalue().encode("utf-8-sig"),
         file_name=f"{label_prefix}.csv",
         mime="text/csv",
@@ -1016,7 +1095,7 @@ def metrics_export(tracks: list[dict]):
             features.get("onset_rate", ""), features.get("dynamic_span", ""), "",
         ])
     st.download_button(
-        f"⬇️ ייצא מדדים של {len(rows)} טראקים (לכיול)",
+        f"ייצא מדדים של {len(rows)} טראקים (לכיול)", icon=":material/download:",
         data=buffer.getvalue().encode("utf-8-sig"),
         file_name="bigness_metrics.csv",
         mime="text/csv",
@@ -1081,7 +1160,7 @@ def roll_famous_song():
 
 # עם תווית ולא אמוג'י בלבד: בטלפון העמודות נערמות, וכפתור ברוחב מלא
 # שכתוב עליו רק "🎲" אינו מסביר את עצמו
-if col_dice.button("🎲 הגרל שיר", use_container_width=True,
+if col_dice.button("הגרל שיר", icon=":material/casino:", use_container_width=True,
                    help="מגריל שיר מוכר מהמצעדים ומחפש לו גרסאות טריילר. "
                         "ככל שהשיר מוכר יותר, כך גדל הסיכוי שמישהו כבר עשה לו קאבר."):
     roll_famous_song()
@@ -1130,7 +1209,7 @@ ARTIST_PREVIEW_COUNT = 20
 def _artist_preview_titles(artist: str) -> list[str]:
     """עד 20 השירים המזוהים ביותר עם האמן, זול (קריאת iTunes אחת) ומקוצ'ר.
 
-    לחיצה על אמן ב-📇 אינדקס מצעדים לא צריכה להריץ מיד חיפוש קאברים יקר
+    לחיצה על אמן באינדקס המצעדים לא צריכה להריץ מיד חיפוש קאברים יקר
     (עד 8 חיפושים מקבילים) לפני שהמשתמש בכלל ראה אילו שירים נבחרו לו.
     הקאש לפי שם מנורמל מונע קריאת iTunes חוזרת בכל rerun (checkbox, מדידת
     אודיו וכו׳).
@@ -1218,11 +1297,11 @@ def _imported_entries(chart: dict) -> list[dict]:
 # **משתנה**, ולכן העברת False כשהוא כבר False לא סוגרת כלום. נמדד
 # בדפדפן: אחרי פתיחה ידנית הרכיב נשאר פתוח. מפתח חדש מרנדר רכיב חדש,
 # והוא נולד מכווץ — זה מה שעובד בפועל.
-with st.expander("📇 אינדקס מצעדים", expanded=False,
+with st.expander("אינדקס מצעדים", icon=":material/leaderboard:", expanded=False,
                  key=f"chart_index_{st.session_state['index_generation']}"):
     st.caption("נקודת פתיחה לחיפוש: לחיצה על אמן מריצה 'קאברים לאמן', "
                "ולחיצה על שיר מריצה 'קאברים לשיר' — לשתיהן אותה תוצאה כמו מילוי "
-               "השדות למעלה ולחיצה על 🔎 חפש. המיקום במצעד אינו משפיע על דירוג "
+               "השדות למעלה ולחיצה על חפש. המיקום במצעד אינו משפיע על דירוג "
                "התוצאות — שם קובע מה שנמדד מהאודיו.")
 
     imported = storage.load_charts()
@@ -1259,7 +1338,7 @@ with st.expander("📇 אינדקס מצעדים", expanded=False,
     if entries:
         _entry_grid(entries, key_prefix)
 
-with st.expander("🎛️ פילטרים", expanded=False):
+with st.expander("פילטרים", icon=":material/tune:", expanded=False):
     col1, col2, col3 = st.columns(3)
     style_filter = col1.selectbox("סגנון / ז'אנר:", [ALL, *STYLES])
     tempo_filter = col2.selectbox("קצב / טמפו:", [ALL, "Fast Action", "Slow Build-up"])
@@ -1303,7 +1382,7 @@ search_mode = st.radio(
 
 chosen_work = ""
 if search_mode == MODE_SONG:
-    if st.button("🔎 אילו שירים בשם הזה?"):
+    if st.button("אילו שירים בשם הזה?", icon=":material/search:"):
         if not cover_title.strip():
             st.warning("הכנס שם שיר")
         else:
@@ -1316,7 +1395,7 @@ if search_mode == MODE_SONG:
                 if failure:
                     st.error(failure + " — נסה שוב")
                 else:
-                    st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתור 🔎 חפש.")
+                    st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתור חפש.")
 
     work_candidates = st.session_state.get("work_candidates") or []
     if work_candidates:
@@ -1340,7 +1419,7 @@ elif search_mode == MODE_ARTIST and cover_artist.strip():
     titles = _artist_preview_titles(cover_artist)
     if titles:
         st.caption(f"🎵 {len(titles)} השירים המזוהים ביותר עם {cover_artist} — "
-                   "לחיצה מריצה חיפוש קאברים לשיר הזה בלבד. '🔎 חפש' למטה "
+                   "לחיצה מריצה חיפוש קאברים לשיר הזה בלבד. 'חפש' למטה "
                    "סורק את כל השירים המובילים בבת אחת.")
         _entry_grid([{"kind": "song", "artist": cover_artist, "track": title,
                       "rank": index + 1} for index, title in enumerate(titles)],
@@ -1353,7 +1432,7 @@ elif search_mode == MODE_ARTIST and cover_artist.strip():
             st.caption("לא נמצאו שירים מזוהים עם האמן הזה. אפשר עדיין ללחוץ "
                        "'🔎 חפש' לחיפוש קאברים ישיר.")
 
-run_search = st.button("🔎 חפש", type="primary") or st.session_state.pop("auto_run", False)
+run_search = st.button("חפש", type="primary", icon=":material/search:") or st.session_state.pop("auto_run", False)
 
 
 def _run_similar():
@@ -1528,7 +1607,7 @@ if candidates:
     measure_visible(visible)
     measure_via_server(visible)
 
-    if youtube_module.available() and st.button("🎬 חפש אישור שימוש בטריילר (למוצגים)"):
+    if youtube_module.available() and st.button("חפש אישור שימוש בטריילר (למוצגים)", icon=":material/movie:"):
         progress = st.progress(0.0, text="מחפש...")
         for index, track in enumerate(visible):
             progress.progress(index / max(len(visible), 1),
@@ -1548,7 +1627,7 @@ if candidates:
         st.rerun()
 
     if st.session_state["visible_count"] < len(display):
-        if st.button("⬇️ טען עוד 20 תוצאות"):
+        if st.button("טען עוד 20 תוצאות", icon=":material/expand_more:"):
             st.session_state["visible_count"] += PAGE_SIZE
             st.rerun()
 
