@@ -104,6 +104,27 @@ def test_relevance_penalizes_a_different_song_that_shares_two_words():
     assert search.relevance(legit_cover, "At Last") >= search.RELEVANCE_FLOOR
 
 
+def test_a_band_whose_name_contains_the_song_is_not_a_cover_of_it():
+    """חיפוש "Happy" החזיר את הקטלוג של להקות ששמן מכיל את המילה:
+    `token_set_ratio("happy", "demob happy")` הוא 100, ולכן "Demob Happy —
+    Hades, Baby" קיבל בדיוק את הציון של "Pharrell Williams — Happy"."""
+    band = make("Demob Happy", "Hades, Baby (Orchestral Version from Abbey Road)")
+    real = make("Pharrell Williams", "Happy")
+    cover = make("2WEI", "Happy (Epic Trailer Version)")
+
+    assert search.relevance(band, "Happy") < search.RELEVANCE_FLOOR
+    assert search.relevance(real, "Happy") >= search.RELEVANCE_FLOOR
+    assert search.relevance(cover, "Happy") >= search.RELEVANCE_FLOOR
+
+
+def test_the_artist_still_answers_when_the_query_is_an_artist():
+    """"עוד באותו סגנון" מחפש לפי שם אמן או ז'אנר, ושם ההתאמה על האמן
+    היא בדיוק מה שמבוקש."""
+    anything = make("Tommee Profitt", "In the End")
+    assert search.relevance(anything, "Tommee Profitt", match_artist=True) >= search.RELEVANCE_FLOOR
+    assert search.relevance(anything, "Tommee Profitt") < search.RELEVANCE_FLOOR
+
+
 def test_relevance_survives_version_tags_on_the_candidate_title():
     """הכותרת מנוקה לפני ההשוואה — תג הגרסה לא מוריד את הציון."""
     tagged = make("2WEI", "Zombie (Epic Trailer Version)")

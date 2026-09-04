@@ -449,7 +449,7 @@ def test_the_sidebar_shows_a_group_header_with_a_count(app):
     _save(app, "Hidden Citizens", "Bittersweet Symphony (Cover)", "b")
 
     assert not app.exception
-    headers = " ".join(str(e.proto) for e in app.get("html"))
+    headers = " ".join(str(b.proto) for b in app.get("expander"))
     assert "Bitter Sweet Symphony" in headers and "The Verve" in headers
     # "2" לבד לא אמר מה הוא סופר
     assert "2 גרסאות" in headers
@@ -467,15 +467,35 @@ def test_a_saved_version_plays_from_the_sidebar_in_one_tap(app):
     assert "play_arrow" not in popovers, "אין צורך בחלון בדרך אל כפתור הנגינה"
 
 
-def test_a_song_name_cannot_inject_markup_into_the_group_header(app):
-    """כותרת הקבוצה נבנית כ-HTML, ושמות שירים מגיעים מקטלוג חיצוני."""
+def test_a_song_name_never_reaches_raw_html(app):
+    """שמות שירים מגיעים מקטלוג חיצוני, ולכן אסור להם להגיע ל-`st.html`."""
     _save(app, "2WEI", "<img src=x onerror=alert(1)> (Epic Version)", "a",
           searched="<img src=x onerror=alert(1)>")
 
     assert not app.exception
-    html = " ".join(str(e.proto) for e in app.get("html"))
-    assert "<img src=x" not in html
-    assert "&lt;img src=x" in html
+    raw = " ".join(str(e.proto) for e in app.get("html"))
+    assert "<img src=x" not in raw
+
+
+def test_the_playlist_groups_start_collapsed(app):
+    """שבעים גרסאות שמורות פרושות הן סרגל שאי אפשר לגלול בו אל שום דבר."""
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+    _save(app, "Tommee Profitt", "In the End (Dark Cover)", "b", searched="In the End")
+
+    assert not app.exception
+    groups = app.get("expander")
+    assert len(groups) >= 2
+    assert not any(b.proto.expanded for b in groups), "כל הקבוצות מכווצות"
+
+
+def test_the_group_label_isolates_the_song_name_from_the_count(app):
+    """בלי בידוד דו-כיווני המספר נצמד לרצף הלטיני ונקרא בצד הלא נכון —
+    "Heroes5 גרסאות" בצילום מהטלפון."""
+    _save(app, "2WEI", "Heroes (Epic Trailer Version)", "a", searched="Heroes")
+    _save(app, "Hidden Citizens", "Heroes (Cover)", "b", searched="Heroes")
+
+    labels = " ".join(str(b.proto) for b in app.get("expander"))
+    assert "\u2068Heroes\u2069" in labels
 
 
 def test_removing_the_last_version_removes_the_group(app):
@@ -486,7 +506,7 @@ def test_removing_the_last_version_removes_the_group(app):
 
     assert not app.exception
     assert app.session_state["favorites"] == {}
-    headers = " ".join(str(e.proto) for e in app.get("html"))
+    headers = " ".join(str(b.proto) for b in app.get("expander"))
     assert "Bitter Sweet Symphony" not in headers
 
 
@@ -524,6 +544,49 @@ def test_the_player_is_ours_and_still_a_real_audio_element(app):
     html = " ".join(str(e.proto) for e in app.get("html"))
     assert "ts-player" in html and "ts-play" in html
     assert "<audio" in html and "preload=" in html
+
+
+def test_the_card_head_keeps_the_css_hook_for_narrow_screens(app):
+    """ב-390px העטיפה ועמודת הציון השאירו לכותרת 124px — שליש מהרוחב —
+    ושם ארוך נשבר לשבע שורות. ה-key הוא מה שמאפשר ל-CSS להוריד את עמודת
+    הציון לשורה משלה."""
+    import pathlib
+
+    import app as app_module
+
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    css = " ".join(str(e.proto) for e in app.get("markdown")
+                   if "st-key-cardhead" in str(e.proto))
+    assert css, "כלל ה-CSS לעמודת הציון בטלפון נעלם"
+    # AppTest אינו חושף מכולות רגילות ואת המפתחות שלהן, ולכן הצד השני של
+    # הצמד נבדק על המקור: כלל CSS בלי המפתח שהוא תופס הוא כלל מת
+    source = pathlib.Path(app_module.__file__).read_text(encoding="utf-8")
+    assert 'key=f"cardhead_' in source, "המכולה כבר לא נושאת את ה-key"
+
+
+def test_the_page_has_one_audio_element_for_all_the_players(app):
+    """Safari לנייד מגביל כמה אלמנטי מדיה ייטענו בדף; פלייליסט של שבעים
+    גרסאות ייצר שבעים, ומעבר לתקרה הם פשוט לא ניגנו."""
+    app.session_state["candidates"] = [track("2WEI", f"Zombie {i}", f"e{i}")
+                                       for i in range(12)]
+    app.run()
+
+    assert not app.exception
+    raw = " ".join(str(e.proto) for e in app.get("html"))
+    assert raw.count("<audio") == 1, "אלמנט אודיו אחד לכל הדף"
+    assert raw.count("ts-play") >= 12, "כפתור נגינה לכל גרסה"
+
+
+def test_each_play_button_carries_its_own_identity(app):
+    """לפי הכתובת לבדה שתי שורות של אותה גרסה היו נדלקות יחד."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie", "e1"),
+                                       track("Hidden Citizens", "Zombie", "e2")]
+    app.run()
+
+    raw = " ".join(str(e.proto) for e in app.get("html"))
+    assert "data-id=" in raw and "data-src=" in raw
 
 
 def test_the_player_is_a_play_button_with_nothing_around_it(app):
