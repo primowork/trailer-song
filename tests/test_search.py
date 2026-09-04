@@ -142,6 +142,25 @@ def test_a_declared_version_is_still_the_same_song():
         assert search.relevance(make("X", title), "Happy") >= search.RELEVANCE_FLOOR, title
 
 
+def test_a_song_with_a_nearly_identical_name_is_not_a_cover():
+    """המשתמש חיפש "My Way" וקיבל "On My Way" (שיר אחר) ו-"My War" (אות
+    אחת הבדל). שניהם עברו את הרצפה הישנה של 65."""
+    for title in ("On My Way (Trailer Version)", "My War (Attack on Titan)",
+                  "My Way Home"):
+        assert search.relevance(make("X", title), "My Way") < search.RELEVANCE_FLOOR, title
+
+
+def test_the_floor_leaves_room_for_a_spelling_variant_of_the_real_song():
+    """הרצפה גבוהה, אבל לא עד כדי דרישה לזהות תווים: אחרי הורדת תג הגרסה
+    מה שנשאר הוא שם השיר, וּווריאציות ניסוח עדיין נופלות עליו."""
+    for query, title in (
+            ("My Way", "My Way (Epic Trailer Version)"),
+            ("Bitter Sweet Symphony", "Bittersweet Symphony (Epic Trailer Version)"),
+            ("California Dreaming", 'California Dreamin\' (From "San Andreas")'),
+            ("Bring Me To Life", "Bring Me to Life (Cinematic Version)")):
+        assert search.relevance(make("X", title), query) >= search.RELEVANCE_FLOOR, title
+
+
 def test_relevance_survives_version_tags_on_the_candidate_title():
     """הכותרת מנוקה לפני ההשוואה — תג הגרסה לא מוריד את הציון."""
     tagged = make("2WEI", "Zombie (Epic Trailer Version)")

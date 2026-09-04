@@ -230,7 +230,9 @@ def title_for_match(title: str) -> str:
     iTunes ו-Deezer מסמנים גרסה, ולכן קאבר אמיתי אינו נפגע.
     """
     cleaned = re.sub(r"\(.*?\)|\[.*?\]", " ", title or "")
-    parts = re.split(r"\s[-–—]\s", cleaned)
+    # מקף, קו אנכי ונקודה מפרידה — שלוש הדרכים שבהן חנויות מפרידות תג גרסה
+    # מהכותרת כשהוא לא בסוגריים
+    parts = re.split(r"\s[-–—|·]\s", cleaned)
     kept = [parts[0]] + [part for part in parts[1:]
                          if not _declares_a_version(part)]
     return re.sub(r"\s+", " ", " ".join(kept)).strip()
@@ -459,10 +461,20 @@ def deezer_search(term: str, limit: int = 100,
 # קיבל 140 מול 97 של הגרסה האמיתית של Sia.
 MAX_EPIC_BONUS = 30
 # מתחת לרצפה הזו טראק לא מוצג בכלל (ראו השימוש ב-search_covers) ולא רק
-# מדורג נמוך. מכויל מול: קאברים לגיטימיים (אחרי ניקוי תג גרסה) מגיעים
-# ל-100; "At Long Last, Love" מול שאילתת "At Last" — שיר אחר לגמרי שחולק
-# שתי מילים — מגיע ל-60; "Yellow Submarine" מול "Yellow" ל-57.
-RELEVANCE_FLOOR = 65
+# מדורג נמוך.
+#
+# מכויל מול שתי קבוצות שנמדדו, אחרי `title_for_match`:
+#   קאברים לגיטימיים — 98 ("Bittersweet Symphony" מול "Bitter Sweet
+#   Symphony") עד 100. תג הגרסה כבר ירד, ולכן מה שנשאר הוא *שם השיר*,
+#   וההתאמה לשאילתה כמעט מדויקת.
+#   שירים אחרים — "On My Way" מול "My Way" 83, "My War" מול "My Way" 80,
+#   "My Way Home" 71, "Zombie Nation" 67, "Happy Trailer" 59.
+#
+# רצפה של 65 הכניסה את כל השורה העליונה של הקבוצה השנייה: המשתמש חיפש
+# "My Way" וקיבל "On My Way" ו-"My War". הפער בין 83 ל-98 רחב, ו-90 יושב
+# באמצע. המחיר המודע: שאילתה מקוצרת ("Bittersweet" לשיר "Bittersweet
+# Symphony") כבר לא תחזיר אותו — יש להשלמת השמות תפקיד בדיוק בשביל זה.
+RELEVANCE_FLOOR = 90
 
 
 def relevance(track: dict, query: str, match_artist: bool = False) -> int:
