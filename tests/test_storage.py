@@ -55,3 +55,17 @@ def test_unwritable_dir_does_not_raise(tmp_path, monkeypatch):
 def test_cache_key_is_case_insensitive(tmp_path, monkeypatch):
     storage = _fresh_storage(tmp_path, monkeypatch)
     assert storage.cache_key(" 2WEI ", "Survivor") == storage.cache_key("2wei", "survivor")
+
+
+def test_a_valid_file_of_the_wrong_shape_falls_back(tmp_path, monkeypatch):
+    """JSON פגום כבר טופל; מה שלא טופל היה קובץ *תקין* עם מבנה אחר — רשימה
+    במקום מילון — שעבר את json.load ונפל רק בתוך הרינדור, בכל טעינה."""
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    (tmp_path / "favorites.json").write_text('["not", "a", "dict"]')
+    (tmp_path / "rejections.json").write_text('"a string"')
+    (tmp_path / "blacklist.json").write_text('{"a": 1}')
+
+    assert storage.load_favorites() == {}
+    assert storage.load_rejections() == {}
+    assert storage.load_blacklist() == set()
+    assert storage.warnings

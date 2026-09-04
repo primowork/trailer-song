@@ -50,15 +50,25 @@ def _path(name: str) -> str:
 
 
 def _load_json(name: str, default):
+    """טוען, ומחזיר את ברירת המחדל גם כשהתוכן תקין כ-JSON אבל לא מהסוג הנכון.
+
+    JSON פגום כבר טופל; מה שלא טופל היה קובץ *תקין* עם מבנה אחר — רשימה
+    במקום מילון — שעבר את `json.load` ונפל רק מאוחר יותר, בתוך הרינדור,
+    בכל טעינה ובלי דרך לתקן מתוך הממשק.
+    """
     path = _path(name)
     if not path or not os.path.exists(path):
         return default
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except Exception as exc:
         warnings.append(f"קריאת {name} נכשלה ({exc}) — נטען ערך ריק.")
         return default
+    if type(data) is not type(default):
+        warnings.append(f"המבנה של {name} אינו כצפוי — נטען ערך ריק.")
+        return default
+    return data
 
 
 def _save_json(name: str, payload) -> bool:

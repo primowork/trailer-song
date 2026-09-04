@@ -67,3 +67,15 @@ def test_matches_tempo_passes_everything_without_measurement():
     assert audio.matches_tempo(None, "Fast Action")
     assert audio.matches_tempo({"error": "cors_failed"}, "Fast Action")
     assert audio.matches_tempo(TRAILER, "הכל")
+
+
+# ---------- קלט פגום מהדפדפן ----------
+
+def test_a_non_numeric_measurement_does_not_crash_the_card():
+    """המדידה מגיעה מהדפדפן ואינה נתון מהימן; ערך שאינו מספר הפיל את
+    הכרטיס כולו על שגיאת פורמט."""
+    for bad in ({"loudness": None}, {"loudness": "x"}, {"low_end": []},
+                {"onset_rate": "fast"}):
+        assert isinstance(audio.describe(bad), str)
+        assert isinstance(audio.bigness(bad), int)
+        assert audio.matches_tempo(bad, "Fast Action") in (True, False)

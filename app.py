@@ -481,6 +481,9 @@ def _init_state():
         "last_query": "",
         "covers_source": "",
         "work_candidates": [],
+        # השאילתה שעבורה נפתרו המועמדים. בלעדיה הבורר שרד שינוי של שם השיר,
+        # ו-`work_id` של יצירה אחרת נשלח לחיפוש הבא
+        "work_query": "",
         "bigness": {},
         "evidence": {},
         "original": None,
@@ -509,6 +512,19 @@ def is_blacklisted(artist: str) -> bool:
 
 def apply_blacklist(tracks: list[dict]) -> list[dict]:
     return [t for t in tracks if not is_blacklisted(t.get("artist", ""))]
+
+
+def drop_seen(tracks: list[dict], seen) -> list[dict]:
+    """מסיר את מה שכבר הוצג בסבב הזה, כש"רק מה שלא ראיתי" מסומן.
+
+    ב-MODE_FREE הסינון קורה בתוך `search_covers` דרך `exclude_keys`, אבל שני
+    המסלולים האחרים — קאברים לשיר ולאמן — לא קיבלו אותו כלל, והצ'קבוקס פשוט
+    לא עשה דבר במצב שבו המשתמש נמצא רוב הזמן (נבדק).
+    """
+    if not seen:
+        return tracks
+    return [t for t in tracks
+            if track_key(t.get("artist", ""), t.get("track", "")) not in seen]
 
 
 # ---------- ❤️ פלייליסט וטעם נלמד ----------
@@ -1536,12 +1552,23 @@ if search_mode == MODE_SONG:
             with st.spinner("מחפש יצירות..."):
                 st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
                     cover_title, cover_artist)
+            st.session_state["work_query"] = search_module.track_key(
+                cover_artist, cover_title)
             if not st.session_state["work_candidates"]:
                 failure = _lookup_failed()
                 if failure:
                     st.error(failure + " — נסה שוב")
                 else:
                     st.info("לא נמצאו יצירות בשם הזה. אפשר לחפש ישירות בכפתור חפש.")
+
+    # הבורר שייך לשאילתה שעבורה נפתר. בלי הבדיקה הזו בחירה של "Sweet
+    # Dreams" שרדה הקלדה של "Yellow", ו-`work_id` של Sweet Dreams נשלח
+    # לחיפוש — `find_covers` מדלגת אז על זיהוי היצירה לגמרי ומחזירה
+    # גרסאות של השיר הלא נכון, בלי שום סימן למשתמש (נבדק).
+    if st.session_state.get("work_query") != search_module.track_key(
+            cover_artist, cover_title):
+        st.session_state["work_candidates"] = []
+        st.session_state["work_query"] = ""
 
     work_candidates = st.session_state.get("work_candidates") or []
     if work_candidates:
@@ -1643,7 +1670,8 @@ elif run_search and search_mode == MODE_ARTIST:
         results, source_used, titles = covers_module.find_artist_covers(
             cover_artist, filters=filters, prefer_new=prefer_new,
             min_year=RECENCY_OPTIONS[recency])
-        results = apply_blacklist(results)
+        results = drop_seen(apply_blacklist(results),
+                            st.session_state["seen_keys"] if fresh_only else None)
     _store_results(results, source_used)
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
@@ -1661,7 +1689,8 @@ elif run_search and search_mode == MODE_SONG:
         results, source_used, original = covers_module.find_all_covers(
             cover_title, cover_artist, filters=filters, prefer_new=prefer_new,
             min_year=RECENCY_OPTIONS[recency], work_id=chosen_work)
-        results = apply_blacklist(results)
+        results = drop_seen(apply_blacklist(results),
+                            st.session_state["seen_keys"] if fresh_only else None)
     _store_results(results, source_used, original)
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
@@ -1728,7 +1757,14 @@ if candidates:
 
     display = list(candidates)
     if same_work_only:
-        display = [t for t in display if t.get("work_verified")]
+        # רק כשיש בכלל אימות בתוצאות האלה. "קאברים לאמן", "עוד כמו זה"
+        # והחיפוש החופשי אינם עוברים דרך הקטלוג, ולכן אין להם `work_verified`
+        # — וסינון עליו רוקן את הרשימה עד "מוצגים 0 מתוך 0" (נבדק).
+        if any("work_verified" in t for t in display):
+            display = [t for t in display if t.get("work_verified")]
+        else:
+            st.caption("ℹ️ האימות מול הקטלוג קיים רק בחיפוש 'קאברים לשיר'. "
+                       "התוצאות האלה הגיעו ממסלול אחר, ולכן מוצגות כמו שהן.")
 
     # הפרופיל נבנה מול פול התוצאות המוצג — כך "אהבתי Soundtrack" נמדד מול
     # כמה Soundtrack יש כאן ממילא, ולא כספירה גולמית
