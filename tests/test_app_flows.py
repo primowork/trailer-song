@@ -449,9 +449,33 @@ def test_the_sidebar_shows_a_group_header_with_a_count(app):
     _save(app, "Hidden Citizens", "Bittersweet Symphony (Cover)", "b")
 
     assert not app.exception
-    headers = [m.value for m in app.markdown if m.value]
-    assert any("Bitter Sweet Symphony" in text and "The Verve" in text
-               for text in headers)
+    headers = " ".join(str(e.proto) for e in app.get("html"))
+    assert "Bitter Sweet Symphony" in headers and "The Verve" in headers
+    # "2" לבד לא אמר מה הוא סופר
+    assert "2 גרסאות" in headers
+
+
+def test_a_saved_version_plays_from_the_sidebar_in_one_tap(app):
+    """קודם הנגן ישב בתוך popover: הקשה אחת פתחה חלון שכל תוכנו כפתור
+    נגינה, והקשה שנייה ניגנה."""
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+
+    assert not app.exception
+    html = " ".join(str(e.proto) for e in app.get("html"))
+    assert "ts-play" in html and "<audio" in html
+    popovers = " ".join(str(b.proto) for b in app.get("popover"))
+    assert "play_arrow" not in popovers, "אין צורך בחלון בדרך אל כפתור הנגינה"
+
+
+def test_a_song_name_cannot_inject_markup_into_the_group_header(app):
+    """כותרת הקבוצה נבנית כ-HTML, ושמות שירים מגיעים מקטלוג חיצוני."""
+    _save(app, "2WEI", "<img src=x onerror=alert(1)> (Epic Version)", "a",
+          searched="<img src=x onerror=alert(1)>")
+
+    assert not app.exception
+    html = " ".join(str(e.proto) for e in app.get("html"))
+    assert "<img src=x" not in html
+    assert "&lt;img src=x" in html
 
 
 def test_removing_the_last_version_removes_the_group(app):
@@ -462,9 +486,31 @@ def test_removing_the_last_version_removes_the_group(app):
 
     assert not app.exception
     assert app.session_state["favorites"] == {}
-    headers = [m.value for m in app.markdown if m.value]
-    assert not any("Bitter Sweet Symphony" in text and "The Verve" in text
-                   for text in headers)
+    headers = " ".join(str(e.proto) for e in app.get("html"))
+    assert "Bitter Sweet Symphony" not in headers
+
+
+# ---------- קישור ל-YouTube Music ----------
+
+def test_the_track_name_links_to_youtube_music(app):
+    """התצוגה המקדימה היא 30 שניות; שם השיר הוא המסלול לגרסה המלאה."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    assert not app.exception
+    titles = [m.value for m in app.markdown if m.value and "2WEI" in m.value]
+    assert any("music.youtube.com/search?q=" in text for text in titles)
+    assert any("2WEI+Zombie" in text for text in titles), "השאילתה חייבת לכלול אמן ושיר"
+
+
+def test_brackets_in_a_track_name_do_not_break_the_link(app):
+    """"Yellow [Radio Edit]" היה שובר את תחביר הקישור ב-markdown."""
+    app.session_state["candidates"] = [track("Coldplay", "Yellow [Radio Edit]", "b1")]
+    app.run()
+
+    assert not app.exception
+    titles = [m.value for m in app.markdown if m.value and "Coldplay" in m.value]
+    assert any("\\[Radio Edit\\]" in text for text in titles)
 
 
 # ---------- הנגן ----------
@@ -476,8 +522,31 @@ def test_the_player_is_ours_and_still_a_real_audio_element(app):
     app.run()
 
     html = " ".join(str(e.proto) for e in app.get("html"))
-    assert "ts-player" in html and "ts-play" in html and "ts-bar" in html
+    assert "ts-player" in html and "ts-play" in html
     assert "<audio" in html and "preload=" in html
+
+
+def test_the_player_is_a_play_button_with_nothing_around_it(app):
+    """תצוגה מקדימה של שלושים שניות לא צריכה פס התקדמות ושעון — ובסרגל
+    הצר הם היו רוב הרוחב של השורה."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    html = " ".join(str(e.proto) for e in app.get("html"))
+    assert "ts-bar" not in html and "ts-time" not in html
+
+
+def test_the_audio_element_is_not_removed_from_the_render_tree(app):
+    """`display: none` על אלמנט מדיה הוא מקור ידוע לסירובי נגינה
+    ב-Safari לנייד; ההסתרה חייבת להשאיר אותו בעץ."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    css = " ".join(str(e.proto) for e in app.get("markdown") if "ts-player" in str(e.proto))
+    assert ".ts-player audio" in css
+    rule = css.split(".ts-player audio")[1].split("}")[0]
+    assert "display: none" not in rule
+    assert "opacity: 0" in rule
 
 
 def test_the_player_behaviour_is_delegated_not_bound_per_player(app):
@@ -486,6 +555,14 @@ def test_the_player_behaviour_is_delegated_not_bound_per_player(app):
     script = " ".join(str(e.proto) for e in app.get("iframe"))
     assert "__audioBehaviourBound" in script
     assert "ts-play" in script and "addEventListener" in script
+
+
+def test_the_player_script_runs_in_the_page_and_not_in_the_iframe(app):
+    """ב-Safari לנייד ההרשאה לנגן נבדקת מול ההקשר שממנו נקראה `play()`;
+    קריאה מתוך iframe מוצלב-מקור היא בדיוק המקרה שנחסם."""
+    script = " ".join(str(e.proto) for e in app.get("iframe"))
+    assert "createElement(\\\"script\\\")" in script or "createElement('script')" in script
+    assert "doc.head.appendChild" in script
 
 
 def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
