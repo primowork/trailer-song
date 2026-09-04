@@ -211,6 +211,36 @@ def clean_track_title(title: str) -> str:
     return cleaned.strip()
 
 
+# מילים שמכריזות "זו גרסה של", ולא חלק משם השיר
+VERSION_WORDS = ("trailer", "cover", "epic", "version", "remix", "cinematic",
+                 "edit", "theme", "instrumental", "acoustic", "orchestral",
+                 "remaster", "remastered", "mix", "rendition", "feat", "ft")
+
+
+def title_for_match(title: str) -> str:
+    """הכותרת כפי שהיא נכנסת להשוואת הרלוונטיות.
+
+    בניגוד ל-`clean_track_title`, מילת גרסה **חשופה** — בלי סוגריים ובלי
+    מקף — אינה נחתכת. "Happy Trailer" הוא קיו של ספריית הפקה ששמו כך, לא
+    גרסה של "Happy", ובחיתוך המילה הוא הפך ל"Happy" וקיבל 100. אם לשיר
+    קוראים "Happy", שם עם מילה נוספת הוא שיר אחר.
+
+    מה כן יורד: סוגריים ("Happy (Epic Trailer Version)"), וסיומת אחרי מקף
+    כשהיא עצמה מכריזה על גרסה ("Happy - Epic Version"). זה בדיוק האופן שבו
+    iTunes ו-Deezer מסמנים גרסה, ולכן קאבר אמיתי אינו נפגע.
+    """
+    cleaned = re.sub(r"\(.*?\)|\[.*?\]", " ", title or "")
+    parts = re.split(r"\s[-–—]\s", cleaned)
+    kept = [parts[0]] + [part for part in parts[1:]
+                         if not _declares_a_version(part)]
+    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+
+
+def _declares_a_version(text: str) -> bool:
+    lowered = text.lower()
+    return any(re.search(rf"\b{word}\b", lowered) for word in VERSION_WORDS)
+
+
 def normalize_title(title: str) -> str:
     """מנרמל כותרת כך שווריאציות ניסוח של אותו שיר נופלות על אותה מחרוזת.
 
@@ -456,7 +486,7 @@ def relevance(track: dict, query: str, match_artist: bool = False) -> int:
         return 100
     q = normalize_title(query)
     raw_title = track.get("track", "")
-    title = normalize_title(clean_track_title(raw_title) or raw_title)
+    title = normalize_title(title_for_match(raw_title) or raw_title)
     # השוואה נוספת בלי רווחים, שההבדל בין "bitter sweet" ל-"bittersweet"
     # לא יוריד את הציון של הגרסה הנכונה
     squeeze = lambda s: s.replace(" ", "")

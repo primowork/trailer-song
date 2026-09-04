@@ -125,6 +125,23 @@ def test_the_artist_still_answers_when_the_query_is_an_artist():
     assert search.relevance(anything, "Tommee Profitt") < search.RELEVANCE_FLOOR
 
 
+def test_an_extra_word_in_the_title_makes_it_a_different_song():
+    """אם לשיר קוראים "Happy", שם עם מילה נוספת הוא שיר אחר. "Happy Trailer"
+    הוא קיו של ספריית הפקה ששמו כך, ולא גרסה של Happy — וקודם `clean_track_title`
+    חתכה את "Trailer" והוא קיבל 100."""
+    for title in ("Happy Trailer", "Happy Birthday", "Happy Together",
+                  "Epic Happy Trailer"):
+        assert search.relevance(make("X", title), "Happy") < search.RELEVANCE_FLOOR, title
+
+
+def test_a_declared_version_is_still_the_same_song():
+    """סוגריים ומקף הם האופן שבו iTunes ו-Deezer מסמנים גרסה, ולכן קאבר
+    אמיתי אינו נפגע מהכלל שלמעלה."""
+    for title in ("Happy", "Happy (Epic Trailer Version)", "Happy - Epic Version",
+                  'Happy (From "Despicable Me 2")'):
+        assert search.relevance(make("X", title), "Happy") >= search.RELEVANCE_FLOOR, title
+
+
 def test_relevance_survives_version_tags_on_the_candidate_title():
     """הכותרת מנוקה לפני ההשוואה — תג הגרסה לא מוריד את הציון."""
     tagged = make("2WEI", "Zombie (Epic Trailer Version)")
