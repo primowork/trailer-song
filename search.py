@@ -211,6 +211,38 @@ def clean_track_title(title: str) -> str:
     return cleaned.strip()
 
 
+# מילים שמכריזות "זו גרסה של", ולא חלק משם השיר
+VERSION_WORDS = ("trailer", "cover", "epic", "version", "remix", "cinematic",
+                 "edit", "theme", "instrumental", "acoustic", "orchestral",
+                 "remaster", "remastered", "mix", "rendition", "feat", "ft")
+
+
+def title_for_match(title: str) -> str:
+    """הכותרת כפי שהיא נכנסת להשוואת הרלוונטיות.
+
+    בניגוד ל-`clean_track_title`, מילת גרסה **חשופה** — בלי סוגריים ובלי
+    מקף — אינה נחתכת. "Happy Trailer" הוא קיו של ספריית הפקה ששמו כך, לא
+    גרסה של "Happy", ובחיתוך המילה הוא הפך ל"Happy" וקיבל 100. אם לשיר
+    קוראים "Happy", שם עם מילה נוספת הוא שיר אחר.
+
+    מה כן יורד: סוגריים ("Happy (Epic Trailer Version)"), וסיומת אחרי מקף
+    כשהיא עצמה מכריזה על גרסה ("Happy - Epic Version"). זה בדיוק האופן שבו
+    iTunes ו-Deezer מסמנים גרסה, ולכן קאבר אמיתי אינו נפגע.
+    """
+    cleaned = re.sub(r"\(.*?\)|\[.*?\]", " ", title or "")
+    # מקף, קו אנכי ונקודה מפרידה — שלוש הדרכים שבהן חנויות מפרידות תג גרסה
+    # מהכותרת כשהוא לא בסוגריים
+    parts = re.split(r"\s[-–—|·]\s", cleaned)
+    kept = [parts[0]] + [part for part in parts[1:]
+                         if not _declares_a_version(part)]
+    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+
+
+def _declares_a_version(text: str) -> bool:
+    lowered = text.lower()
+    return any(re.search(rf"\b{word}\b", lowered) for word in VERSION_WORDS)
+
+
 def normalize_title(title: str) -> str:
     """מנרמל כותרת כך שווריאציות ניסוח של אותו שיר נופלות על אותה מחרוזת.
 
@@ -429,10 +461,20 @@ def deezer_search(term: str, limit: int = 100,
 # קיבל 140 מול 97 של הגרסה האמיתית של Sia.
 MAX_EPIC_BONUS = 30
 # מתחת לרצפה הזו טראק לא מוצג בכלל (ראו השימוש ב-search_covers) ולא רק
-# מדורג נמוך. מכויל מול: קאברים לגיטימיים (אחרי ניקוי תג גרסה) מגיעים
-# ל-100; "At Long Last, Love" מול שאילתת "At Last" — שיר אחר לגמרי שחולק
-# שתי מילים — מגיע ל-60; "Yellow Submarine" מול "Yellow" ל-57.
-RELEVANCE_FLOOR = 65
+# מדורג נמוך.
+#
+# מכויל מול שתי קבוצות שנמדדו, אחרי `title_for_match`:
+#   קאברים לגיטימיים — 98 ("Bittersweet Symphony" מול "Bitter Sweet
+#   Symphony") עד 100. תג הגרסה כבר ירד, ולכן מה שנשאר הוא *שם השיר*,
+#   וההתאמה לשאילתה כמעט מדויקת.
+#   שירים אחרים — "On My Way" מול "My Way" 83, "My War" מול "My Way" 80,
+#   "My Way Home" 71, "Zombie Nation" 67, "Happy Trailer" 59.
+#
+# רצפה של 65 הכניסה את כל השורה העליונה של הקבוצה השנייה: המשתמש חיפש
+# "My Way" וקיבל "On My Way" ו-"My War". הפער בין 83 ל-98 רחב, ו-90 יושב
+# באמצע. המחיר המודע: שאילתה מקוצרת ("Bittersweet" לשיר "Bittersweet
+# Symphony") כבר לא תחזיר אותו — יש להשלמת השמות תפקיד בדיוק בשביל זה.
+RELEVANCE_FLOOR = 90
 
 
 def relevance(track: dict, query: str, match_artist: bool = False) -> int:
@@ -456,7 +498,7 @@ def relevance(track: dict, query: str, match_artist: bool = False) -> int:
         return 100
     q = normalize_title(query)
     raw_title = track.get("track", "")
-    title = normalize_title(clean_track_title(raw_title) or raw_title)
+    title = normalize_title(title_for_match(raw_title) or raw_title)
     # השוואה נוספת בלי רווחים, שההבדל בין "bitter sweet" ל-"bittersweet"
     # לא יוריד את הציון של הגרסה הנכונה
     squeeze = lambda s: s.replace(" ", "")

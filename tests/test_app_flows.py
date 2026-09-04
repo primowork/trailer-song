@@ -443,15 +443,15 @@ def test_an_entry_saved_before_the_field_existed_still_groups(app):
     assert app_module.origin_key(legacy) == app_module.origin_key(fresh)
 
 
-def test_the_sidebar_shows_a_group_header_with_a_count(app):
+def test_the_sidebar_group_header_is_the_song_and_the_artist_only(app):
     _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
     _save(app, "Hidden Citizens", "Bittersweet Symphony (Cover)", "b")
 
     assert not app.exception
     headers = " ".join(str(b.proto) for b in app.get("expander"))
     assert "Bitter Sweet Symphony" in headers and "The Verve" in headers
-    # "2" לבד לא אמר מה הוא סופר
-    assert "2 גרסאות" in headers
+    # בלי מונה: הגרסאות נספרות במבט אחד ברגע שפותחים את הקבוצה
+    assert "גרסאות" not in headers and "גרסה" not in headers
 
 
 def test_a_saved_version_plays_from_the_sidebar_in_one_tap(app):
@@ -487,9 +487,9 @@ def test_the_playlist_groups_start_collapsed(app):
     assert not any(b.proto.expanded for b in groups), "כל הקבוצות מכווצות"
 
 
-def test_the_group_label_isolates_the_song_name_from_the_count(app):
-    """בלי בידוד דו-כיווני המספר נצמד לרצף הלטיני ונקרא בצד הלא נכון —
-    "Heroes5 גרסאות" בצילום מהטלפון."""
+def test_the_group_label_isolates_the_song_name(app):
+    """בלי בידוד דו-כיווני סדר הקריאה נשבר כשאחד מהשניים לטיני והשני
+    עברי — "Heroes5 גרסאות" בצילום מהטלפון."""
     _save(app, "2WEI", "Heroes (Epic Trailer Version)", "a", searched="Heroes")
     _save(app, "Hidden Citizens", "Heroes (Cover)", "b", searched="Heroes")
 
