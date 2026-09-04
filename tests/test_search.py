@@ -382,3 +382,20 @@ def test_refresh_preview_returns_empty_when_nothing_matches(monkeypatch):
     monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [])
     monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
     assert search.refresh_preview({"artist": "A", "track": "B"}) == ""
+
+
+def test_a_query_with_brackets_matches_its_own_title():
+    """הניקוי הופעל על הכותרת בלבד ולא על השאילתה, ולכן שאילתה שיש בה
+    סוגריים לא יכלה להתאים אפילו לכותרת הזהה לה — "(Sittin' On) The Dock
+    Of The Bay" קיבל 77 מול עצמו, ומאז שהרצפה עלתה ל-90 פשוט לא הוחזר."""
+    for title in ("(Sittin' On) The Dock Of The Bay",
+                  "Nel Blu Dipinto Di Blu (Volare)",
+                  "Aquarius/Let The Sunshine In (The Flesh Failures)",
+                  "Roses Are Red (My Love)"):
+        assert search.relevance(make("X", title), title) >= search.RELEVANCE_FLOOR, title
+
+
+def test_the_short_and_the_full_form_of_a_title_find_each_other():
+    full = "(Sittin' On) The Dock Of The Bay"
+    assert search.relevance(make("X", "The Dock Of The Bay (Epic Trailer Version)"),
+                            full) >= search.RELEVANCE_FLOOR

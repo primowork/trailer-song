@@ -165,3 +165,15 @@ def test_blues_is_not_a_source_for_the_pool():
                   if (e["artist"], e["track"]) not in charted | curated]
     assert blues_only, "הבדיקה חסרת משמעות אם כל הבלוז ממילא מופיע במקומות אחרים"
     assert not [k for k in blues_only if k in pool]
+
+
+def test_every_song_in_the_dice_pool_can_match_its_own_title():
+    """כפתור ההגרלה מחפש לפי הכותרת שהוא הגריל. שיר שאינו עובר את רצפת
+    הרלוונטיות מול עצמו מחזיר רשימה ריקה — וזה בדיוק מה שקרה ל-31 שירים
+    עם סוגריים בשם אחרי שהרצפה עלתה ל-90."""
+    import search
+
+    unmatched = [entry for entry in classics.famous_pool()
+                 if search.relevance({"artist": entry["artist"], "track": entry["track"]},
+                                     entry["track"]) < search.RELEVANCE_FLOOR]
+    assert not unmatched, [(e["artist"], e["track"]) for e in unmatched[:5]]

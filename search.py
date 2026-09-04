@@ -555,21 +555,33 @@ def relevance(track: dict, query: str, match_artist: bool = False) -> int:
     """
     if not query:
         return 100
-    q = normalize_title(query)
     raw_title = track.get("track", "")
-    title = normalize_title(title_for_match(raw_title) or raw_title)
+
     # השוואה נוספת בלי רווחים, שההבדל בין "bitter sweet" ל-"bittersweet"
     # לא יוריד את הציון של הגרסה הנכונה
     squeeze = lambda s: s.replace(" ", "")
-    title_score = min(
-        fuzz.token_set_ratio(q, title),
-        fuzz.ratio(squeeze(q), squeeze(title)),
+
+    def pair_score(left: str, right: str) -> int:
+        a, b = normalize_title(left), normalize_title(right)
+        return min(fuzz.token_set_ratio(a, b),
+                   fuzz.ratio(squeeze(a), squeeze(b)))
+
+    # שתי ההשוואות, והטובה שבהן. הניקוי הופעל עד כה על הכותרת בלבד ולא על
+    # השאילתה, ולכן שאילתה שיש בה סוגריים לא יכלה להתאים אפילו לכותרת
+    # *הזהה לה*: "(Sittin' On) The Dock Of The Bay" קיבל 77 מול עצמו, ומאז
+    # שהרצפה עלתה ל-90 הוא פשוט לא הוחזר. 31 שירים בבריכת ההגרלה היו במצב
+    # הזה, וכל מי שהדביק כותרת מלאה מהחנות נפל בו גם הוא.
+    title_score = max(
+        pair_score(query, raw_title),
+        pair_score(title_for_match(query) or query,
+                   title_for_match(raw_title) or raw_title),
     )
     if not match_artist:
         return title_score
     return max(
         title_score,
-        fuzz.token_set_ratio(q, normalize_artist(track.get("artist", ""))),
+        fuzz.token_set_ratio(normalize_title(query),
+                             normalize_artist(track.get("artist", ""))),
     )
 
 
