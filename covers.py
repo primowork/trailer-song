@@ -383,7 +383,18 @@ def find_all_covers(title: str, artist: str = "", filters: dict | None = None,
     for track in store_results:
         track.setdefault("catalog_source", store_source)
 
+    # אילו הקלטות מאומתות כגרסאות של *היצירה הזו*: SecondHandSongs
+    # ו-MusicBrainz פותרים את היצירה עצמה ("I'm Sorry" של ברנדה לי, 1960)
+    # ומחזירים רק גרסאות שלה, בעוד שהחיפוש בחנויות מתאים לפי שם בלבד
+    # ומביא גם שירים אחרים באותו שם. הסימון נקבע לפני `dedupe`, כי היא
+    # מעדיפה את המופע שיש לו preview — כלומר את זה שמהחנות.
+    work_keys = {search_module.track_key(t.get("artist", ""), t.get("track", ""))
+                 for t in catalog_results}
+
     merged = search_module.dedupe(catalog_results + store_results)
+    for track in merged:
+        track["work_verified"] = search_module.track_key(
+            track.get("artist", ""), track.get("track", "")) in work_keys
     if min_year or (filters or {}).get("length"):
         merged = [t for t in merged
                  if search_module.passes_length_filter(t.get("duration_sec", 0),

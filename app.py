@@ -172,6 +172,10 @@ st.markdown(
     [data-testid="stSidebar"] .stButton button p {
         font-size: 0.86rem; overflow: hidden;
         text-overflow: ellipsis; white-space: nowrap;
+        /* בלי זה שם לטיני בתוך שורה RTL נחתך ב*התחלה* שלו, ו-"Bad Wolves
+           String Orchestra" הופך ל-"…d String Orchestra". plaintext גוזר
+           את הכיוון מהתו החזק הראשון, ולכן החיתוך עובר לסוף. */
+        unicode-bidi: plaintext;
     }
     /* הרווח שבין הרכיבים הוא מה שהרחיק כותרת קבוצה מהגרסאות שלה */
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.3rem; }
@@ -988,7 +992,8 @@ def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
     return ranked
 
 
-def ordered_display(tracks: list, sort_by: str, learned: dict) -> list:
+def ordered_display(tracks: list, sort_by: str, same_work_only: bool,
+                   learned: dict) -> list:
     """הסדר נקבע פעם אחת ונשאר — הליבה של תיקון "הכל קופץ".
 
     מפתח המיון הראשי תלוי במדידות האודיו שממשיכות לזרום מהדפדפן אחרי
@@ -1003,7 +1008,7 @@ def ordered_display(tracks: list, sort_by: str, learned: dict) -> list:
     הפילטר, או חיפוש חדש. הדירוג לפי טעם לא בוטל, רק רגע ההחלה שלו הוקפא;
     `resort_button` מחזיר את השליטה למשתמש.
     """
-    signature = (sort_by, st.session_state["result_generation"])
+    signature = (sort_by, same_work_only, st.session_state["result_generation"])
     if st.session_state["order_signature"] != signature:
         st.session_state["order_signature"] = signature
         st.session_state["display_order"] = [t["uid"] for t in
@@ -1476,6 +1481,14 @@ with panel_filters, st.expander("פילטרים", icon=":material/tune:", expand
         "רק מה שלא ראיתי", value=False,
         help="מדלג על תוצאות שכבר הוצגו בסבב הזה, כדי להביא חומר חדש.")
 
+    same_work_only = st.checkbox(
+        "רק גרסאות של השיר הזה (מאומת מול הקטלוג)", value=False,
+        help="החיפוש בחנויות מתאים לפי שם בלבד, ולכן \"I'm Sorry\" מחזיר גם "
+             "שירים אחרים באותו שם. הסימון הזה משאיר רק הקלטות שהקטלוג "
+             "(SecondHandSongs/MusicBrainz) מזהה כגרסאות של אותה יצירה — "
+             "כלומר של השיר של האמן שהזנת. המחיר: גרסאות טריילר מספריות "
+             "הפקה לרוב אינן בקטלוג, והן ייעלמו.")
+
     if st.session_state.get("search_mode") == MODE_SONG:
         st.caption("סגנון וקצב משפיעים רק על החלק שמגיע מחיפוש בחנויות. המאגר "
                    "הרשמי (SecondHandSongs/MusicBrainz) לא תומך בסינון כזה — "
@@ -1714,12 +1727,14 @@ if candidates:
                                      "אמן"])
 
     display = list(candidates)
+    if same_work_only:
+        display = [t for t in display if t.get("work_verified")]
 
     # הפרופיל נבנה מול פול התוצאות המוצג — כך "אהבתי Soundtrack" נמדד מול
     # כמה Soundtrack יש כאן ממילא, ולא כספירה גולמית
     learned = taste_profile(display)
 
-    display = ordered_display(display, sort_by, learned)
+    display = ordered_display(display, sort_by, same_work_only, learned)
     resort_button(display, sort_by, learned)
 
     st.subheader(f"מוצגים {min(st.session_state['visible_count'], len(display))} מתוך {len(display)}")

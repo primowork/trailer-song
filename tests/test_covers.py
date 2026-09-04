@@ -404,3 +404,31 @@ def test_deezer_is_not_called_when_itunes_answers(monkeypatch):
 
     monkeypatch.setattr(covers.search_module, "deezer_search", boom)
     assert covers.artist_top_titles("Coldplay") == ["Yellow"]
+
+
+# ---------- אימות מול היצירה ----------
+
+def test_a_store_result_that_is_a_version_of_the_work_is_marked(monkeypatch):
+    """החיפוש בחנויות מתאים לפי שם בלבד, ולכן "I'm Sorry" מחזיר גם שירים
+    אחרים באותו שם. הקטלוג פותר את היצירה עצמה, וההצטלבות בין השניים היא
+    מה שמאפשר להשאיר רק גרסאות של השיר של האמן שהוזן."""
+    import covers
+
+    def track(artist, title, uid, preview="http://p"):
+        return {"artist": artist, "track": title, "uid": uid, "source": "iTunes",
+                "preview_url": preview, "album": "", "genre": "", "year": "",
+                "duration_sec": 100}
+
+    catalog = [track("Slow Cover", "I'm Sorry", "shs-1", preview="")]
+    store = [track("Slow Cover", "I'm Sorry", "itunes-1"),
+             track("Other Band", "I'm Sorry", "itunes-2")]
+
+    monkeypatch.setattr(covers, "find_covers",
+                        lambda *a, **k: (catalog, "SecondHandSongs", None))
+    monkeypatch.setattr(covers, "find_epic_versions",
+                        lambda *a, **k: (store, "חיפוש בחנויות"))
+
+    results, _, _ = covers.find_all_covers("I'm Sorry", "Brenda Lee")
+    verified = {t["artist"]: t["work_verified"] for t in results}
+    assert verified["Slow Cover"] is True
+    assert verified["Other Band"] is False

@@ -454,6 +454,26 @@ def test_the_sidebar_group_header_is_the_song_and_the_artist_only(app):
     assert "גרסאות" not in headers and "גרסה" not in headers
 
 
+def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):
+    """"Brenda Lee - I'm Sorry" החזיר גם שירים אחרים באותו שם, כי החיפוש
+    בחנויות מתאים לפי שם בלבד."""
+    same = track("Slow Cover", "I'm Sorry", "a")
+    same["work_verified"] = True
+    other = track("Other Band", "I'm Sorry", "b")
+    other["work_verified"] = False
+    app.session_state["candidates"] = [same, other]
+    app.run()
+
+    box = [c for c in app.checkbox if "מאומת מול הקטלוג" in c.label]
+    assert box, "אין פילטר לגרסאות של אותה יצירה"
+    box[0].check().run()
+
+    assert not app.exception
+    shown = " ".join(str(m.value) for m in app.markdown if m.value)
+    assert "Slow Cover" in shown
+    assert "Other Band" not in shown
+
+
 def test_the_playlist_offers_to_refresh_dead_preview_links(app):
     """כתובת preview היא כתובת CDN: גרסה ששמורה חודשים יכולה להצביע על
     קובץ שכבר לא קיים, וכפתור הנגינה שלה פשוט לא מנגן."""
