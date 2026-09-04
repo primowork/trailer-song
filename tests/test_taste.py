@@ -338,3 +338,16 @@ def test_the_artist_boost_cannot_push_past_one():
     learned = taste.profile(favorites)
     assert taste.match(song(), features(), learned) <= 1.0
     assert taste.bonus(song(), features(), learned) <= taste.MAX_TASTE_BONUS
+
+
+def test_a_corrupt_timestamp_does_not_break_the_profile():
+    """`added_at` מגיע מ-favorites.json שעל הדיסק, והפרופיל נבנה בכל rerun —
+    ערך אחד שאינו מספר היה מפיל את האפליקציה בכל טעינה, בלי דרך לתקן
+    מתוך הממשק."""
+    entries = [{"artist": "2WEI", "track": "Zombie", "features": None,
+                "added_at": "לא מספר"},
+               {"artist": "Hidden Citizens", "track": "Alive", "features": None,
+                "added_at": None}]
+    learned = taste.profile(entries)
+    assert learned["count"] == 2
+    assert isinstance(taste.describe(learned), str)

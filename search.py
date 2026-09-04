@@ -298,6 +298,7 @@ def spacing_variants(text: str) -> list[str]:
     בלי זה הגרסה של The Crown, ששמה מילה אחת, לא הוחזרה כלל מהחנויות כשהוקלד
     הכתיב של The Verve בשתי מילים.
     """
+    text = text or ""
     words = text.split()
     if len(words) < 2:
         return []

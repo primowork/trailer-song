@@ -100,21 +100,30 @@ def is_big_version(features: "dict | None",
     return measured(features) and bigness(features) >= threshold
 
 
+def _number(features: dict, name: str) -> float:
+    """מדד בודד כמספר. המדידה מגיעה מהדפדפן, ולכן אינה נתון מהימן: ערך
+    שאינו מספר היה מפיל את הכרטיס כולו על שגיאת פורמט."""
+    try:
+        return float(features.get(name) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def describe(features: "dict | None") -> str:
     """המספרים הגולמיים לתצוגה, כדי שהכיול הבא יהיה מבוסס ולא ניחוש."""
     if not measured(features):
         return ""
-    return (f"עוצמה {features.get('loudness', 0):.2f} · "
-            f"בס ×{features.get('low_end', 0):.2f} · "
-            f"מכות {features.get('onset_rate', 0):.1f}/שנ׳ · "
-            f"קשת ×{features.get('dynamic_span', 0):.1f}")
+    return (f"עוצמה {_number(features, 'loudness'):.2f} · "
+            f"בס ×{_number(features, 'low_end'):.2f} · "
+            f"מכות {_number(features, 'onset_rate'):.1f}/שנ׳ · "
+            f"קשת ×{_number(features, 'dynamic_span'):.1f}")
 
 
 def matches_tempo(features: "dict | None", tempo_filter: str) -> bool:
     """סינון קצב לפי צפיפות המכות שנמדדה. בלי מדידה — הכל עובר."""
     if not tempo_filter or tempo_filter == "הכל" or not measured(features):
         return True
-    rate = features.get("onset_rate", 0.0)
+    rate = _number(features, "onset_rate")
     if not rate:
         return True
     if tempo_filter == "Fast Action":

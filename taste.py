@@ -112,11 +112,20 @@ def traits(track: dict, labels: dict | None = None) -> set:
 
 
 def _recency_weight(entry: dict, now: float) -> float:
-    """לייק חדש שוקל יותר מלייק בן שנה, בדעיכה מעריכית."""
+    """לייק חדש שוקל יותר מלייק בן שנה, בדעיכה מעריכית.
+
+    חותמת זמן פגומה שווה לחוסר חותמת ולא לקריסה: הערך מגיע מ-`favorites.json`
+    שעל הדיסק, והפרופיל נבנה בכל rerun — כלומר ערך אחד שאינו מספר היה מפיל
+    את האפליקציה בכל טעינה, בלי דרך לתקן מתוך הממשק.
+    """
     added = entry.get("added_at")
     if not added:
         return 1.0
-    age_days = max(0.0, (now - float(added)) / 86400.0)
+    try:
+        added = float(added)
+    except (TypeError, ValueError):
+        return 1.0
+    age_days = max(0.0, (now - added) / 86400.0)
     return 0.5 ** (age_days / RECENCY_HALFLIFE_DAYS)
 
 

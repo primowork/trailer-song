@@ -454,6 +454,52 @@ def test_the_sidebar_group_header_is_the_song_and_the_artist_only(app):
     assert "גרסאות" not in headers and "גרסה" not in headers
 
 
+def test_a_work_chosen_for_one_song_is_not_used_for_the_next_search(monkeypatch):
+    """בחירת היצירה של "Sweet Dreams" שרדה הקלדה של "Yellow", ו-`work_id`
+    שלה נשלח לחיפוש — `find_covers` מדלגת אז על זיהוי היצירה ומחזירה גרסאות
+    של השיר הלא נכון, בלי שום סימן למשתמש."""
+    import covers as covers_module
+
+    calls = []
+    monkeypatch.setattr(covers_module, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            calls.append((title, k.get("work_id"))) or ([], "מדומה", None)))
+    monkeypatch.setattr(covers_module, "musicbrainz_work_candidates",
+                        lambda title, artist="", client=None: [
+                            {"id": "work-country", "title": "Sweet Dreams",
+                             "disambiguation": "1955", "writers": ""},
+                            {"id": "work-eurythmics", "title": "Sweet Dreams",
+                             "disambiguation": "1983", "writers": ""}])
+
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.run()
+    at.text_input(key="cover_title").set_value("Sweet Dreams").run()
+    [b for b in at.button if "אילו שירים בשם הזה" in b.label][0].click().run()
+    chooser = [r for r in at.radio if "איזו יצירה" in r.label]
+    assert chooser, "בורר היצירה לא הופיע"
+    chooser[0].set_value(list(chooser[0].options)[1]).run()
+
+    at.text_input(key="cover_title").set_value("Yellow").run()
+    [b for b in at.button if b.label == "חפש"][0].click().run()
+
+    assert not at.exception
+    assert calls == [("Yellow", "")], f"נשלח work_id של שיר אחר: {calls}"
+    assert not [r for r in at.radio if "איזו יצירה" in r.label], \
+        "בורר היצירה של השיר הקודם עדיין על המסך"
+
+
+def test_only_unseen_applies_to_the_cover_search_too(app):
+    """הצ'קבוק פעל רק בחיפוש החופשי, ולא במצב שבו המשתמש נמצא רוב הזמן."""
+    import app as app_module
+
+    seen = {search_module.track_key("2WEI", "Zombie")}
+    tracks = [track("2WEI", "Zombie", "a"), track("Hidden Citizens", "Alive", "b")]
+
+    assert [t["uid"] for t in app_module.drop_seen(tracks, None)] == \
+        ["itunes-a", "itunes-b"], "בלי הסימון שום דבר לא יורד"
+    assert [t["uid"] for t in app_module.drop_seen(tracks, seen)] == ["itunes-b"]
+
+
 def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):
     """"Brenda Lee - I'm Sorry" החזיר גם שירים אחרים באותו שם, כי החיפוש
     בחנויות מתאים לפי שם בלבד."""
@@ -472,6 +518,22 @@ def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):
     shown = " ".join(str(m.value) for m in app.markdown if m.value)
     assert "Slow Cover" in shown
     assert "Other Band" not in shown
+
+
+def test_the_same_work_filter_does_not_empty_results_it_cannot_verify(app):
+    """"קאברים לאמן", "עוד כמו זה" והחיפוש החופשי אינם עוברים דרך הקטלוג,
+    ולכן אין להם `work_verified` — וסינון עליו רוקן את הרשימה עד
+    "מוצגים 0 מתוך 0"."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie", "a"),
+                                       track("Hidden Citizens", "Alive", "b")]
+    app.run()
+    [c for c in app.checkbox if "מאומת מול הקטלוג" in c.label][0].check().run()
+
+    assert not app.exception
+    shown = " ".join(str(m.value) for m in app.markdown if m.value)
+    assert "2WEI" in shown and "Hidden Citizens" in shown
+    assert any("האימות מול הקטלוג קיים רק" in c.value for c in app.caption), \
+        "הפילטר לא סינן — וצריך להגיד למה"
 
 
 def test_the_playlist_offers_to_refresh_dead_preview_links(app):
