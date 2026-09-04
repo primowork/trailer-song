@@ -127,8 +127,8 @@ def test_the_artist_still_answers_when_the_query_is_an_artist():
 
 def test_an_extra_word_in_the_title_makes_it_a_different_song():
     """אם לשיר קוראים "Happy", שם עם מילה נוספת הוא שיר אחר."""
-    for title in ("Happy Birthday", "Happy Together", "Happy Cover",
-                  "Happy Remix", "Epic Happy Trailer"):
+    for title in ("Happy Birthday", "Happy Together", "Happy Acoustic",
+                  "Epic Happy Trailer"):
         assert search.relevance(make("X", title), "Happy") < search.RELEVANCE_FLOOR, title
 
 
@@ -136,8 +136,15 @@ def test_the_trailer_words_are_cut_even_without_brackets():
     """מילים כמו Epic, Trailer, Trailerized ו-Soundtrack לעולם אינן חלק משם
     של שיר, ולכן הן נחתכות גם חשופות — בניגוד לכל שאר מילות הגרסה."""
     for title in ("Zombie Epic Trailer Version", "Zombie Trailerized",
-                  "Zombie Soundtrack Version", "Zombie Epic"):
+                  "Zombie Soundtrack Version", "Zombie Epic", "Zombie Cover",
+                  "Zombie Remix", "Zombie Version", "Zombie Instrumental"):
         assert search.relevance(make("X", title), "Zombie") >= search.RELEVANCE_FLOOR, title
+
+
+def test_the_other_version_words_still_need_to_declare_themselves():
+    """מילה חשופה שאינה ברשימה היא חלק מהשם."""
+    assert search.relevance(make("X", "Happy Acoustic"), "Happy") < search.RELEVANCE_FLOOR
+    assert search.relevance(make("X", "Happy (Acoustic)"), "Happy") >= search.RELEVANCE_FLOOR
 
 
 def test_a_song_actually_named_after_a_trailer_word_still_matches():

@@ -218,11 +218,13 @@ VERSION_WORDS = ("trailer", "trailerized", "trailerised", "soundtrack", "ost",
                  "remastered", "mix", "rendition", "feat", "ft")
 
 # מילים שלעולם אינן חלק משם של שיר, ולכן נחתכות גם **בלי** סוגריים ובלי
-# מפריד: "Zombie Epic Trailer Version" הוא Zombie. כל השאר — "Cover",
-# "Version", "Remix" וכו' — נחתכות רק כשהן מוכרזות בסוגריים או אחרי מפריד,
-# כי מילה חשופה נוספת בשם היא בדרך כלל שיר אחר ("Happy Birthday").
+# מפריד: "Zombie Epic Trailer Version" הוא Zombie, ו-"Happy Cover" הוא
+# Happy. השאר — cinematic, acoustic, orchestral, edit, theme, remaster,
+# rendition — נחתכות רק כשהן מוכרזות בסוגריים או אחרי מפריד. מילה חשופה
+# שאינה ברשימה היא חלק מהשם, ולכן "Happy Birthday" הוא שיר אחר.
 BARE_VERSION_WORDS = ("trailer", "trailerized", "trailerised", "epic",
-                      "soundtrack", "ost")
+                      "soundtrack", "ost", "cover", "version", "remix",
+                      "instrumental")
 
 
 def title_for_match(title: str) -> str:

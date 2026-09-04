@@ -70,9 +70,12 @@ pytest -q
 iTunes ו-Deezer מסמנים גרסה.
 
 `BARE_VERSION_WORDS` הן היוצא מן הכלל: **epic, trailer, trailerized, soundtrack,
-ost** נחתכות גם חשופות, כי הן לעולם אינן חלק משם של שיר — `Zombie Epic Trailer
-Version` הוא Zombie. שיר ששמו *הוא* אחת מהן (`Epic`, `Soundtrack to My Life`)
-נשאר, כי החיתוך מותיר מחרוזת ריקה והנפילה לאחור היא הכותרת כמו שהיא.
+ost, cover, version, remix, instrumental** נחתכות גם חשופות, כי הן לעולם אינן
+חלק משם של שיר — `Zombie Epic Trailer Version` הוא Zombie, ו-`Happy Cover` הוא
+Happy. השאר (cinematic, acoustic, orchestral, edit, theme, remaster, rendition)
+נחתכות רק כשהן מוכרזות, ולכן `Happy Acoustic` נופל אבל `Happy (Acoustic)` עובר.
+שיר ששמו *הוא* אחת מהן (`Epic`, `Cover`, `Soundtrack to My Life`) נשאר, כי
+החיתוך מותיר מחרוזת ריקה והנפילה לאחור היא הכותרת כמו שהיא.
 
 **רצפת הרלוונטיות היא 90**, ולא 65 כפי שהייתה. אחרי הורדת תג הגרסה מה שנשאר הוא
 *שם השיר*, ולכן קאבר לגיטימי מגיע ל-98–100 — הנמוך שבהם הוא `Bittersweet
