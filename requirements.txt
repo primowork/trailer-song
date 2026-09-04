@@ -1,7 +1,6 @@
 streamlit>=1.32.0
 httpx>=0.27.0
 beautifulsoup4>=4.12.0
-playwright>=1.42.0
 thefuzz>=0.22.0
 # מדידת עוצמת האודיו רצה בדפדפן של המשתמש (Web Audio API) ולכן אין כאן תלות
 # ניתוח אודיו: אין numba/llvmlite, אין מאות MB בתמונת ה-Docker.

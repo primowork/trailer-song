@@ -38,16 +38,6 @@ def test_corrupt_favorites_file_returns_empty(tmp_path, monkeypatch):
     assert storage.warnings
 
 
-def test_cache_drops_expired_entries(tmp_path, monkeypatch):
-    storage = _fresh_storage(tmp_path, monkeypatch)
-    import time
-    storage.save_cache({
-        "fresh|song": {"status": "APPROVED", "cached_at": time.time()},
-        "stale|song": {"status": "APPROVED", "cached_at": time.time() - storage.CACHE_TTL_SECONDS - 10},
-    })
-    assert set(storage.load_cache()) == {"fresh|song"}
-
-
 def test_corrupt_file_returns_default_without_raising(tmp_path, monkeypatch):
     storage = _fresh_storage(tmp_path, monkeypatch)
     (tmp_path / "blacklist.json").write_text("{ not json")

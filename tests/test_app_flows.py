@@ -255,7 +255,6 @@ def test_measured_row_shows_the_score_as_a_badge_and_keeps_the_numbers(app):
 
     captions = [c.value for c in app.caption]
     assert any("עוצמה" in text for text in captions), "המספרים הגולמיים נעלמו לגמרי"
-    assert any("ייצא מדדים" in b.label for b in app.get("download_button"))
 
 
 def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch):

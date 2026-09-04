@@ -1,4 +1,4 @@
-"""אחסון מתמיד: רשימה שחורה, קאש אימותים וסטטוסים.
+"""אחסון מתמיד: פלייליסט, רשימה שחורה, מדידות גודל וטעם.
 
 הנתיב נבחר בזהירות: אם /data לא קיים או לא ניתן לכתיבה (סביבה מקומית, קונטיינר
 ללא volume) נופלים לתיקייה מקומית במקום להפיל את האפליקציה.
@@ -6,10 +6,8 @@
 import json
 import os
 import tempfile
-import time
 
 ENV_VAR = "TRAILER_SONG_DATA_DIR"
-CACHE_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 יום
 
 # אזהרות שנצברו בזמן ריצה כדי שה-UI יוכל להציג אותן במקום לקרוס
 warnings: list[str] = []
@@ -90,63 +88,10 @@ def save_blacklist(blacklist: set) -> bool:
     return _save_json("blacklist.json", sorted(blacklist))
 
 
-# ---------- קאש אימותים ----------
-
-def load_cache() -> dict:
-    """טוען קאש אימותים ומשליך רשומות שפג תוקפן."""
-    raw = _load_json("verification_cache.json", {})
-    if not isinstance(raw, dict):
-        return {}
-    now = time.time()
-    return {
-        key: value
-        for key, value in raw.items()
-        if isinstance(value, dict) and now - value.get("cached_at", 0) < CACHE_TTL_SECONDS
-    }
-
-
-def save_cache(cache: dict) -> bool:
-    return _save_json("verification_cache.json", cache)
-
+# ---------- מפתח זהות לשיר, לקאש המדידות ----------
 
 def cache_key(artist: str, track: str) -> str:
     return f"{artist.strip().lower()}|{track.strip().lower()}"
-
-
-# ---------- סטטוסים ----------
-
-def load_statuses() -> dict:
-    data = _load_json("statuses.json", {})
-    return data if isinstance(data, dict) else {}
-
-
-def save_statuses(statuses: dict) -> bool:
-    return _save_json("statuses.json", statuses)
-
-
-# ---------- שמות שדות הטופס של הפדרציה ----------
-
-def load_federation_fields() -> dict:
-    """שמות שדות שנלמדו מדף החיפוש האמיתי."""
-    data = _load_json("federation_fields.json", {})
-    return data if isinstance(data, dict) else {}
-
-
-def save_federation_fields(fields: dict) -> bool:
-    return _save_json("federation_fields.json", fields)
-
-
-def save_debug_html(html: str, label: str) -> str:
-    """שומר HTML גולמי לצורך כיול הפרסור מול המבנה האמיתי של אתר הפדרציה."""
-    path = _path(f"debug_{label}.html")
-    if not path:
-        return ""
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(html)
-        return path
-    except Exception:
-        return ""
 
 
 # מדדי הגודל שנמדדו בדפדפן, לפי cache_key. נשמרים כדי שרענון עמוד לא ימדוד שוב.
