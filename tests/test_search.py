@@ -126,12 +126,25 @@ def test_the_artist_still_answers_when_the_query_is_an_artist():
 
 
 def test_an_extra_word_in_the_title_makes_it_a_different_song():
-    """אם לשיר קוראים "Happy", שם עם מילה נוספת הוא שיר אחר. "Happy Trailer"
-    הוא קיו של ספריית הפקה ששמו כך, ולא גרסה של Happy — וקודם `clean_track_title`
-    חתכה את "Trailer" והוא קיבל 100."""
-    for title in ("Happy Trailer", "Happy Birthday", "Happy Together",
-                  "Epic Happy Trailer"):
+    """אם לשיר קוראים "Happy", שם עם מילה נוספת הוא שיר אחר."""
+    for title in ("Happy Birthday", "Happy Together", "Happy Cover",
+                  "Happy Remix", "Epic Happy Trailer"):
         assert search.relevance(make("X", title), "Happy") < search.RELEVANCE_FLOOR, title
+
+
+def test_the_trailer_words_are_cut_even_without_brackets():
+    """מילים כמו Epic, Trailer, Trailerized ו-Soundtrack לעולם אינן חלק משם
+    של שיר, ולכן הן נחתכות גם חשופות — בניגוד לכל שאר מילות הגרסה."""
+    for title in ("Zombie Epic Trailer Version", "Zombie Trailerized",
+                  "Zombie Soundtrack Version", "Zombie Epic"):
+        assert search.relevance(make("X", title), "Zombie") >= search.RELEVANCE_FLOOR, title
+
+
+def test_a_song_actually_named_after_a_trailer_word_still_matches():
+    """חיתוך המילה משאיר מחרוזת ריקה, והנפילה לאחור היא הכותרת כמו שהיא."""
+    assert search.relevance(make("X", "Epic"), "Epic") >= search.RELEVANCE_FLOOR
+    assert search.relevance(make("X", "Soundtrack to My Life"),
+                            "Soundtrack to My Life") >= search.RELEVANCE_FLOOR
 
 
 def test_a_declared_version_is_still_the_same_song():
@@ -321,3 +334,44 @@ def test_a_failed_store_lookup_is_not_an_empty_result(monkeypatch):
     search._record_error("itunes.apple.com — HTTP 503")
     assert search.itunes_search("anything") == []
     assert search.last_errors()
+
+
+# ---------- ריענון כתובות תצוגה מקדימה ----------
+
+def test_refresh_preview_asks_itunes_by_the_saved_id(monkeypatch):
+    """`uid` נשמר עם כל גרסה בדיוק בשביל זה."""
+    seen = {}
+
+    def fake_get_json(url, **kwargs):
+        seen["url"] = url
+        return {"results": [{"previewUrl": "https://new/preview.m4a"}]}
+
+    monkeypatch.setattr(search, "get_json", fake_get_json)
+    entry = {"uid": "itunes-123", "artist": "2WEI", "track": "Zombie"}
+    assert search.refresh_preview(entry) == "https://new/preview.m4a"
+    assert "id=123" in seen["url"]
+
+
+def test_refresh_preview_asks_deezer_by_the_saved_id(monkeypatch):
+    monkeypatch.setattr(search, "get_json", lambda url, **k: {"preview": "https://new/p.mp3"})
+    entry = {"uid": "deezer-456", "artist": "2WEI", "track": "Zombie"}
+    assert search.refresh_preview(entry) == "https://new/p.mp3"
+
+
+def test_refresh_preview_falls_back_to_a_search_for_an_entry_with_no_id(monkeypatch):
+    """רשומות שנשמרו לפני ש-uid נכנס לשמירה — ההתאמה לפי `track_key`."""
+    monkeypatch.setattr(search, "get_json", lambda url, **k: None)
+    monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [
+        make("Somebody Else", "Zombie", uid="x", preview="https://preview/x"),
+        make("2WEI", "Zombie (Epic Trailer Version)", uid="y", preview="https://preview/y"),
+    ])
+    entry = {"artist": "2WEI", "track": "Zombie (Epic Trailer Version)"}
+    assert search.refresh_preview(entry) == "https://preview/y"
+
+
+def test_refresh_preview_returns_empty_when_nothing_matches(monkeypatch):
+    """כתובת ריקה ולא כתובת שגויה: גרסה שלא נמצאה נשארת כפי שהיא."""
+    monkeypatch.setattr(search, "get_json", lambda url, **k: None)
+    monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [])
+    monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
+    assert search.refresh_preview({"artist": "A", "track": "B"}) == ""
