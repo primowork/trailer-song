@@ -476,8 +476,11 @@ ITUNES_LOOKUP_URL = "https://itunes.apple.com/lookup"
 DEEZER_TRACK_URL = "https://api.deezer.com/track"
 
 
-def refresh_preview(entry: dict, client: httpx.Client | None = None) -> str:
-    """כתובת תצוגה מקדימה חיה לגרסה שמורה, או "" אם לא נמצאה.
+def refresh_preview(entry: dict, client: httpx.Client | None = None) -> tuple[str, str]:
+    """(כתובת תצוגה מקדימה חיה, uid) לגרסה שמורה. ("", "") אם לא נמצאה.
+
+    ה-uid מוחזר כדי שרשומה שנשמרה לפני שהשדה קיים תקבל אותו בריענון הראשון,
+    והריענון הבא יהיה שאילתת lookup ישירה במקום חיפוש בחנות.
 
     כתובת ה-preview היא כתובת CDN ואין ערובה שתחיה לנצח — גרסה ששמורה
     בפלייליסט חודשים יכולה להצביע על קובץ שכבר לא קיים, והכפתור שלה פשוט
@@ -495,22 +498,19 @@ def refresh_preview(entry: dict, client: httpx.Client | None = None) -> str:
         payload = get_json(f"{ITUNES_LOOKUP_URL}?id={uid[len('itunes-'):]}", client=client)
         results = (payload or {}).get("results") or []
         if results and results[0].get("previewUrl"):
-            return results[0]["previewUrl"]
+            return results[0]["previewUrl"], uid
     elif uid.startswith("deezer-"):
         payload = get_json(f"{DEEZER_TRACK_URL}/{uid[len('deezer-'):]}", client=client)
         if payload and payload.get("preview"):
-            return payload["preview"]
+            return payload["preview"], uid
 
     wanted = track_key(artist, track)
-    for candidate in itunes_search(f"{artist} {track}", limit=25, client=client):
-        if (track_key(candidate["artist"], candidate["track"]) == wanted
-                and candidate.get("preview_url")):
-            return candidate["preview_url"]
-    for candidate in deezer_search(f"{artist} {track}", limit=25, client=client):
-        if (track_key(candidate["artist"], candidate["track"]) == wanted
-                and candidate.get("preview_url")):
-            return candidate["preview_url"]
-    return ""
+    for finder in (itunes_search, deezer_search):
+        for candidate in finder(f"{artist} {track}", limit=25, client=client):
+            if (track_key(candidate["artist"], candidate["track"]) == wanted
+                    and candidate.get("preview_url")):
+                return candidate["preview_url"], candidate.get("uid", "")
+    return "", ""
 
 
 # ---------- דירוג וניפוי ----------

@@ -330,14 +330,24 @@ def _audio_behaviour():
                     document.querySelectorAll(".ts-play").forEach(function (button) {
                         if (button.dataset.id !== audio.dataset.playing) return;
                         button.classList.add("is-dead");
+                        // ובלי זה הוא נשאר עם אייקון "עוצר" על שמע שלא רץ:
+                        // ב-Safari `paused` לא בהכרח חוזר ל-true אחרי שגיאת
+                        // טעינה, ולכן `paint` לבדה לא ניקתה את הסימון
+                        button.classList.remove("is-playing");
                         button.title = "התצוגה המקדימה של הגרסה הזו אינה זמינה יותר";
                     });
-                    paint();
                 }, true);
 
-                // כפתורים שנוצרו ב-rerun מקבלים את המצב הנוכחי
-                new MutationObserver(paint).observe(document.documentElement,
-                    { childList: true, subtree: true });
+                // כפתורים שנוצרו ב-rerun מקבלים את המצב הנוכחי. מקובץ
+                // ל-frame אחד ולא מורץ על כל מוטציה: במהלך חיפוש Streamlit
+                // משנה את העץ ברצף, וסריקה של כל `.ts-play` בכל שינוי היא
+                // עבודה מיותרת בדיוק ברגע שבו הדף גם נגלל.
+                let queued = false;
+                new MutationObserver(function () {
+                    if (queued) return;
+                    queued = true;
+                    requestAnimationFrame(function () { queued = false; paint(); });
+                }).observe(document.body, { childList: true, subtree: true });
             };
 
             const script = doc.createElement("script");
@@ -608,21 +618,29 @@ def refresh_previews(favorites: dict):
         def resolve(item):
             key, entry = item
             try:
-                return key, search_module.refresh_preview(entry, client=client)
+                return (key, *search_module.refresh_preview(entry, client=client))
             except Exception:
                 # גרסה אחת שנכשלה לא מפילה את הריענון כולו
-                return key, ""
+                return key, "", ""
 
+        missing = 0
         with ThreadPoolExecutor(max_workers=8) as pool:
-            for index, (key, url) in enumerate(pool.map(resolve, entries)):
+            for index, (key, url, uid) in enumerate(pool.map(resolve, entries)):
                 progress.progress((index + 1) / len(entries),
                                   text=f"{index + 1}/{len(entries)}")
-                if url and url != favorites[key].get("preview_url"):
+                if not url:
+                    missing += 1
+                    continue
+                # ה-uid נשמר גם כשהכתובת לא השתנתה: הריענון הבא יהיה אז
+                # שאילתה ישירה במקום חיפוש בחנות
+                if uid and not favorites[key].get("uid"):
+                    favorites[key]["uid"] = uid
+                if url != favorites[key].get("preview_url"):
                     favorites[key]["preview_url"] = url
                     changed += 1
     progress.empty()
     storage.save_favorites(favorites)
-    st.toast(f"רועננו {changed} מתוך {len(entries)}", icon="🔗")
+    st.toast(f"רועננו {changed} · {missing} לא נמצאו", icon="🔗")
     st.rerun()
 
 
@@ -714,6 +732,16 @@ with st.sidebar:
     st.write(f"גרסאות שמורות: **{len(favorites)}**")
 
     if favorites:
+        # מעל הקבוצות ולא מתחתיהן: עם שבעים גרסאות שמורות ומכווצות הכפתור
+        # ישב מתחת לכל הרשימה וגם מתחת לייצוא, ולא נמצא. כשכפתור נגינה
+        # אינו מנגן זה בדיוק המקום שאליו צריך להגיע.
+        if st.button("רענן קישורי נגינה", icon=":material/refresh:",
+                     width="stretch",
+                     help="כתובת התצוגה המקדימה היא כתובת CDN ואינה חיה לנצח. "
+                          "כפתור נגינה אפור הוא גרסה שהכתובת שלה כבר מתה — "
+                          "כאן מבקשים מהחנות כתובת חדשה לכל הגרסאות השמורות."):
+            refresh_previews(favorites)
+
         learned_sidebar = taste_profile()
         summary = taste.describe(learned_sidebar)
         if summary:
@@ -761,10 +789,6 @@ with st.sidebar:
                            data=buffer.getvalue().encode("utf-8-sig"),
                            file_name="playlist.csv", mime="text/csv")
 
-        if st.button("רענן קישורי נגינה", icon=":material/refresh:",
-                     help="כתובת התצוגה המקדימה היא כתובת CDN ואינה חיה לנצח. "
-                          "כאן מבקשים מהחנות כתובת חדשה לכל גרסה שמורה."):
-            refresh_previews(favorites)
     else:
         st.caption("סמן ❤️ ליד גרסה שאהבת. היא תישמר כאן, והדירוג ילמד "
                    "מה מאפיין את מה שאתה אוהב ויעלה גרסאות כאלה לראש.")

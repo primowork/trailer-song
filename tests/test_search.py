@@ -355,14 +355,14 @@ def test_refresh_preview_asks_itunes_by_the_saved_id(monkeypatch):
 
     monkeypatch.setattr(search, "get_json", fake_get_json)
     entry = {"uid": "itunes-123", "artist": "2WEI", "track": "Zombie"}
-    assert search.refresh_preview(entry) == "https://new/preview.m4a"
+    assert search.refresh_preview(entry) == ("https://new/preview.m4a", "itunes-123")
     assert "id=123" in seen["url"]
 
 
 def test_refresh_preview_asks_deezer_by_the_saved_id(monkeypatch):
     monkeypatch.setattr(search, "get_json", lambda url, **k: {"preview": "https://new/p.mp3"})
     entry = {"uid": "deezer-456", "artist": "2WEI", "track": "Zombie"}
-    assert search.refresh_preview(entry) == "https://new/p.mp3"
+    assert search.refresh_preview(entry) == ("https://new/p.mp3", "deezer-456")
 
 
 def test_refresh_preview_falls_back_to_a_search_for_an_entry_with_no_id(monkeypatch):
@@ -373,7 +373,7 @@ def test_refresh_preview_falls_back_to_a_search_for_an_entry_with_no_id(monkeypa
         make("2WEI", "Zombie (Epic Trailer Version)", uid="y", preview="https://preview/y"),
     ])
     entry = {"artist": "2WEI", "track": "Zombie (Epic Trailer Version)"}
-    assert search.refresh_preview(entry) == "https://preview/y"
+    assert search.refresh_preview(entry) == ("https://preview/y", "y")
 
 
 def test_refresh_preview_returns_empty_when_nothing_matches(monkeypatch):
@@ -381,7 +381,7 @@ def test_refresh_preview_returns_empty_when_nothing_matches(monkeypatch):
     monkeypatch.setattr(search, "get_json", lambda url, **k: None)
     monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [])
     monkeypatch.setattr(search, "deezer_search", lambda *a, **k: [])
-    assert search.refresh_preview({"artist": "A", "track": "B"}) == ""
+    assert search.refresh_preview({"artist": "A", "track": "B"}) == ("", "")
 
 
 def test_a_query_with_brackets_matches_its_own_title():
@@ -399,3 +399,13 @@ def test_the_short_and_the_full_form_of_a_title_find_each_other():
     full = "(Sittin' On) The Dock Of The Bay"
     assert search.relevance(make("X", "The Dock Of The Bay (Epic Trailer Version)"),
                             full) >= search.RELEVANCE_FLOOR
+
+
+def test_refresh_preview_returns_the_id_so_the_next_refresh_is_direct(monkeypatch):
+    """רשומה שנשמרה לפני שהשדה קיים מקבלת uid בריענון הראשון, והבא יהיה
+    שאילתת lookup ישירה במקום חיפוש בחנות."""
+    monkeypatch.setattr(search, "get_json", lambda url, **k: None)
+    monkeypatch.setattr(search, "itunes_search", lambda *a, **k: [
+        make("2WEI", "Zombie", uid="itunes-77", preview="https://p/77")])
+    url, uid = search.refresh_preview({"artist": "2WEI", "track": "Zombie"})
+    assert (url, uid) == ("https://p/77", "itunes-77")

@@ -545,6 +545,24 @@ def test_the_playlist_offers_to_refresh_dead_preview_links(app):
     assert any("רענן קישורי נגינה" in b.label for b in app.button)
 
 
+def test_the_refresh_button_sits_above_the_saved_groups(app):
+    """עם שבעים גרסאות מכווצות הוא ישב מתחת לכל הרשימה וגם מתחת לייצוא,
+    ולא נמצא — בדיוק כשכפתור נגינה מפסיק לנגן."""
+    for index in range(3):
+        _save(app, f"Artist{index}", f"Song {index} (Epic Trailer Version)", f"k{index}",
+              searched=f"Song {index}")
+
+    labels = [b.label for b in app.button]
+    groups = [b.label for b in app.get("expander")]
+    assert "רענן קישורי נגינה" in labels
+    refresh_at = labels.index("רענן קישורי נגינה")
+    opens = [labels.index(l) for l in labels
+             if l and l.startswith("Artist")]
+    assert groups, "אין קבוצות בפלייליסט"
+    assert all(refresh_at < position for position in opens), \
+        "כפתור הריענון יושב אחרי הגרסאות השמורות"
+
+
 def test_a_saved_version_keeps_its_source_id_so_it_can_be_refreshed(app):
     """בלי `uid` אי אפשר לפנות שוב לחנות על הגרסה הזו."""
     _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
