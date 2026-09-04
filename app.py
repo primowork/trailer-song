@@ -143,6 +143,43 @@ st.markdown(
     }
     .ts-time { flex: none; font-size: 0.72rem; color: #8A91A3; }
 
+    /* ---- סרגל עליון ושורת החיפוש ---- */
+    .st-key-appbar { gap: 0.6rem; margin-bottom: 0.9rem; }
+    .st-key-appbar h4 { margin: 0; padding: 0; font-size: 1.12rem; }
+    /* סמל: ריבוע ענבר עם חור כהה — תקליט, לא ריבוע מלא */
+    .ts-mark {
+        width: 26px; height: 26px; border-radius: 7px; background: #FFB020;
+        position: relative; flex: none;
+    }
+    .ts-mark::after {
+        content: ""; position: absolute; inset: 9px;
+        border-radius: 50%; background: #0B0D12;
+    }
+
+    /* שני האקספנדרים בשורה אחת: שני פסים ברוחב מלא זה אחר זה נראו כמו שני
+       כרטיסים ריקים מעל התוצאות */
+    .st-key-panels { gap: 0.5rem; }
+    /* המסגרת שייכת למכולה, והשדות שקופים בתוכה — כך שלושת הפקדים נקראים
+       כרכיב אחד ולא כשלושה טפסים נפרדים */
+    .st-key-searchbar {
+        border: 1px solid #2C3342; border-radius: 12px;
+        background: #14171F; padding: 5px; gap: 5px;
+    }
+    .st-key-searchbar [data-baseweb="input"],
+    .st-key-searchbar [data-baseweb="base-input"] {
+        border: none !important; background: transparent !important;
+    }
+    .st-key-searchbar [data-testid="stTextInputRootElement"] {
+        border: none; background: transparent;
+    }
+    .st-key-searchbar [data-testid="stElementContainer"]:first-child { flex-grow: 1; }
+    /* בטלפון שדה האמן תופס שורה משלו ולא נחתך באמצע מילה */
+    @media (max-width: 640px) {
+        .st-key-searchbar [data-testid="stElementContainer"]:nth-child(2) {
+            flex-basis: 100%;
+        }
+    }
+
     /* עטיפה חסרה: גרדיאנט וגליף במקום ריבוע אפור שטוח שמושך את העין */
     .ts-art-blank {
         border-radius: 8px; border: 1px solid #262B38;
@@ -1269,11 +1306,13 @@ def metrics_export(tracks: list[dict]):
 _audio_behaviour()
 _keep_scroll_position()
 
-st.title("🎵 סורק קאברים לטריילרים")
-st.write(
-    "שם שיר או אמן, ומצב חיפוש אחד: קאברים לשיר (מהמאגר וגם מהחנויות), "
-    "קאברים לכל הקטלוג של אמן, או חיפוש חופשי עם פילטרים."
-)
+# סרגל עליון ולא כותרת ראשית: כותרת של 2.5rem ופסקת הסבר דחפו את התוצאות
+# — מה שהמשתמש בא בשבילו — הרחק מתחת לקפל. ההסבר עבר ל-help של שדה החיפוש.
+with st.container(key="appbar", horizontal=True, vertical_alignment="center"):
+    st.html("<div class='ts-mark'></div>")
+    st.markdown("#### סורק קאברים לטריילרים")
+    st.container(width="stretch")
+    st.markdown(f":gray[{len(st.session_state['favorites'])} שמורות]")
 
 _pending = st.session_state.pop("pending_fields", None)
 if _pending:
@@ -1284,15 +1323,24 @@ if _pending:
     if _auto_run:
         st.session_state["auto_run"] = True
 
-# `vertical_alignment="bottom"` כדי שהקובייה תשב בשורת שדות הקלט ולא
-# מעליהם — לשדות יש תווית מעל, ולכפתור אין
-col_title, col_artist, col_dice = st.columns([5, 5, 3], vertical_alignment="bottom")
-cover_title = col_title.text_input(
-    "שם השיר:", key="cover_title", placeholder="למשל: Bitter Sweet Symphony")
-cover_artist = col_artist.text_input(
-    "אמן מקורי (לא חובה):", key="cover_artist", placeholder="The Verve",
-    help="מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955 "
-         "וגם Eurythmics 1983.")
+# שדה חיפוש אחד ולא שלוש עמודות עם תווית מעל כל אחת: המסגרת היא של
+# המכולה (`.st-key-searchbar` ב-CSS), והשדות שקופים בתוכה — כך זה נקרא
+# כרכיב אחד במקום שלושה טפסים נפרדים
+# `wrap=True`: בדסקטופ הכל נכנס לשורה אחת ממילא, ובטלפון שדה האמן יורד
+# לשורה שנייה במקום להידחס עד שהטקסט נחתך
+searchbar = st.container(key="searchbar", horizontal=True, wrap=True,
+                         vertical_alignment="center")
+with searchbar:
+    cover_title = st.text_input(
+        "שם השיר", key="cover_title", placeholder="שם השיר",
+        label_visibility="collapsed",
+        help="שם שיר או אמן, ומצב חיפוש אחד: קאברים לשיר (מהמאגר וגם "
+             "מהחנויות), קאברים לכל הקטלוג של אמן, או חיפוש חופשי עם פילטרים.")
+    cover_artist = st.text_input(
+        "אמן מקורי", key="cover_artist", placeholder="אמן מקורי (לא חובה)",
+        label_visibility="collapsed",
+        help="מכריע בשמות עמומים: 'Sweet Dreams' הוא גם סטנדרט קאנטרי מ-1955 "
+             "וגם Eurythmics 1983.")
 
 RECENT_ROLLS = 5
 
@@ -1320,10 +1368,11 @@ def roll_famous_song():
 
 # עם תווית ולא אמוג'י בלבד: בטלפון העמודות נערמות, וכפתור ברוחב מלא
 # שכתוב עליו רק "🎲" אינו מסביר את עצמו
-if col_dice.button("הגרל שיר", icon=":material/casino:", use_container_width=True,
-                   help="מגריל שיר מוכר מהמצעדים ומחפש לו גרסאות טריילר. "
-                        "ככל שהשיר מוכר יותר, כך גדל הסיכוי שמישהו כבר עשה לו קאבר."):
-    roll_famous_song()
+with searchbar:
+    if st.button("", key="btn_dice", icon=":material/casino:",
+                 help="מגריל שיר מוכר מהמצעדים ומחפש לו גרסאות טריילר. "
+                      "ככל שהשיר מוכר יותר, כך גדל הסיכוי שמישהו כבר עשה לו קאבר."):
+        roll_famous_song()
 
 
 def suggestion_row(query: str):
@@ -1457,8 +1506,13 @@ def _imported_entries(chart: dict) -> list[dict]:
 # **משתנה**, ולכן העברת False כשהוא כבר False לא סוגרת כלום. נמדד
 # בדפדפן: אחרי פתיחה ידנית הרכיב נשאר פתוח. מפתח חדש מרנדר רכיב חדש,
 # והוא נולד מכווץ — זה מה שעובד בפועל.
-with st.expander("אינדקס מצעדים", icon=":material/leaderboard:", expanded=False,
-                 key=f"chart_index_{st.session_state['index_generation']}"):
+# שניהם בשורה אחת: שני פסים ברוחב מלא זה מתחת לזה נראו כמו שני כרטיסים
+# ריקים בין שורת החיפוש לתוצאות
+panel_index, panel_filters = st.columns(2)
+
+with panel_index, st.expander("אינדקס מצעדים", icon=":material/leaderboard:",
+                              expanded=False,
+                              key=f"chart_index_{st.session_state['index_generation']}"):
     st.caption("נקודת פתיחה לחיפוש: לחיצה על אמן מריצה 'קאברים לאמן', "
                "ולחיצה על שיר מריצה 'קאברים לשיר' — לשתיהן אותה תוצאה כמו מילוי "
                "השדות למעלה ולחיצה על חפש. המיקום במצעד אינו משפיע על דירוג "
@@ -1498,7 +1552,7 @@ with st.expander("אינדקס מצעדים", icon=":material/leaderboard:", exp
     if entries:
         _entry_grid(entries, key_prefix)
 
-with st.expander("פילטרים", icon=":material/tune:", expanded=False):
+with panel_filters, st.expander("פילטרים", icon=":material/tune:", expanded=False):
     col1, col2, col3 = st.columns(3)
     style_filter = col1.selectbox("סגנון / ז'אנר:", [ALL, *STYLES])
     tempo_filter = col2.selectbox("קצב / טמפו:", [ALL, "Fast Action", "Slow Build-up"])
@@ -1533,16 +1587,26 @@ def _lookup_failed() -> str:
     return "החיפוש לא הושלם: " + " · ".join(unique[:3])
 
 
-search_mode = st.radio(
-    "סוג חיפוש:", SEARCH_MODES, horizontal=True, key="search_mode",
-    help=f"{MODE_SONG}: ממזג את מאגר הגרסאות הרשמי (SecondHandSongs/MusicBrainz) "
-         "עם חיפוש בחנויות אחרי טראקים 'Epic/Trailer/Cinematic'. "
-         f"{MODE_ARTIST}: מזהה את השירים המזוהים ביותר עם האמן ומביא קאברים לכל "
-         f"אחד. {MODE_FREE}: חיפוש רחב עם הפילטרים למעלה, בלי להיצמד ליצירה מסוימת.")
+# צ'יפים ולא רדיו: שורת בחירה קומפקטית במקום שלושה עיגולים עם תוויות
+# הצ'יפים והכפתור המשני שלהם באותה שורה: כפתור בודד שצף מתחתיהם נראה
+# כמו שריד ולא כמו חלק מהבקרה
+mode_row = st.container(key="moderow", horizontal=True, wrap=True,
+                        vertical_alignment="center")
+with mode_row:
+    search_mode = st.pills(
+        "סוג חיפוש", SEARCH_MODES, key="search_mode", label_visibility="collapsed",
+        help=f"{MODE_SONG}: ממזג את מאגר הגרסאות הרשמי "
+             "(SecondHandSongs/MusicBrainz) עם חיפוש בחנויות אחרי טראקים "
+             f"'Epic/Trailer/Cinematic'. {MODE_ARTIST}: מזהה את השירים "
+             "המזוהים ביותר עם האמן ומביא קאברים לכל "
+             f"אחד. {MODE_FREE}: חיפוש רחב עם הפילטרים למעלה, בלי להיצמד "
+             "ליצירה מסוימת.")
 
 chosen_work = ""
 if search_mode == MODE_SONG:
-    if st.button("אילו שירים בשם הזה?", icon=":material/search:"):
+    with mode_row:
+        _which = st.button("אילו שירים בשם הזה?", icon=":material/search:")
+    if _which:
         if not cover_title.strip():
             st.warning("הכנס שם שיר")
         else:
@@ -1592,7 +1656,9 @@ elif search_mode == MODE_ARTIST and cover_artist.strip():
             st.caption("לא נמצאו שירים מזוהים עם האמן הזה. אפשר עדיין ללחוץ "
                        "'🔎 חפש' לחיפוש קאברים ישיר.")
 
-run_search = st.button("חפש", type="primary", icon=":material/search:") or st.session_state.pop("auto_run", False)
+with searchbar:
+    _clicked_search = st.button("חפש", type="primary", icon=":material/search:")
+run_search = _clicked_search or st.session_state.pop("auto_run", False)
 
 
 def _run_similar():

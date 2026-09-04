@@ -119,7 +119,8 @@ def test_picking_an_artist_also_collapses_it(app, monkeypatch):
 # ---------- הגרלת שיר מוכר ----------
 
 def _dice(app):
-    return [b for b in app.button if (b.label or "").startswith("הגרל")][0]
+    # לפי key ולא לפי תווית: הכפתור הוא אייקון בתוך שורת החיפוש
+    return app.button(key="btn_dice")
 
 
 def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monkeypatch):
@@ -280,8 +281,8 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     assert app.session_state["candidates"]
 
 
-def test_search_mode_radio_has_three_options(app):
-    modes = app.radio(key="search_mode")
+def test_search_mode_has_three_options(app):
+    modes = app.get("button_group")[0]
     assert modes.options == ["קאברים לשיר", "קאברים לאמן", "חיפוש חופשי + פילטרים"]
 
 
@@ -304,7 +305,7 @@ def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
     monkeypatch.setattr(covers, "find_artist_covers",
                         lambda *a, **k: (called.setdefault("hit", True) and
                                         [track("X", "Y", "y2")], "src", ["Y"]))
-    modes = app.radio(key="search_mode")
+    modes = app.get("button_group")[0]
     modes.set_value("קאברים לאמן").run()
     app.text_input(key="cover_artist").set_value("Coldplay").run()
     search_button = [b for b in app.button if b.label == "חפש"][0]
@@ -320,7 +321,7 @@ def test_free_mode_dispatches_to_search_covers(app, monkeypatch):
     monkeypatch.setattr(search_module, "search_covers",
                         lambda *a, **k: called.setdefault("hit", True) and
                                         [track("X", "Y", "y3")])
-    modes = app.radio(key="search_mode")
+    modes = app.get("button_group")[0]
     modes.set_value("חיפוש חופשי + פילטרים").run()
     app.text_input(key="cover_title").set_value("Yellow").run()
     search_button = [b for b in app.button if b.label == "חפש"][0]
