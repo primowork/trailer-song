@@ -1,0 +1,21 @@
+# ערכת הנושא של האפליקציה. זו הדרך המובנית של Streamlit, ולכן היא חלה גם על
+# רכיבים שאין לנו CSS עליהם (בוררים, popover, סרגל הצד) — בניגוד להזרקת CSS,
+# שמכסה רק את מה שנזכרנו לכסות.
+#
+# כהה וקולנועי, כי זה מה שהתוכן: מוזיקת טריילרים. הרקע הכהה גם מבליט את
+# עטיפות האלבומים ואת תגי הציון, שהם המידע שבאמת מבדיל בין תוצאות.
+# אקסנט אחד — ענבר — ששמור ל"גדול"/פעולה ראשית; צבע סמנטי רק לסטטוס הרפרטואר.
+[theme]
+base = "dark"
+primaryColor = "#FFB020"
+backgroundColor = "#0B0D12"
+secondaryBackgroundColor = "#14171F"
+textColor = "#E9EBF0"
+borderColor = "#262B38"
+baseRadius = "medium"
+buttonRadius = "medium"
+showWidgetBorder = true
+# Heebo ו-Assistant הן משפחות עבריות-לטיניות מלאות, ולכן שם אמן באנגלית ושם
+# שדה בעברית נראים כמו אותה מערכת ולא כמו שתי מערכות שהודבקו
+font = "Assistant, sans-serif"
+headingFont = "Heebo, sans-serif"

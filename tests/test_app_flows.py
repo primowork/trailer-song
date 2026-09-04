@@ -82,7 +82,7 @@ def test_classics_song_click_runs_a_focused_song_search(app, monkeypatch):
     classics_button.click().run()
 
     assert not app.exception
-    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["search_mode"] == "קאברים לשיר"
     assert app.session_state["cover_title"] == first["track"]
     assert app.session_state["cover_artist"] == first["artist"]
     assert app.session_state["candidates"]
@@ -116,10 +116,10 @@ def test_picking_an_artist_also_collapses_it(app, monkeypatch):
     assert app.session_state["index_generation"] > before
 
 
-# ---------- 🎲 הגרלת שיר מוכר ----------
+# ---------- הגרלת שיר מוכר ----------
 
 def _dice(app):
-    return [b for b in app.button if (b.label or "").startswith("🎲")][0]
+    return [b for b in app.button if (b.label or "").startswith("הגרל")][0]
 
 
 def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monkeypatch):
@@ -134,7 +134,7 @@ def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monke
     rolled = (app.session_state["cover_artist"], app.session_state["cover_title"])
     assert all(rolled)
     assert rolled in {(e["artist"], e["track"]) for e in classics.famous_pool()}
-    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["search_mode"] == "קאברים לשיר"
     # הוגרל *ורץ*, כמו לחיצה על שיר במצעדים
     assert app.session_state["candidates"]
 
@@ -176,14 +176,14 @@ def test_greatest_artist_click_shows_a_preview_before_searching(app, monkeypatch
 
     assert not app.exception
     assert app.session_state["cover_artist"] == artists.GREATEST_ARTISTS[0]
-    assert app.session_state["search_mode"] == "🎤 קאברים לאמן"
+    assert app.session_state["search_mode"] == "קאברים לאמן"
     # לא הורץ חיפוש קאברים יקר מיד — קודם מוצגת תצוגה מקדימה זולה
     assert app.session_state["candidates"] == []
     assert any("Yesterday" in b.label for b in app.button
               if (b.key or "").startswith("artist_preview_"))
 
-    # "🔎 חפש" מריץ את החיפוש המלא לפי האמן, בדיוק כמו היום
-    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    # "חפש" מריץ את החיפוש המלא לפי האמן, בדיוק כמו היום
+    search_button = [b for b in app.button if b.label == "חפש"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -206,7 +206,7 @@ def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
     preview_button.click().run()
 
     assert not app.exception
-    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["search_mode"] == "קאברים לשיר"
     assert app.session_state["cover_title"] == "Yesterday"
     assert app.session_state["candidates"]
     assert app.session_state["candidates"][0]["uid"] == "itunes-c1"
@@ -239,15 +239,21 @@ def test_more_like_this_replaces_the_list(app, monkeypatch):
     assert [t["uid"] for t in app.session_state["candidates"]] == ["itunes-o1"]
 
 
-def test_measured_row_shows_the_score_and_the_raw_numbers(app):
+def test_measured_row_shows_the_score_as_a_badge_and_keeps_the_numbers(app):
+    """הציון הוא תג על הכרטיס; המספרים הגולמיים ירדו ל-⋯ ולא נמחקו."""
     app.session_state["candidates"] = [track("Epic Covers", "Yellow (Epic)", "e1")]
     app.session_state["bigness"] = {"itunes-e1": {"loudness": 0.30, "low_end": 3.0,
                                                  "onset_rate": 4.0, "dynamic_span": 6.0}}
     app.run()
 
     assert not app.exception
+    # התג נושא את המספר בלבד; המדרגה מקודדת בצבע (ענבר = גדול)
+    badges = [m.value for m in app.markdown if m.value and "badge[" in m.value]
+    assert any("orange-badge" in text and "graphic_eq" in text for text in badges), \
+        "אין תג ציון על הכרטיס"
+
     captions = [c.value for c in app.caption]
-    assert any("🔊 גדול" in text and "עוצמה" in text for text in captions)
+    assert any("עוצמה" in text for text in captions), "המספרים הגולמיים נעלמו לגמרי"
     assert any("ייצא מדדים" in b.label for b in app.get("download_button"))
 
 
@@ -270,13 +276,13 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     assert not app.exception
     assert app.session_state["cover_title"] == "Umbrella"
     assert app.session_state["cover_artist"] == "Rihanna"
-    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["search_mode"] == "קאברים לשיר"
     assert app.session_state["candidates"]
 
 
 def test_search_mode_radio_has_three_options(app):
     modes = app.radio(key="search_mode")
-    assert modes.options == ["🎬 קאברים לשיר", "🎤 קאברים לאמן", "🔎 חיפוש חופשי + פילטרים"]
+    assert modes.options == ["קאברים לשיר", "קאברים לאמן", "חיפוש חופשי + פילטרים"]
 
 
 def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
@@ -285,7 +291,7 @@ def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
                         lambda *a, **k: (called.setdefault("hit", True) and
                                         [track("X", "Y", "y1")], "src", None))
     app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button = [b for b in app.button if b.label == "חפש"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -299,9 +305,9 @@ def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
                         lambda *a, **k: (called.setdefault("hit", True) and
                                         [track("X", "Y", "y2")], "src", ["Y"]))
     modes = app.radio(key="search_mode")
-    modes.set_value("🎤 קאברים לאמן").run()
+    modes.set_value("קאברים לאמן").run()
     app.text_input(key="cover_artist").set_value("Coldplay").run()
-    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button = [b for b in app.button if b.label == "חפש"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -315,9 +321,9 @@ def test_free_mode_dispatches_to_search_covers(app, monkeypatch):
                         lambda *a, **k: called.setdefault("hit", True) and
                                         [track("X", "Y", "y3")])
     modes = app.radio(key="search_mode")
-    modes.set_value("🔎 חיפוש חופשי + פילטרים").run()
+    modes.set_value("חיפוש חופשי + פילטרים").run()
     app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button = [b for b in app.button if b.label == "חפש"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -335,7 +341,7 @@ def test_filters_thread_through_to_song_mode(app, monkeypatch):
 
     monkeypatch.setattr(covers, "find_all_covers", fake)
     app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.label == "🔎 חפש"][0]
+    search_button = [b for b in app.button if b.label == "חפש"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -392,7 +398,7 @@ def test_heart_toggles_off(app):
 
 def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
     headers = [m.value for m in app.markdown]
-    assert any("❤️ הפלייליסט שלי" in text for text in headers)
+    assert any("הפלייליסט שלי" in text for text in headers)
     # החסימה עדיין קיימת — רק ירדה לאקספנדר מכווץ
     assert not any("### 🚫 אמנים ברשימה השחורה" in text for text in headers)
 
@@ -442,8 +448,8 @@ def test_the_reason_shown_is_the_reason_it_ranks(app):
     assert search_module.trailer_strength(_epic()) > search_module.trailer_strength(_plain())
     app.session_state["candidates"] = [_epic()]
     app.run()
-    assert any("סימן:" in (c.value or "") and "כותרת אפית" in (c.value or "")
-               for c in app.caption)
+    badges = [m.value for m in app.markdown if m.value and "badge[" in m.value]
+    assert any("כותרת אפית" in text and "ז'אנר פסקול" in text for text in badges)
 
 
 def test_a_one_letter_artist_is_not_a_trailer_artist():
@@ -536,7 +542,7 @@ def test_a_new_search_recomputes_the_order(app, monkeypatch):
     monkeypatch.setattr(covers, "find_all_covers",
                         lambda title, artist="", **k: ([track("New", "Fresh", "n1")], "src", None))
     app.text_input(key="cover_title").set_value("Fresh").run()
-    [b for b in app.button if b.label == "🔎 חפש"][0].click().run()
+    [b for b in app.button if b.label == "חפש"][0].click().run()
 
     assert not app.exception
     assert app.session_state["result_generation"] > generation
@@ -563,13 +569,13 @@ def test_the_resort_control_never_appears_or_disappears(app):
     """
     app.session_state["candidates"] = _thirty()
     app.run()
-    quiet = [b for b in app.button if (b.label or "").startswith("🔄")]
+    quiet = [b for b in app.button if (b.label or "").startswith(("סדר מחדש", "הסדר מעודכן"))]
     assert len(quiet) == 1 and quiet[0].disabled
 
     app.session_state["bigness"] = {f"itunes-u{i}": (BIG if i in (5, 17, 19) else SMALL)
                                     for i in range(20)}
     app.run()
-    active = [b for b in app.button if (b.label or "").startswith("🔄")]
+    active = [b for b in app.button if (b.label or "").startswith(("סדר מחדש", "הסדר מעודכן"))]
     assert len(active) == 1 and not active[0].disabled
     assert "יזוזו" in active[0].label
 
@@ -628,7 +634,7 @@ def test_taste_lifts_tracks_that_match_what_was_hearted(app):
     frozen = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert frozen.index("btn_favorite_itunes-calm") < frozen.index("btn_favorite_itunes-loud")
 
-    [b for b in app.button if (b.label or "").startswith("🔄 סדר מחדש")][0].click().run()
+    [b for b in app.button if (b.label or "").startswith("סדר מחדש")][0].click().run()
     order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert order.index("btn_favorite_itunes-loud") < order.index("btn_favorite_itunes-calm")
 
@@ -755,7 +761,7 @@ def test_a_saved_version_is_clickable_and_searches_for_it_again(app, monkeypatch
     assert not app.exception
     assert app.session_state["cover_title"] == "Zombie"
     assert app.session_state["cover_artist"] == "2WEI"
-    assert app.session_state["search_mode"] == "🎬 קאברים לשיר"
+    assert app.session_state["search_mode"] == "קאברים לשיר"
     assert app.session_state["candidates"]
 
 
