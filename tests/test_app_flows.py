@@ -771,6 +771,65 @@ def test_a_quiet_epic_version_outranks_a_loud_plain_cover(app):
     assert _row_order(app)[0] == "itunes-epic"
 
 
+def test_a_verified_cover_is_not_buried_under_generic_declared_cues(app):
+    """התלונה: גרסת טריילר טובה במקום 1, אחריה שמונה-עשרה קיו-ים גנריים
+    מספריות הפקה, ובמקום 20 קאבר אמיתי ומצוין.
+
+    ספריות הפקה מכריזות על עצמן כטריילר בהגדרה — זה המוצר שלהן — ולכן
+    `trailer_strength` הטה רבע מהדירוג לטובתן. `work_verified` הוא האות
+    שמפריד: הקטלוג פותר את היצירה, וקיו בשם "Stayin' Alive Epic Trailer"
+    אינו גרסה שלה.
+    """
+    cues = []
+    for index in range(18):
+        cue = track(f"LibraryCue{index}", f"Stayin' Alive Epic Trailer {index}",
+                    f"c{index}", album="Epic Trailer Music Vol 3", genre="Soundtrack")
+        cue["work_verified"] = False
+        cues.append(cue)
+    declared = track("2WEI", "Stayin' Alive (Epic Trailer Version)", "good",
+                     genre="Soundtrack")
+    declared["work_verified"] = True
+    real = track("Oskura", "Stayin' Alive (Bee Gees Cover)", "oskura",
+                 album="Only Time to Dream")
+    real["work_verified"] = True
+
+    app.session_state["candidates"] = cues + [declared, real]
+    app.session_state["bigness"] = {
+        **{f"itunes-c{i}": BIG for i in range(18)},
+        "itunes-good": BIG, "itunes-oskura": SMALL,
+    }
+    app.run()
+
+    assert not app.exception
+    order = _row_order(app)
+    assert order[0] == "itunes-good", "גרסה מוכרזת ומאומתת נשארת ראשונה"
+    assert "itunes-oskura" in order[:3], \
+        f"הקאבר המאומת נקבר מתחת לקיו-ים הגנריים: מקום {order.index('itunes-oskura') + 1}"
+
+
+def test_without_catalogue_verification_the_order_is_unchanged(app):
+    """ב"קאברים לאמן", "עוד כמו זה" ובחיפוש החופשי אף תוצאה אינה נושאת את
+    השדה — הרכיב קבוע לכולם, ולכן אסור לו לשנות דבר."""
+    app.session_state["candidates"] = [_plain(), _epic()]
+    app.session_state["bigness"] = {"itunes-plain": BIG}
+    app.run()
+
+    assert not app.exception
+    assert _row_order(app)[0] == "itunes-epic"
+
+
+def test_the_overflow_menu_explains_where_the_row_ranks(app):
+    """"למה זה היה במקום 20" נשאל בפועל, והתשובה דרשה חישוב ידני."""
+    verified = _epic()
+    verified["work_verified"] = True
+    app.session_state["candidates"] = [verified]
+    app.run()
+
+    captions = [c.value for c in app.caption]
+    assert any("דירוג" in text and "מאומת בקטלוג" in text and "טריילר" in text
+               for text in captions), "אין שורת פירוק דירוג ב-⋯"
+
+
 def test_the_reason_shown_is_the_reason_it_ranks(app):
     """הדירוג נספר מאותם סימנים שמוצגים בשורה, ולא ממדד נסתר."""
     import search as search_module

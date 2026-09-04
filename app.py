@@ -953,9 +953,10 @@ def measure_via_server(tracks: list):
 # משקל טעם של 0.40 נכשל ב-(ג), 0.55 נכשל ב-(ב), 0.65 עובר את שלושתם
 # במרווח נוח. הפריור על טריילר הוא מה שקובע כשאין עדיין מה ללמוד ממנו:
 # `taste_of` מחזיר 0 לכולם עד הלייק הראשון.
-RANK_TASTE = 0.65      # מה שהמשתמש לימד בפועל — גובר על הפריור
-RANK_TRAILER = 0.25    # עדות מפורשת שזו גרסת טריילר — הסיבה שהאפליקציה קיימת
-RANK_SIZE = 0.10       # המדידה בדפדפן. יש גם מיון מפורש "גודל (נמדד)"
+RANK_TASTE = 0.55      # מה שהמשתמש לימד בפועל — גובר על הפריור
+RANK_WORK = 0.35       # הקטלוג מאשר שזו גרסה של השיר שביקשת
+RANK_TRAILER = 0.18    # עדות מפורשת שזו גרסת טריילר — הסיבה שהאפליקציה קיימת
+RANK_SIZE = 0.07       # המדידה בדפדפן. יש גם מיון מפורש "גודל (נמדד)"
 # "טרם נמדד" אינו "קטן". הערך הקודם היה -1, ולכן כל טראק שהמדידה לא הגיעה
 # אליו (אין preview, חסימת CORS, כישלון) צנח לתחתית — גם כשכתוב עליו
 # במפורש "Epic Trailer Version" ויש לו שני סימני טריילר.
@@ -963,20 +964,46 @@ NEUTRAL_SIZE = 0.5
 
 
 def rank_score(track: dict, learned: dict, measurements: dict) -> float:
-    """הדירוג הראשי: טעם, עדות טריילר ומדידה — ביחד ולא בזה אחר זה.
+    """הדירוג הראשי: טעם, אימות מול הקטלוג, עדות טריילר ומדידה.
 
     קודם המפתח היה `(taste, measured_size, score)` לקסיקוגרפית. בלי לייקים
     הטעם היה 0 לכולם, ולכן הגודל הנמדד הכריע לבדו ו-`score` — שכולל את
     `epic_bonus` — לא נגע בסדר בפועל. נמדד: טראק בשם "Zombie (Epic Trailer
     Version)", ז'אנר Soundtrack, ציון 130 מול 100, דורג **אחרון** מול קאבר
     פופ רגיל שנמדד רועש. זה ההפך ממה שהאפליקציה אמורה לעשות.
+
+    `RANK_WORK` נוסף אחרי התלונה ההפוכה: גרסת טריילר טובה במקום 1, אחריה
+    שמונה-עשרה קיו-ים גנריים מספריות הפקה, ובמקום 20 קאבר אמיתי ומצוין.
+    נמדד בסימולציה שפרישת הטעם על פני הפול תורמת לציון 0.161 בסך הכל,
+    בעוד שהכרזת טריילר בודדת תורמת 0.250 — כלומר סימן בינארי אחד שוקל
+    יותר מכל טווח הטעם הנלמד. ספריות הפקה מכריזות על עצמן כטריילר
+    בהגדרה, זה המוצר שלהן, וקאבר של להקה אמיתית לא; לכן רבע מהדירוג היה
+    מוטה שיטתית לטובת החומר הגנרי.
+
+    האות שמפריד ביניהם הוא `work_verified`: הקטלוג פותר את *היצירה*
+    ומחזיר רק גרסאות שלה, וקיו בשם "Stayin' Alive Epic Trailer" אינו
+    ביניהן. במסלולים שאינם "קאברים לשיר" אף תוצאה אינה נושאת את השדה,
+    הרכיב קבוע לכולם, והסדר נשאר כשהיה.
     """
     features = measurements.get(track["uid"])
     size = (audio.bigness(features) / 100.0 if audio.measured(features)
             else NEUTRAL_SIZE)
     return (RANK_TASTE * taste_of(track, learned)
+            + RANK_WORK * (1.0 if track.get("work_verified") else 0.0)
             + RANK_TRAILER * search_module.trailer_strength(track)
             + RANK_SIZE * size)
+
+
+def _rank_breakdown(track: dict, learned: dict | None, features: dict | None) -> str:
+    """הדירוג ורכיביו כשורה אחת, באותם משקלים שקבעו את הסדר בפועל."""
+    measurements = st.session_state.get("bigness", {})
+    score = rank_score(track, learned or {}, measurements)
+    size = audio.bigness(features) if audio.measured(features) else None
+    return (f"דירוג {score:.3f} · "
+            f"טעם {round(taste_of(track, learned or {}) * 100)}% · "
+            + ("מאומת בקטלוג ✓" if track.get("work_verified") else "לא מאומת בקטלוג")
+            + f" · טריילר {search_module.trailer_strength(track):.2f} · "
+            + (f"גודל {size}" if size is not None else "טרם נמדד"))
 
 
 def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
@@ -1219,6 +1246,10 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                 if track.get("album"):
                     details.append(f"אלבום: {track['album']}")
                 st.caption(" · ".join(details))
+                # פירוק הדירוג: "למה זה כאן" נשאל בפועל, והתשובה דרשה חישוב
+                # ידני. כאן היא גלויה — וגם רואים מיד אם גרסה שאמורה להיות
+                # מאומתת בקטלוג אינה מאומתת.
+                st.caption(_rank_breakdown(track, learned, features))
                 if audio.measured(features):
                     st.caption(audio.describe(features))
                 st.divider()
