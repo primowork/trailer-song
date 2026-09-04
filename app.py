@@ -143,6 +143,10 @@ st.markdown(
         border-color: transparent transparent transparent #0B0D12;
         margin-inline-start: 2px;
     }
+    /* תצוגה מקדימה שאינה נטענת: כפתור מושתק במקום כפתור שנראה תקין
+       ולא עושה דבר */
+    .ts-play.is-dead { background: #262B38; cursor: not-allowed; }
+    .ts-play.is-dead::before { border-color: transparent transparent transparent #5A6274; }
     .ts-play.is-playing::before {
         width: 9px; height: 11px; border: none; margin: 0;
         background: linear-gradient(90deg, #0B0D12 0 3px, transparent 3px 6px,
@@ -170,14 +174,6 @@ st.markdown(
     }
     /* הרווח שבין הרכיבים הוא מה שהרחיק כותרת קבוצה מהגרסאות שלה */
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.3rem; }
-    /* כותרת קבוצה: שיר, אמן מקור, ומונה — שורה אחת */
-    .ts-group {
-        margin: 0.85rem 0 0.1rem; line-height: 1.4; font-size: 0.95rem;
-    }
-    .ts-group .ts-by { color: #8A91A3; }
-    .ts-group .ts-count {
-        color: #6C7488; font-size: 0.76rem; margin-inline-start: 0.45rem;
-    }
 
     /* ---- סרגל עליון ושורת החיפוש ---- */
     .st-key-appbar { gap: 0.6rem; margin-bottom: 0.9rem; }
@@ -227,6 +223,20 @@ st.markdown(
         [data-testid="stMainBlockContainer"] {
             padding: 1.25rem 0.9rem 3rem;
         }
+        /* עמודת הציון יורדת לשורה משלה. במסך של 390px היא והעטיפה השאירו
+           לכותרת 124px — שליש מהרוחב — ושם ארוך נשבר לשבע שורות (נמדד). */
+        [class*="st-key-cardhead"] > :last-child {
+            flex-basis: 100%; width: 100%;
+        }
+        /* הציון והאחוז זה לצד זה בשורה שלהם, ולא זה מתחת לזה */
+        [class*="st-key-cardhead"] > :last-child > [data-testid="stVerticalBlock"] {
+            flex-direction: row; align-items: center; gap: 0.5rem;
+            justify-content: flex-start; margin-top: -0.4rem;
+        }
+        /* בלי זה השורה דוחסת את תג הציון עד ש-"58" הופך ל-"…" */
+        [class*="st-key-cardhead"] > :last-child [data-testid="stElementContainer"] {
+            flex: none; width: auto; white-space: nowrap;
+        }
         /* כותרת של 2.5rem גולשת לשלוש שורות במסך של 390px */
         [data-testid="stMain"] h1 { font-size: 1.7rem; }
     }
@@ -236,19 +246,29 @@ st.markdown(
 )
 
 
+# אלמנט האודיו היחיד בדף, לפני כל כפתור נגינה שמצביע אליו
+st.html("<audio id='ts-audio' preload='none'></audio>")
+
+
 
 def _audio_behaviour():
-    """מפעיל את כפתורי הנגינה, ומשאיר רק נגן אחד מנגן בכל רגע.
+    """מפעיל את כפתורי הנגינה מול אלמנט אודיו אחד משותף.
 
-    delegation על ה-document ולא binding לכל נגן: הכרטיסים נבנים מחדש בכל
-    rerun (וב-Streamlit כל לחיצה היא rerun), וה-iframe הזה אינו מורכב מחדש
-    כשה-srcdoc זהה — כלומר סקריפט שרץ פעם אחת בכניסה לא ימצא אף נגן שנוצר
-    אחריו. זה בדיוק הכשל שנמדד קודם בשומר הגלילה.
+    **אלמנט אחד ולא אחד לכל שורה.** Safari לנייד מגביל כמה אלמנטי מדיה
+    ידע לטעון בדף אחד; פלייליסט של שבעים גרסאות ייצר שבעים אלמנטים, ומעבר
+    לתקרה הם פשוט לא נטענים — ומכיוון שהפלייליסט ממוין מהחדש לישן, מה
+    שהפסיק לנגן היה בדיוק הישן. נגן משותף גם מייתר את הלוגיקה של "רק אחד
+    מנגן בכל רגע": אין מה לעצור.
+
+    delegation על ה-document ולא binding לכל כפתור: הכרטיסים נבנים מחדש
+    בכל rerun (וב-Streamlit כל לחיצה היא rerun), וה-iframe הזה אינו מורכב
+    מחדש כשה-srcdoc זהה — כלומר סקריפט שרץ פעם אחת בכניסה לא ימצא אף כפתור
+    שנוצר אחריו. זה בדיוק הכשל שנמדד קודם בשומר הגלילה.
 
     הסקריפט מוזרק ל-realm של הדף ולא רץ מתוך ה-iframe: ב-Safari לנייד
     ההרשאה לנגן מדיה נשענת על "מחווה של המשתמש", והיא נבדקת מול ההקשר
     שממנו נקראה `play()`. קריאה מתוך iframe מוצלב-מקור ומסונן היא בדיוק
-    המקרה שנחסם, וזה ההסבר לכפתור שהתחלף לעצירה אבל השמע לא התחיל.
+    המקרה שנחסם.
     """
     renderer = getattr(st, "iframe", None) or components.html
     renderer(
@@ -260,39 +280,59 @@ def _audio_behaviour():
             doc.__audioBehaviourBound = true;
 
             const code = function () {
-                const paint = function (audio) {
-                    const button = audio.closest(".ts-player")
-                        && audio.closest(".ts-player").querySelector(".ts-play");
-                    if (button) button.classList.toggle("is-playing", !audio.paused);
+                // חיפוש עצל ולא פעם אחת בכניסה: הסקריפט מוזרק מוקדם, ואילו
+                // האלמנט נולד עם שאר העץ של Streamlit
+                const media = function () { return document.getElementById("ts-audio"); };
+
+                // הזהות היא data-id ולא הכתובת: הכפתורים נבנים מחדש בכל
+                // rerun, ולכן אי אפשר לשמור הפניה לאלמנט; ושתי גרסאות
+                // יכולות לחלוק כתובת תצוגה מקדימה
+                const paint = function () {
+                    const audio = media();
+                    const live = audio && !audio.paused && audio.currentSrc;
+                    document.querySelectorAll(".ts-play").forEach(function (button) {
+                        button.classList.toggle("is-playing",
+                            !!(live && button.dataset.id === audio.dataset.playing));
+                    });
                 };
 
                 document.addEventListener("click", function (event) {
                     const button = event.target.closest(".ts-play");
-                    if (!button) return;
-                    const audio = button.closest(".ts-player").querySelector("audio");
+                    if (!button || !button.dataset.src) return;
+                    const audio = media();
                     if (!audio) return;
-                    if (audio.paused) {
-                        const started = audio.play();
-                        // ההבטחה נדחית כשהדפדפן מסרב לנגן; בלי התפיסה הזו
-                        // הכפתור נשאר במצב "עוצר" על שמע שלא רץ
-                        if (started && started.catch) {
-                            started.catch(function () { paint(audio); });
-                        }
-                    } else {
-                        audio.pause();
+                    if (audio.dataset.playing === button.dataset.id) {
+                        audio.paused ? audio.play() : audio.pause();
+                        return;
                     }
+                    audio.dataset.playing = button.dataset.id;
+                    audio.src = button.dataset.src;
+                    audio.play();
                 }, true);
 
+                // אירועי מדיה אינם עולים בבועה, ולכן האזנה בשלב ה-capture
                 ["play", "pause", "ended"].forEach(function (name) {
                     document.addEventListener(name, function (event) {
-                        if (!(event.target instanceof HTMLMediaElement)) return;
-                        paint(event.target);
-                        if (name !== "play") return;
-                        document.querySelectorAll("audio, video").forEach(function (other) {
-                            if (other !== event.target && !other.paused) other.pause();
-                        });
+                        if (event.target instanceof HTMLMediaElement) paint();
                     }, true);
                 });
+
+                // תצוגה מקדימה שכתובתה כבר לא חיה: לסמן, ולא להשאיר כפתור
+                // שנראה תקין ולא עושה דבר
+                document.addEventListener("error", function (event) {
+                    const audio = media();
+                    if (!audio || event.target !== audio) return;
+                    document.querySelectorAll(".ts-play").forEach(function (button) {
+                        if (button.dataset.id !== audio.dataset.playing) return;
+                        button.classList.add("is-dead");
+                        button.title = "התצוגה המקדימה של הגרסה הזו אינה זמינה יותר";
+                    });
+                    paint();
+                }, true);
+
+                // כפתורים שנוצרו ב-rerun מקבלים את המצב הנוכחי
+                new MutationObserver(paint).observe(document.documentElement,
+                    { childList: true, subtree: true });
             };
 
             const script = doc.createElement("script");
@@ -392,22 +432,25 @@ def _link_label(text: str) -> str:
     return text.replace("[", "\\[").replace("]", "\\]")
 
 
-def audio_player(url: str):
-    """כפתור נגינה אחד. ההתנהגות מגיעה מ-`_audio_behaviour`.
+def audio_player(url: str, ident: str = ""):
+    """כפתור נגינה אחד. ההתנהגות והאודיו עצמו מגיעים מ-`_audio_behaviour`.
 
     `st.audio` מרנדר `<audio controls>`, ופקדי הדפדפן יושבים ב-shadow DOM
-    שלא ניתן לעצב — ולכן הוא נראה כמו הדפדפן ולא כמו האפליקציה. כאן
-    ה-`<audio>` נשאר (וזה מה שמשמר "רק נגן אחד בכל רגע"), רק הפקד שלנו.
+    שלא ניתן לעצב — ולכן הוא נראה כמו הדפדפן ולא כמו האפליקציה. כאן יש רק
+    כפתור, והכתובת נוסעת עליו ב-`data-src` אל אלמנט האודיו המשותף.
+
+    `ident` הוא זהות הגרסה (uid, או מפתח הפלייליסט): לפיו נקבע איזה כפתור
+    מסומן כמנגן. לפי הכתובת לבדה שתי שורות של אותה גרסה היו נדלקות יחד.
 
     בלי פס התקדמות ובלי שעון: התצוגה המקדימה היא שלושים שניות, אין לאן
     לדלג בתוכה, ובסרגל הצר הפס והשעון היו רוב הרוחב של השורה. השיר המלא
     נמצא מאחורי הקישור בשם השיר.
-    `preload="none"` כדי שעשרים תוצאות לא ימשכו עשרים קבצים מראש.
     """
     st.html(
         "<div class='ts-player'>"
-        "<button class='ts-play' type='button' aria-label='נגן'></button>"
-        f"<audio preload='none' src='{url}'></audio>"
+        f"<button class='ts-play' type='button' data-src='{html.escape(url, quote=True)}'"
+        f" data-id='{html.escape(ident or url, quote=True)}'"
+        " aria-label='נגן'></button>"
         "</div>")
 
 
@@ -472,9 +515,11 @@ def apply_blacklist(tracks: list[dict]) -> list[dict]:
 
 # שדות שנשמרים בפלייליסט: מספיק כדי להציג את הגרסה מאוחר יותר, ומספיק כדי
 # ללמוד ממנה. שמירת הטראק המלא הייתה גוררת גם שדות רגעיים כמו `score`.
+# `uid` נשמר כדי שאפשר יהיה לפנות שוב למקור על גרסה שמורה — כתובת תצוגה
+# מקדימה היא כתובת CDN ואין ערובה שתחיה לנצח
 FAVORITE_FIELDS = ("artist", "track", "album", "genre", "year", "duration_sec",
                    "preview_url", "artwork", "source", "catalog_source",
-                   "trailer_indicator")
+                   "trailer_indicator", "uid")
 
 
 def is_favorite(track: dict) -> bool:
@@ -658,7 +703,7 @@ def _render_saved_versions(versions: list, favorites: dict):
             # ישירות בשורה ולא בתוך popover: קודם היו דרושות שתי הקשות
             # כדי להתחיל לנגן, ואחת מהן פתחה חלון שכל תוכנו כפתור נגינה
             if entry.get("preview_url"):
-                audio_player(entry["preview_url"])
+                audio_player(entry["preview_url"], ident=f"fav-{key}")
             else:
                 st.html("<div class='ts-player ts-noplay'"
                         " title='אין תצוגה מקדימה'></div>")
@@ -709,11 +754,13 @@ with st.sidebar:
             # שהרחיק את הכותרת מהגרסאות שהיא מכותרת. "3" לבד גם לא אמר מה
             # הוא סופר, ולכן המילה.
             count = "גרסה אחת" if len(versions) == 1 else f"{len(versions)} גרסאות"
-            st.html("<div class='ts-group'>"
-                    f"<b>{html.escape(song)}</b>"
-                    + (f"<span class='ts-by'> · {html.escape(by)}</span>" if by else "")
-                    + f"<span class='ts-count'>{count}</span></div>")
-            _render_saved_versions(versions, favorites)
+            # \u2068…\u2069 מבודדים את שם השיר: בלעדיהם המספר שאחריו נצמד
+            # לרצף הלטיני ונקרא בצד הלא נכון — "Heroes5 גרסאות" בצילום
+            label = f"\u2068{song}\u2069" + (f" · \u2068{by}\u2069" if by else "")
+            # מכווץ כברירת מחדל: שבעים גרסאות שמורות פרושות הן סרגל שאי
+            # אפשר לגלול בו אל שום דבר
+            with st.expander(f"{label} — {count}", expanded=False):
+                _render_saved_versions(versions, favorites)
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
@@ -1178,7 +1225,10 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         # מכולה אופקית ולא עמודות: Streamlit עורם עמודות לרוחב מלא במסך צר,
         # ואז העטיפה, הטקסט והציון היו הופכים לשלוש שורות נפרדות בטלפון.
         # flex שומר אותם זה לצד זה בשני הרוחבים, בדיוק כמו בעיצוב.
-        head = st.container(horizontal=True, wrap=False, vertical_alignment="top", gap="medium")
+        # ה-key מפיק מחלקת `st-key-cardhead_…`, שהיא הדרך הנתמכת לתפוס
+        # מכולה מסוימת ב-CSS — כאן כדי לתת לכותרת את כל הרוחב בטלפון
+        head = st.container(key=f"cardhead_{uid}", horizontal=True, wrap=True,
+                            vertical_alignment="top", gap="medium")
         with head:
             col_art = st.container(width=ARTWORK_SIZE)
             col_main = st.container(width="stretch")
@@ -1230,7 +1280,7 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             # באותה שורה עם שאר הפעולות: מאז שהנגן הוא כפתור אחד, שורה
             # משלו הייתה 32px של כפתור ועוד מאה של אוויר
             if track.get("preview_url"):
-                audio_player(track["preview_url"])
+                audio_player(track["preview_url"], ident=uid)
 
             selected = st.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed",
                                    help="סמן לבדיקה קבוצתית")
@@ -1827,9 +1877,12 @@ elif run_search and search_mode == MODE_SONG:
 elif run_search:  # MODE_FREE
     with st.spinner("סורק את iTunes ו-Deezer..."):
         exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
+        # בחיפוש החופשי השאילתה היא שם השיר אם הוזן, ואחרת שם האמן —
+        # ורק במקרה השני נכון להתאים על שם האמן
         results = apply_blacklist(search_covers(
             cover_title or cover_artist, filters=filters, exclude_keys=exclude,
             origin_artist=cover_artist, prefer_new=prefer_new,
+            match_artist=not cover_title,
             min_year=RECENCY_OPTIONS[recency]))
     _store_results(results, "חיפוש בחנויות")
     for track in results:

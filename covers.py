@@ -522,8 +522,10 @@ def more_like_style(track: dict, limit: int = SIMILAR_LIMIT) -> tuple[list[dict]
 
     merged: list[dict] = []
     for term in terms:
+        # כאן השאילתה *היא* אמן או ז'אנר, ולכן התאמה על שם האמן היא
+        # בדיוק מה שמבוקש — בניגוד לחיפוש לפי שם שיר
         merged.extend(search_module.search_covers(
-            term, include_seeds=False,
+            term, include_seeds=False, match_artist=True,
             extra_modifiers=search_module.EPIC_SEARCH_MODIFIERS))
 
     results = [t for t in search_module.dedupe(merged) if t.get("uid") != track.get("uid")]

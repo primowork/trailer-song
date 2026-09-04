@@ -435,8 +435,14 @@ MAX_EPIC_BONUS = 30
 RELEVANCE_FLOOR = 65
 
 
-def relevance(track: dict, query: str) -> int:
+def relevance(track: dict, query: str, match_artist: bool = False) -> int:
     """כמה השיר תואם למה שהמשתמש חיפש, על מחרוזות מנורמלות.
+
+    `match_artist` מרשה לשם האמן לענות במקום הכותרת, ונדרש רק כשהשאילתה
+    *היא* אמן או ז'אנר ("עוד באותו סגנון"). כשהשאילתה היא שם שיר זו הייתה
+    תקלה: `token_set_ratio("happy", "demob happy")` הוא 100, ולכן חיפוש
+    "Happy" החזיר את כל הקטלוג של להקות ששמן מכיל את המילה — "Demob Happy
+    — Hades, Baby" קיבל בדיוק את אותו ציון כמו "Pharrell Williams — Happy".
 
     `fuzz.token_set_ratio` לבד מחזיר 100 לכל כותרת שמכילה את *כל* מילות
     השאילתה כתת-קבוצה — "At Long Last, Love" מקבל 100 מול שאילתת "At Last"
@@ -458,6 +464,8 @@ def relevance(track: dict, query: str) -> int:
         fuzz.token_set_ratio(q, title),
         fuzz.ratio(squeeze(q), squeeze(title)),
     )
+    if not match_artist:
+        return title_score
     return max(
         title_score,
         fuzz.token_set_ratio(q, normalize_artist(track.get("artist", ""))),
@@ -503,12 +511,13 @@ def freshness_bonus(track: dict, now_year: int | None = None) -> int:
     return int(round(max(0.0, 25 * (1 - age / 5))))
 
 
-def score_track(track: dict, query: str, prefer_new: bool = False) -> int:
+def score_track(track: dict, query: str, prefer_new: bool = False,
+                match_artist: bool = False) -> int:
     """רלוונטיות ראשית, אפיות כתוספת חסומה — לא להפך.
 
     prefer_new מוסיף בונוס טריות, כך ש"חדש עם ציון גבוה" עולה מעל ישן עם אותו ציון.
     """
-    score = relevance(track, query) + epic_bonus(track)
+    score = relevance(track, query, match_artist=match_artist) + epic_bonus(track)
     if prefer_new:
         score += freshness_bonus(track)
     if not track.get("preview_url"):
@@ -553,7 +562,8 @@ def search_covers(query: str, filters: dict | None = None,
                   exclude_keys: frozenset | set = frozenset(),
                   include_seeds: bool = True, origin_artist: str = "",
                   prefer_new: bool = False, min_year: int = 0,
-                  extra_modifiers: tuple = ()) -> list[dict]:
+                  extra_modifiers: tuple = (),
+                  match_artist: bool = False) -> list[dict]:
     """מחזיר מאגר קאברים ממוין לפי רלוונטיות, ללא כפילויות.
 
     exclude_keys — שירים שהמשתמש כבר ראה, כדי שחיפוש חוזר יביא חומר חדש.
@@ -601,9 +611,10 @@ def search_covers(query: str, filters: dict | None = None,
         # מתחת לרצפת הרלוונטיות זה כנראה שיר אחר לגמרי שחולק כמה מילים עם
         # השאילתה ("At Long Last, Love" מול "At Last") — לא מדורג נמוך,
         # לא מוצג בכלל.
-        if relevance(track, query) < RELEVANCE_FLOOR:
+        if relevance(track, query, match_artist=match_artist) < RELEVANCE_FLOOR:
             continue
-        track["score"] = score_track(track, query, prefer_new=prefer_new)
+        track["score"] = score_track(track, query, prefer_new=prefer_new,
+                                     match_artist=match_artist)
         scored.append(track)
 
     unique = dedupe(scored)
