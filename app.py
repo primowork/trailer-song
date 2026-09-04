@@ -6,6 +6,8 @@ import io
 import random
 import time
 
+from urllib.parse import quote_plus
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -104,6 +106,12 @@ st.markdown(
         font-size: 0.79rem;
         line-height: 1.45;
     }
+    /* הצבע עצמו מגיע מ-`linkColor` ב-theme (חל על כל הרכיבים); כאן רק
+       המעבר, שהוא מה שמסמן שהטקסט לחיץ בלי אקסנט על כל שורה */
+    [data-testid="stMain"] a:hover {
+        color: #FFB020 !important; text-decoration: underline;
+    }
+
     /* נגן מותאם. נגן ה-<audio controls> של הדפדפן יושב ב-shadow DOM שלא
        ניתן לעיצוב, ולכן הוא הגיע בפלטה של הדפדפן ולא של האפליקציה — פס אפור
        שהיה הרכיב הרועש ביותר בכרטיס. כאן ה-<audio> נשאר אבל מוסתר, והפקדים
@@ -345,6 +353,21 @@ def _keep_scroll_position():
         """,
         height=1,
     )
+
+
+def youtube_music_url(artist: str, track: str) -> str:
+    """קישור חיפוש ב-YouTube Music לגרסה הזו.
+
+    חיפוש ולא מזהה טראק: אין לנו מזהה YouTube לגרסאות שמגיעות מ-iTunes או
+    מ-Deezer, ולשלוף אותו היה דורש קריאת API לכל שורה. שאילתת "אמן שיר"
+    נוחתת על הגרסה הנכונה, ועובדת בלי מפתח ובלי בקשה מהשרת.
+    """
+    return "https://music.youtube.com/search?q=" + quote_plus(f"{artist} {track}".strip())
+
+
+def _link_label(text: str) -> str:
+    """סוגריים מרובעים בכותרת שוברים תחביר של קישור ב-markdown."""
+    return text.replace("[", "\\[").replace("]", "\\]")
 
 
 def audio_player(url: str):
@@ -1130,8 +1153,14 @@ def render_track(track: dict, index: int, learned: dict | None = None):
 
     with col_main:
         # האמן ראשון ובולט: בחיפוש קאברים לשיר אחד, מה שמבדיל בין התוצאות
-        # הוא מי ביצע — לא שם השיר, שחוזר על עצמו בכל השורות
-        st.markdown(f"**{track['artist']}** &nbsp;{track['track']}")
+        # הוא מי ביצע — לא שם השיר, שחוזר על עצמו בכל השורות.
+        # שם השיר הוא קישור ל-YouTube Music: התצוגה המקדימה היא 30 שניות,
+        # וזה המסלול לשמוע את הגרסה המלאה. Streamlit מוסיף target="_blank"
+        # ו-rel="noopener" לקישורי markdown, ולכן האפליקציה לא ננטשת.
+        st.markdown(
+            f"**{track['artist']}** &nbsp;"
+            f"[{_link_label(track['track'])}]"
+            f"({youtube_music_url(track['artist'], track['track'])})")
 
         meta = [part for part in (
             track.get("genre"),

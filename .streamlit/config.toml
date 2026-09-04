@@ -17,5 +17,10 @@ buttonRadius = "medium"
 showWidgetBorder = true
 # Heebo ו-Assistant הן משפחות עבריות-לטיניות מלאות, ולכן שם אמן באנגלית ושם
 # שדה בעברית נראים כמו אותה מערכת ולא כמו שתי מערכות שהודבקו
+# קישורים בצבע הטקסט המשני ולא בכחול ברירת המחדל: שם השיר הוא קישור
+# ל-YouTube Music, והוא צריך להיקרא ככותרת — לא כקישור צועק. ה-hover
+# (ב-CSS) הוא מה שמסמן שהוא לחיץ.
+linkColor = "#C3C8D4"
+linkUnderline = false
 font = "Assistant, sans-serif"
 headingFont = "Heebo, sans-serif"

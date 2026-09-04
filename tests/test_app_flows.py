@@ -467,6 +467,29 @@ def test_removing_the_last_version_removes_the_group(app):
                    for text in headers)
 
 
+# ---------- קישור ל-YouTube Music ----------
+
+def test_the_track_name_links_to_youtube_music(app):
+    """התצוגה המקדימה היא 30 שניות; שם השיר הוא המסלול לגרסה המלאה."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    assert not app.exception
+    titles = [m.value for m in app.markdown if m.value and "2WEI" in m.value]
+    assert any("music.youtube.com/search?q=" in text for text in titles)
+    assert any("2WEI+Zombie" in text for text in titles), "השאילתה חייבת לכלול אמן ושיר"
+
+
+def test_brackets_in_a_track_name_do_not_break_the_link(app):
+    """"Yellow [Radio Edit]" היה שובר את תחביר הקישור ב-markdown."""
+    app.session_state["candidates"] = [track("Coldplay", "Yellow [Radio Edit]", "b1")]
+    app.run()
+
+    assert not app.exception
+    titles = [m.value for m in app.markdown if m.value and "Coldplay" in m.value]
+    assert any("\\[Radio Edit\\]" in text for text in titles)
+
+
 # ---------- הנגן ----------
 
 def test_the_player_is_ours_and_still_a_real_audio_element(app):
