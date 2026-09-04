@@ -119,7 +119,8 @@ def test_picking_an_artist_also_collapses_it(app, monkeypatch):
 # ---------- הגרלת שיר מוכר ----------
 
 def _dice(app):
-    return [b for b in app.button if (b.label or "").startswith("הגרל")][0]
+    # לפי key ולא לפי תווית: הכפתור הוא אייקון בתוך שורת החיפוש
+    return app.button(key="btn_dice")
 
 
 def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monkeypatch):
@@ -280,8 +281,8 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     assert app.session_state["candidates"]
 
 
-def test_search_mode_radio_has_three_options(app):
-    modes = app.radio(key="search_mode")
+def test_search_mode_has_three_options(app):
+    modes = app.get("button_group")[0]
     assert modes.options == ["קאברים לשיר", "קאברים לאמן", "חיפוש חופשי + פילטרים"]
 
 
@@ -304,7 +305,7 @@ def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
     monkeypatch.setattr(covers, "find_artist_covers",
                         lambda *a, **k: (called.setdefault("hit", True) and
                                         [track("X", "Y", "y2")], "src", ["Y"]))
-    modes = app.radio(key="search_mode")
+    modes = app.get("button_group")[0]
     modes.set_value("קאברים לאמן").run()
     app.text_input(key="cover_artist").set_value("Coldplay").run()
     search_button = [b for b in app.button if b.label == "חפש"][0]
@@ -320,7 +321,7 @@ def test_free_mode_dispatches_to_search_covers(app, monkeypatch):
     monkeypatch.setattr(search_module, "search_covers",
                         lambda *a, **k: called.setdefault("hit", True) and
                                         [track("X", "Y", "y3")])
-    modes = app.radio(key="search_mode")
+    modes = app.get("button_group")[0]
     modes.set_value("חיפוש חופשי + פילטרים").run()
     app.text_input(key="cover_title").set_value("Yellow").run()
     search_button = [b for b in app.button if b.label == "חפש"][0]
@@ -394,6 +395,97 @@ def test_heart_toggles_off(app):
 
     assert not app.exception
     assert app.session_state["favorites"] == {}
+
+
+# ---------- הפלייליסט: קיבוץ לפי שיר מקור ----------
+
+def _save(app, artist, title, uid, searched="Bitter Sweet Symphony",
+          origin_artist="The Verve", **extra):
+    app.session_state["cover_title"] = searched
+    app.session_state["cover_artist"] = origin_artist
+    app.session_state["candidates"] = [track(artist, title, uid, **extra)]
+    app.run()
+    app.button(key=f"btn_favorite_itunes-{uid}").click().run()
+
+
+def test_saving_a_cover_records_the_song_it_covers(app):
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+
+    assert not app.exception
+    saved = list(app.session_state["favorites"].values())[0]
+    # `clean_track_title` מסירה את תגית הגרסה ומשאירה את שם השיר
+    # מה שהמשתמש חיפש, ולא ניחוש מהכותרת של הגרסה
+    assert saved["origin"]["track"] == "Bitter Sweet Symphony"
+    assert saved["origin"]["artist"] == "The Verve"
+
+
+def test_two_covers_of_the_same_song_share_a_group(app):
+    import app as app_module
+
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+    _save(app, "Hidden Citizens", "Bittersweet Symphony (Cover)", "b")
+    _save(app, "Tommee Profitt", "In the End (Dark Cover)", "c", searched="In the End")
+
+    assert not app.exception
+    keys = [app_module.origin_key(e) for e in app.session_state["favorites"].values()]
+    assert len(set(keys)) == 2, "שתי גרסאות של אותו שיר לא נפלו לאותה קבוצה"
+
+
+def test_an_entry_saved_before_the_field_existed_still_groups(app):
+    """הנפילה לאחור: פלייליסט קיים מתקבץ בלי לגעת ב-favorites.json."""
+    import app as app_module
+
+    legacy = {"artist": "2WEI", "track": "Yellow (Epic Trailer Version)",
+              "features": None, "added_at": 1.0}
+    fresh = {"artist": "Hidden Citizens", "track": "Yellow (Cover)",
+             "origin": {"track": "Yellow", "artist": ""},
+             "features": None, "added_at": 2.0}
+
+    assert app_module.origin_key(legacy) == app_module.origin_key(fresh)
+
+
+def test_the_sidebar_shows_a_group_header_with_a_count(app):
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+    _save(app, "Hidden Citizens", "Bittersweet Symphony (Cover)", "b")
+
+    assert not app.exception
+    headers = [m.value for m in app.markdown if m.value]
+    assert any("Bitter Sweet Symphony" in text and "The Verve" in text
+               for text in headers)
+
+
+def test_removing_the_last_version_removes_the_group(app):
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+    key = list(app.session_state["favorites"])[0]
+
+    app.button(key=f"unfav_{key}").click().run()
+
+    assert not app.exception
+    assert app.session_state["favorites"] == {}
+    headers = [m.value for m in app.markdown if m.value]
+    assert not any("Bitter Sweet Symphony" in text and "The Verve" in text
+                   for text in headers)
+
+
+# ---------- הנגן ----------
+
+def test_the_player_is_ours_and_still_a_real_audio_element(app):
+    """`st.audio` נראה כמו הדפדפן ולא כמו האפליקציה. אלמנט אודיו אמיתי
+    נשאר, כי הוא מה שמשמר "רק נגן אחד בכל רגע"."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
+    app.run()
+
+    html = " ".join(str(e.proto) for e in app.get("html"))
+    assert "ts-player" in html and "ts-play" in html and "ts-bar" in html
+    assert "<audio" in html and "preload=" in html
+
+
+def test_the_player_behaviour_is_delegated_not_bound_per_player(app):
+    """הכרטיסים נבנים מחדש בכל rerun, וה-iframe אינו מורכב מחדש — סקריפט
+    שמתחבר לכל נגן בנפרד לא ימצא אף נגן שנוצר אחריו."""
+    script = " ".join(str(e.proto) for e in app.get("iframe"))
+    assert "__audioBehaviourBound" in script
+    assert "ts-play" in script and "addEventListener" in script
 
 
 def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
