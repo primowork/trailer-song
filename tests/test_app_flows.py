@@ -454,6 +454,23 @@ def test_the_sidebar_group_header_is_the_song_and_the_artist_only(app):
     assert "גרסאות" not in headers and "גרסה" not in headers
 
 
+def test_the_playlist_offers_to_refresh_dead_preview_links(app):
+    """כתובת preview היא כתובת CDN: גרסה ששמורה חודשים יכולה להצביע על
+    קובץ שכבר לא קיים, וכפתור הנגינה שלה פשוט לא מנגן."""
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+
+    assert not app.exception
+    assert any("רענן קישורי נגינה" in b.label for b in app.button)
+
+
+def test_a_saved_version_keeps_its_source_id_so_it_can_be_refreshed(app):
+    """בלי `uid` אי אפשר לפנות שוב לחנות על הגרסה הזו."""
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+
+    saved = list(app.session_state["favorites"].values())[0]
+    assert saved["uid"] == "itunes-a"
+
+
 def test_a_saved_version_plays_from_the_sidebar_in_one_tap(app):
     """קודם הנגן ישב בתוך popover: הקשה אחת פתחה חלון שכל תוכנו כפתור
     נגינה, והקשה שנייה ניגנה."""

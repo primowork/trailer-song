@@ -7,8 +7,10 @@ import io
 import random
 import time
 
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
 
+import httpx
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -570,6 +572,40 @@ def _snapshot(track: dict) -> dict:
     }
 
 
+def refresh_previews(favorites: dict):
+    """מבקש כתובת תצוגה מקדימה חיה לכל גרסה שמורה, ושומר.
+
+    כתובת preview היא כתובת CDN: גרסה ששמורה חודשים יכולה להצביע על קובץ
+    שכבר לא קיים, וכפתור הנגינה שלה פשוט לא מנגן. הבקשות במקביל מאותה סיבה
+    שהחיפוש מקבילי — שבעים גרסאות בזו אחר זו הן דקות של המתנה.
+    """
+    entries = list(favorites.items())
+    if not entries:
+        return
+    progress = st.progress(0.0, text="מבקש כתובות חדשות...")
+    changed = 0
+    with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+        def resolve(item):
+            key, entry = item
+            try:
+                return key, search_module.refresh_preview(entry, client=client)
+            except Exception:
+                # גרסה אחת שנכשלה לא מפילה את הריענון כולו
+                return key, ""
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for index, (key, url) in enumerate(pool.map(resolve, entries)):
+                progress.progress((index + 1) / len(entries),
+                                  text=f"{index + 1}/{len(entries)}")
+                if url and url != favorites[key].get("preview_url"):
+                    favorites[key]["preview_url"] = url
+                    changed += 1
+    progress.empty()
+    storage.save_favorites(favorites)
+    st.toast(f"רועננו {changed} מתוך {len(entries)}", icon="🔗")
+    st.rerun()
+
+
 def toggle_favorite(track: dict):
     """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון החיובי."""
     favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
@@ -704,6 +740,11 @@ with st.sidebar:
         st.download_button("ייצא פלייליסט", icon=":material/download:",
                            data=buffer.getvalue().encode("utf-8-sig"),
                            file_name="playlist.csv", mime="text/csv")
+
+        if st.button("רענן קישורי נגינה", icon=":material/refresh:",
+                     help="כתובת התצוגה המקדימה היא כתובת CDN ואינה חיה לנצח. "
+                          "כאן מבקשים מהחנות כתובת חדשה לכל גרסה שמורה."):
+            refresh_previews(favorites)
     else:
         st.caption("סמן ❤️ ליד גרסה שאהבת. היא תישמר כאן, והדירוג ילמד "
                    "מה מאפיין את מה שאתה אוהב ויעלה גרסאות כאלה לראש.")

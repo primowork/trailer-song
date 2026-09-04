@@ -212,9 +212,17 @@ def clean_track_title(title: str) -> str:
 
 
 # מילים שמכריזות "זו גרסה של", ולא חלק משם השיר
-VERSION_WORDS = ("trailer", "cover", "epic", "version", "remix", "cinematic",
-                 "edit", "theme", "instrumental", "acoustic", "orchestral",
-                 "remaster", "remastered", "mix", "rendition", "feat", "ft")
+VERSION_WORDS = ("trailer", "trailerized", "trailerised", "soundtrack", "ost",
+                 "cover", "epic", "version", "remix", "cinematic", "edit",
+                 "theme", "instrumental", "acoustic", "orchestral", "remaster",
+                 "remastered", "mix", "rendition", "feat", "ft")
+
+# מילים שלעולם אינן חלק משם של שיר, ולכן נחתכות גם **בלי** סוגריים ובלי
+# מפריד: "Zombie Epic Trailer Version" הוא Zombie. כל השאר — "Cover",
+# "Version", "Remix" וכו' — נחתכות רק כשהן מוכרזות בסוגריים או אחרי מפריד,
+# כי מילה חשופה נוספת בשם היא בדרך כלל שיר אחר ("Happy Birthday").
+BARE_VERSION_WORDS = ("trailer", "trailerized", "trailerised", "epic",
+                      "soundtrack", "ost")
 
 
 def title_for_match(title: str) -> str:
@@ -225,9 +233,12 @@ def title_for_match(title: str) -> str:
     גרסה של "Happy", ובחיתוך המילה הוא הפך ל"Happy" וקיבל 100. אם לשיר
     קוראים "Happy", שם עם מילה נוספת הוא שיר אחר.
 
-    מה כן יורד: סוגריים ("Happy (Epic Trailer Version)"), וסיומת אחרי מקף
-    כשהיא עצמה מכריזה על גרסה ("Happy - Epic Version"). זה בדיוק האופן שבו
+    מה כן יורד: סוגריים ("Happy (Epic Trailer Version)"), וסיומת אחרי מפריד
+    כשהיא עצמה מכריזה על גרסה ("Happy - Epic Version") — בדיוק האופן שבו
     iTunes ו-Deezer מסמנים גרסה, ולכן קאבר אמיתי אינו נפגע.
+
+    ויוצא הדופן: `BARE_VERSION_WORDS` נחתכות גם חשופות, כי הן לעולם אינן
+    חלק משם של שיר. "Zombie Epic Trailer Version" הוא Zombie.
     """
     cleaned = re.sub(r"\(.*?\)|\[.*?\]", " ", title or "")
     # מקף, קו אנכי ונקודה מפרידה — שלוש הדרכים שבהן חנויות מפרידות תג גרסה
@@ -235,7 +246,11 @@ def title_for_match(title: str) -> str:
     parts = re.split(r"\s[-–—|·]\s", cleaned)
     kept = [parts[0]] + [part for part in parts[1:]
                          if not _declares_a_version(part)]
-    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+    cleaned = " ".join(kept)
+    # מהמילה החשופה הראשונה ואילך — הכל תג גרסה
+    for word in BARE_VERSION_WORDS:
+        cleaned = re.sub(rf"\b{word}\b.*$", "", cleaned, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def _declares_a_version(text: str) -> bool:
@@ -452,6 +467,47 @@ def deezer_search(term: str, limit: int = 100,
     if payload is None:
         return []
     return [t for t in (_normalize_deezer(i) for i in payload.get("data", [])) if t]
+
+
+ITUNES_LOOKUP_URL = "https://itunes.apple.com/lookup"
+DEEZER_TRACK_URL = "https://api.deezer.com/track"
+
+
+def refresh_preview(entry: dict, client: httpx.Client | None = None) -> str:
+    """כתובת תצוגה מקדימה חיה לגרסה שמורה, או "" אם לא נמצאה.
+
+    כתובת ה-preview היא כתובת CDN ואין ערובה שתחיה לנצח — גרסה ששמורה
+    בפלייליסט חודשים יכולה להצביע על קובץ שכבר לא קיים, והכפתור שלה פשוט
+    לא מנגן. `uid` נשמר עם כל גרסה בדיוק בשביל זה: הוא נושא את המזהה במקור
+    (`itunes-123`, `deezer-456`) ומאפשר לשאול את החנות מחדש.
+
+    לרשומות שנשמרו לפני ש-`uid` נכנס לשמירה אין מזהה, ולכן הנפילה לאחור
+    היא חיפוש בחנות והתאמה מדויקת לפי `track_key` — אותו מפתח שמנפה
+    כפילויות בכל שאר האפליקציה.
+    """
+    uid = str(entry.get("uid") or "")
+    artist, track = entry.get("artist", ""), entry.get("track", "")
+
+    if uid.startswith("itunes-"):
+        payload = get_json(f"{ITUNES_LOOKUP_URL}?id={uid[len('itunes-'):]}", client=client)
+        results = (payload or {}).get("results") or []
+        if results and results[0].get("previewUrl"):
+            return results[0]["previewUrl"]
+    elif uid.startswith("deezer-"):
+        payload = get_json(f"{DEEZER_TRACK_URL}/{uid[len('deezer-'):]}", client=client)
+        if payload and payload.get("preview"):
+            return payload["preview"]
+
+    wanted = track_key(artist, track)
+    for candidate in itunes_search(f"{artist} {track}", limit=25, client=client):
+        if (track_key(candidate["artist"], candidate["track"]) == wanted
+                and candidate.get("preview_url")):
+            return candidate["preview_url"]
+    for candidate in deezer_search(f"{artist} {track}", limit=25, client=client):
+        if (track_key(candidate["artist"], candidate["track"]) == wanted
+                and candidate.get("preview_url")):
+            return candidate["preview_url"]
+    return ""
 
 
 # ---------- דירוג וניפוי ----------
