@@ -1,4 +1,4 @@
-"""ממשק Streamlit: גילוי קאברים אפיים לטריילרים, עם בדיקת רפרטואר הפדרציה."""
+"""ממשק Streamlit: גילוי גרסאות קאבר אפיות לטריילרים."""
 import csv
 import os
 import datetime as _dt
@@ -18,7 +18,6 @@ import billboard as billboard_module
 import classics as classics_module
 import covers as covers_module
 import youtube as youtube_module
-import federation
 import preview as preview_module
 import storage
 import search as search_module
@@ -53,7 +52,7 @@ RECENCY_OPTIONS = {
     "5 השנים האחרונות": _dt.date.today().year - 4,
 }
 
-st.set_page_config(page_title="סורק קאברים - IFPI Israel", page_icon="🎵", layout="wide")
+st.set_page_config(page_title="סורק קאברים לטריילרים", page_icon="🎵", layout="wide")
 
 # ה-RTL מוחל על אזור התוכן ועל הסרגל בנפרד, ולא על `stAppViewContainer`
 # שעוטף את שניהם. זה לא עניין של סגנון: בטלפון Streamlit מסתיר את הסרגל
@@ -458,9 +457,7 @@ def audio_player(url: str, ident: str = ""):
 
 def _init_state():
     defaults = {
-        "statuses": storage.load_statuses(),
         "blacklist": storage.load_blacklist(),
-        "cache": storage.load_cache(),
         "favorites": storage.load_favorites(),
         "rejections": storage.load_rejections(),
         "candidates": [],
@@ -476,20 +473,17 @@ def _init_state():
         "index_generation": 0,
         "recent_rolls": [],
         "last_query": "",
-        "debug_mode": False,
         "covers_source": "",
         "work_candidates": [],
         "bigness": {},
         "evidence": {},
         "original": None,
-        "federation_blocked": False,
         "all_inputs": [],
         "suggest_query": "",
         "suggestions": [],
         "artist_preview_query": "",
         "artist_preview_titles": [],
         "cors_retried": set(),
-        "federation_probed": False,
         "similar_of": None,
         "pending_fields": None,
         "index_source": "🎻 קלאסיקות",
@@ -613,71 +607,6 @@ def taste_of(track: dict, learned: dict) -> float:
     return taste.match(track, st.session_state["bigness"].get(track["uid"]), learned)
 
 
-def status_of(track: dict) -> dict | None:
-    return st.session_state["statuses"].get(track["uid"])
-
-
-def record_status(track: dict, result: federation.VerifyResult):
-    payload = result.to_dict()
-    st.session_state["statuses"][track["uid"]] = payload
-    st.session_state["cache"][storage.cache_key(track["artist"], track["track"])] = {
-        **payload, "cached_at": time.time(),
-    }
-    storage.save_statuses(st.session_state["statuses"])
-    storage.save_cache(st.session_state["cache"])
-
-
-def cached_result(track: dict) -> federation.VerifyResult | None:
-    entry = st.session_state["cache"].get(storage.cache_key(track["artist"], track["track"]))
-    if not entry:
-        return None
-    payload = {k: v for k, v in entry.items() if k != "cached_at"}
-    try:
-        return federation.VerifyResult(**payload)
-    except TypeError:
-        return None
-
-
-def verify_tracks(tracks: list[dict]):
-    """בדיקת אצווה: קודם מהקאש, השאר בדפדפן אחד משותף עם preflight אחד."""
-    pending = []
-    for track in tracks:
-        cached = cached_result(track)
-        if cached and cached.status != federation.UNKNOWN:
-            st.session_state["statuses"][track["uid"]] = cached.to_dict()
-        else:
-            pending.append(track)
-
-    if not pending:
-        st.toast("כל התוצאות הוחזרו מהקאש", icon="⚡")
-        storage.save_statuses(st.session_state["statuses"])
-        return
-
-    progress = st.progress(0.0, text="מתחיל בדיקה...")
-    with federation.FederationClient(debug=st.session_state["debug_mode"]) as client:
-        # preflight אחד לכל האצווה: אם הטופס לא זוהה, אין טעם לנסות שיר-שיר
-        if not client.preflight():
-            st.session_state["federation_blocked"] = True
-            st.error(f"הבדיקה לא יצאה לדרך: {client.preflight_error}")
-            for track in pending:
-                record_status(track, federation.VerifyResult(
-                    status=federation.UNKNOWN, error=client.preflight_error, strategy="preflight"))
-            progress.empty()
-            return
-
-        for index, track in enumerate(pending):
-            progress.progress(
-                index / len(pending),
-                text=f"בודק {index + 1}/{len(pending)}: {track['artist']} - {track['track']}",
-            )
-            record_status(track, client.verify(track))
-            if st.session_state["debug_mode"] and client.last_html:
-                path = storage.save_debug_html(client.last_html, "last_scan")
-                if path:
-                    st.session_state["debug_path"] = path
-    progress.progress(1.0, text="הסתיים")
-
-
 def queue_fields(title: str = "", artist: str = "", mode: str | None = None,
                  auto_run: bool = False):
     """קובע את שדות החיפוש (ואופציונלית מצב + הרצה אוטומטית) מכפתור, ומרענן.
@@ -753,13 +682,16 @@ with st.sidebar:
             # שורה אחת ולא markdown + caption: השתיים יצרו שתי שורות ופער
             # שהרחיק את הכותרת מהגרסאות שהיא מכותרת. "3" לבד גם לא אמר מה
             # הוא סופר, ולכן המילה.
-            count = "גרסה אחת" if len(versions) == 1 else f"{len(versions)} גרסאות"
             # \u2068…\u2069 מבודדים את שם השיר: בלעדיהם המספר שאחריו נצמד
             # לרצף הלטיני ונקרא בצד הלא נכון — "Heroes5 גרסאות" בצילום
             label = f"\u2068{song}\u2069" + (f" · \u2068{by}\u2069" if by else "")
+            # המונה מופיע רק כשיש מה לספור: "גרסה אחת" בכל שורה היה מילים
+            # שממלאות מסך
+            if len(versions) > 1:
+                label += f" — {len(versions)} גרסאות"
             # מכווץ כברירת מחדל: שבעים גרסאות שמורות פרושות הן סרגל שאי
             # אפשר לגלול בו אל שום דבר
-            with st.expander(f"{label} — {count}", expanded=False):
+            with st.expander(label, expanded=False):
                 _render_saved_versions(versions, favorites)
 
         buffer = io.StringIO()
@@ -783,66 +715,6 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### הגדרות")
-    st.session_state["debug_mode"] = st.checkbox(
-        "מצב דיבאג (שמירת HTML מהפדרציה)", value=st.session_state["debug_mode"]
-    )
-    if st.session_state.get("debug_path"):
-        st.caption(f"נשמר: `{st.session_state['debug_path']}`")
-
-    st.caption(f"רפרטואר: `{federation.FEDERATION_URL}`")
-
-    with st.expander("בדיקה ידנית דרך הדפדפן שלך", icon=":material/link:"):
-        st.caption(
-            "האתר חוסם את השרת אבל נטען בדפדפן שלך. המסלול הזה מנתב דרכו: "
-            "פעם אחת מלמדים את שמות השדות, ואז כל שיר נבדק בקליק והדבקה."
-        )
-        fields = federation.learned_fields()
-        if fields["artist_field"] or fields["track_field"]:
-            st.success(f"שדות ידועים: אמן=`{fields['artist_field'] or '—'}` · "
-                       f"שיר=`{fields['track_field'] or '—'}`")
-        else:
-            st.warning("שמות השדות עדיין לא נלמדו")
-
-        st.markdown(f"[פתח את דף החיפוש]({federation.FEDERATION_URL}) ← Ctrl+U ← העתק הכל")
-        page_html = st.text_area("הדבק כאן את ה-HTML של דף החיפוש:", height=100,
-                                 key="learn_html")
-        if st.button("למד שמות שדות") and page_html.strip():
-            learned = federation.learn_fields_from_html(page_html)
-            storage.save_debug_html(page_html, "search_page")
-            if learned["artist_field"] or learned["track_field"]:
-                st.success(f"זוהו: אמן=`{learned['artist_field'] or '—'}` · "
-                           f"שיר=`{learned['track_field'] or '—'}`")
-                st.rerun()
-            elif learned["all_inputs"]:
-                st.session_state["all_inputs"] = learned["all_inputs"]
-                st.warning("אף שדה מוכר לא נמצא — בחר ידנית מהרשימה למטה")
-            else:
-                st.error("לא נמצאו שדות קלט בדף. ודא שהעתקת את כל ה-HTML.")
-
-        options = st.session_state.get("all_inputs") or []
-        if options:
-            col_a, col_t = st.columns(2)
-            picked_artist = col_a.selectbox("שדה האמן:", [""] + options)
-            picked_track = col_t.selectbox("שדה השיר:", [""] + options)
-            if st.button("שמור שדות") and (picked_artist or picked_track):
-                federation.set_fields(picked_artist, picked_track)
-                st.session_state["all_inputs"] = []
-                st.rerun()
-
-    if st.button("בדוק חיבור לפדרציה", icon=":material/monitor_heart:"):
-        with st.spinner("בודק..."):
-            report = federation.diagnose()
-        html = report.pop("html", "")
-        st.json(report)
-        if html:
-            path = storage.save_debug_html(html, "diagnose")
-            if path:
-                st.caption(f"HTML נשמר: `{path}`")
-                st.download_button("הורד את ה-HTML", icon=":material/download:", data=html.encode("utf-8"),
-                                   file_name="ifpi_search.html", mime="text/html")
-        else:
-            st.error("השרת לא הצליח להגיע לאתר הפדרציה. "
-                     "אם זה עובד מהדפדפן שלך אבל לא מכאן, החסימה היא ברשת של השרת.")
     st.caption(f"תיקיית נתונים: `{storage.DATA_DIR or 'לא זמינה'}`")
     if not youtube_module.available():
         # מידע על פיצ'ר כבוי, לא שלב במסלול — ולכן כאן ולא בין התוצאות
@@ -904,27 +776,8 @@ with st.sidebar:
             storage.save_blacklist(st.session_state["blacklist"])
             st.rerun()
 
-    if st.button("נקה קאש בדיקות", icon=":material/mop:"):
-        st.session_state["cache"] = {}
-        storage.save_cache({})
-        st.toast("הקאש נוקה", icon="🧹")
-
     for warning in storage.warnings:
         st.warning(warning)
-
-
-def probe_federation():
-    """בודק פעם אחת לסשן אם השרת בכלל מגיע לאתר הפדרציה.
-
-    בלי זה המשתמש מגלה את החסימה רק אחרי שהוא לוחץ "בדוק את כל התוצאות" ומחכה,
-    ומקבל שגיאה אדומה. הבדיקה היא חיבור TCP קצר ולא preflight מלא, כדי שהיא לא
-    תעכב את הצגת התוצאות.
-    """
-    if st.session_state["federation_probed"]:
-        return
-    st.session_state["federation_probed"] = True
-    if not federation.reachable():
-        st.session_state["federation_blocked"] = True
 
 
 # ---------- מדידת גודל בדפדפן ----------
@@ -1099,7 +952,7 @@ def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
     return ranked
 
 
-def ordered_display(tracks: list, sort_by: str, only_approved: bool, learned: dict) -> list:
+def ordered_display(tracks: list, sort_by: str, learned: dict) -> list:
     """הסדר נקבע פעם אחת ונשאר — הליבה של תיקון "הכל קופץ".
 
     מפתח המיון הראשי תלוי במדידות האודיו שממשיכות לזרום מהדפדפן אחרי
@@ -1114,7 +967,7 @@ def ordered_display(tracks: list, sort_by: str, only_approved: bool, learned: di
     הפילטר, או חיפוש חדש. הדירוג לפי טעם לא בוטל, רק רגע ההחלה שלו הוקפא;
     `resort_button` מחזיר את השליטה למשתמש.
     """
-    signature = (sort_by, only_approved, st.session_state["result_generation"])
+    signature = (sort_by, st.session_state["result_generation"])
     if st.session_state["order_signature"] != signature:
         st.session_state["order_signature"] = signature
         st.session_state["display_order"] = [t["uid"] for t in
@@ -1182,17 +1035,6 @@ def _score_badge(features: dict | None):
         st.badge("טרם נמדד", icon=":material/hourglass_empty:", color="gray")
 
 
-def _status_line(status: dict | None) -> str:
-    """סטטוס הרפרטואר כטקסט קצר בשורת המטא, לא כתיבה צבעונית בגובה חצי כרטיס."""
-    if status is None:
-        return ":gray[טרם נבדק]"
-    if status["status"] == federation.APPROVED:
-        return f":green[ברפרטואר · {status['confidence']}%]"
-    if status["status"] == federation.NOT_FOUND:
-        return ":red[לא ברפרטואר]"
-    return ":orange[הבדיקה נכשלה]"
-
-
 def _artwork(track: dict):
     """עטיפת האלבום — סימן הזיהוי המהיר ביותר בכלי מוזיקה.
 
@@ -1212,7 +1054,6 @@ def _artwork(track: dict):
 
 def render_track(track: dict, index: int, learned: dict | None = None):
     uid = track["uid"]
-    status = status_of(track)
     features = st.session_state.get("bigness", {}).get(uid)
     evidence = st.session_state.get("evidence", {}).get(uid) or []
     indicators = search_module.trailer_indicators(track)
@@ -1254,7 +1095,7 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             f"{int(track.get('duration_sec', 0) // 60)}:{int(track.get('duration_sec', 0) % 60):02d}"
             if track.get("duration_sec") else None,
         ) if part]
-        st.caption(" · ".join(meta + [_status_line(status)]))
+        st.caption(" · ".join(meta))
 
         if indicators:
             # הסיבה לדירוג, גלויה: `trailer_strength` נספר בדיוק מהרשימה הזו
@@ -1282,9 +1123,6 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             if track.get("preview_url"):
                 audio_player(track["preview_url"], ident=uid)
 
-            selected = st.checkbox("בחר", key=f"chk_{uid}", label_visibility="collapsed",
-                                   help="סמן לבדיקה קבוצתית")
-
             favorited, rejected = is_favorite(track), is_rejected(track)
             if st.button("", key=f"btn_favorite_{uid}",
                          icon=":material/favorite:" if favorited else ":material/favorite_border:",
@@ -1301,12 +1139,6 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                               "לא זה — הדירוג ילמד להתרחק מסגנון כזה"):
                 toggle_rejection(track)
                 st.rerun()
-
-            if not st.session_state.get("federation_blocked"):
-                if st.button("בדוק", key=f"btn_check_{uid}", icon=":material/search:"):
-                    with st.spinner("בודק..."):
-                        verify_tracks([track])
-                    st.rerun()
 
             # תפריט אחד לכל מה שנדיר: קודם כל פעולה תפסה כפתור משלה בכל שורה,
             # ושש שורות טקסט אפור נאבקו על אותה תשומת לב
@@ -1332,24 +1164,6 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                 st.caption(" · ".join(details))
                 if audio.measured(features):
                     st.caption(audio.describe(features))
-                if status and status.get("matched_row"):
-                    st.caption("השורה מהפדרציה:")
-                    st.code(status["matched_row"])
-
-                if st.session_state.get("federation_blocked"):
-                    st.divider()
-                    url = federation.build_search_url(track["artist"], track["track"])
-                    st.markdown(f"[פתח חיפוש בפדרציה]({url})")
-                    st.caption("אם הטופס לא מולא מראש, העתק:")
-                    st.code(f"{clean_artist_name(track['artist'])}\n{track['track']}")
-                    pasted = st.text_area("הדבק את ה-HTML של עמוד התוצאות:", height=100,
-                                          key=f"paste_{uid}")
-                    if st.button("קבע סטטוס", key=f"apply_{uid}") and pasted.strip():
-                        record_status(track, federation.verify_from_html(
-                            pasted, track["artist"], track["track"]))
-                        storage.save_debug_html(pasted, "results_page")
-                        st.rerun()
-
                 st.divider()
                 if st.button("חסום אמן", key=f"btn_block_{uid}",
                              icon=":material/block:", use_container_width=True):
@@ -1358,64 +1172,6 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                     st.session_state["candidates"] = apply_blacklist(st.session_state["candidates"])
                     st.toast(f"האמן '{track['artist']}' הועבר לרשימה השחורה", icon="🚫")
                     st.rerun()
-
-    return track if selected else None
-
-
-def export_button(tracks: list[dict], label_prefix: str):
-    rows = [(t, status_of(t)) for t in tracks
-            if (status_of(t) or {}).get("status") == federation.APPROVED]
-    if not rows:
-        return
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["אמן", "שיר", "אלבום", "אורך (דק')", "מייצג", "ביטחון", "מקור", "preview"])
-    for track, status in rows:
-        writer.writerow([
-            track["artist"], track["track"], track.get("album", ""),
-            round(track.get("duration_sec", 0) / 60, 1),
-            status["publisher"], status["confidence"], track["source"],
-            track.get("preview_url", ""),
-        ])
-    st.download_button(
-        f"ייצוא {len(rows)} שירים שברפרטואר ל-CSV", icon=":material/download:",
-        data=buffer.getvalue().encode("utf-8-sig"),
-        file_name=f"{label_prefix}.csv",
-        mime="text/csv",
-    )
-
-
-def metrics_export(tracks: list[dict]):
-    """ייצוא המדדים הגולמיים של המוצגים, לכיול המשקלים על נתונים אמיתיים.
-
-    המשקלים ב-`audio.WEIGHTS` הם הערכה. כדי לכייל אותם צריך תיוג אנושי — אילו
-    מהטראקים האלה באמת "ענקיים" — מול המספרים שנמדדו. העמודה `label` נשארת ריקה
-    בכוונה: היא מיועדת למילוי ידני.
-    """
-    measurements = st.session_state.get("bigness", {})
-    rows = [(track, measurements.get(track["uid"])) for track in tracks]
-    rows = [(track, features) for track, features in rows if audio.measured(features)]
-    if not rows:
-        return
-
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["artist", "track", "bigness", "loudness", "low_end",
-                     "onset_rate", "dynamic_span", "label"])
-    for track, features in rows:
-        writer.writerow([
-            track["artist"], track["track"], audio.bigness(features),
-            features.get("loudness", ""), features.get("low_end", ""),
-            features.get("onset_rate", ""), features.get("dynamic_span", ""), "",
-        ])
-    st.download_button(
-        f"ייצא מדדים של {len(rows)} טראקים (לכיול)", icon=":material/download:",
-        data=buffer.getvalue().encode("utf-8-sig"),
-        file_name="bigness_metrics.csv",
-        mime="text/csv",
-        help="מלא את עמודת label ב'ענק' או 'רגוע' כדי שהמשקלים יכוילו על תיוג "
-             "אמיתי ולא על הערכה.",
-    )
 
 
 # ---------- מסך חיפוש מאוחד ----------
@@ -1917,38 +1673,23 @@ if candidates:
     # שתי עמודות ולא שלוש: בטלפון Streamlit עורם עמודות לרוחב מלא, ו"סה"כ
     # במאגר" כ-st.metric תפס מסך שלם בשביל מספר אחד. הוא ירד לשורת caption
     # מתחת לכותרת, שם הוא ממילא נקרא יחד עם "מוצגים X מתוך Y".
-    col_a, col_b = st.columns([1, 1])
-    # תוצאת הרפרטואר היא תג מידע. הסינון לפיה כבוי כברירת מחדל בכוונה: הקאברים
-    # האפיים מגיעים לרוב מספריות הפקה שאינן ברפרטואר ההשמעה הישראלי.
-    only_approved = col_a.checkbox("הצג רק מה שברפרטואר", value=False)
-    sort_by = col_b.selectbox("מיון:", [SORT_BEST, "גודל (נמדד)", "ציון",
-                                       "חדשים קודם", "אורך (עולה)", "אורך (יורד)",
-                                       "אמן"])
+    sort_by = st.selectbox("מיון:", [SORT_BEST, "גודל (נמדד)", "ציון",
+                                     "חדשים קודם", "אורך (עולה)", "אורך (יורד)",
+                                     "אמן"])
 
     display = list(candidates)
-    if only_approved:
-        display = [t for t in display if (status_of(t) or {}).get("status") == federation.APPROVED]
 
     # הפרופיל נבנה מול פול התוצאות המוצג — כך "אהבתי Soundtrack" נמדד מול
     # כמה Soundtrack יש כאן ממילא, ולא כספירה גולמית
     learned = taste_profile(display)
 
-    display = ordered_display(display, sort_by, only_approved, learned)
+    display = ordered_display(display, sort_by, learned)
     resort_button(display, sort_by, learned)
 
     st.subheader(f"מוצגים {min(st.session_state['visible_count'], len(display))} מתוך {len(display)}")
     st.caption(f"סה\"כ במאגר: {len(candidates)}")
 
-    action_all, action_selected = st.columns([1, 1])
     visible = display[: st.session_state["visible_count"]]
-
-    probe_federation()
-
-    if st.session_state.get("federation_blocked"):
-        action_all.caption("🌉 האתר חסום מהשרת — כל שיר נבדק ידנית בכפתור 🔗 שלו")
-    elif action_all.button("🔍 בדוק את כל התוצאות המוצגות בפדרציה"):
-        verify_tracks(visible)
-        st.rerun()
 
     measure_visible(visible)
     measure_via_server(visible)
@@ -1963,18 +1704,11 @@ if candidates:
         progress.empty()
         st.rerun()
 
-    metrics_export(visible)
-
-    selected = [t for t in (render_track(track, i, learned)
-                           for i, track in enumerate(visible)) if t]
-
-    if selected and action_selected.button(f"🔍 בדוק את {len(selected)} המסומנים", type="secondary"):
-        verify_tracks(selected)
-        st.rerun()
+    for index, track in enumerate(visible):
+        render_track(track, index, learned)
 
     if st.session_state["visible_count"] < len(display):
         if st.button("טען עוד 20 תוצאות", icon=":material/expand_more:"):
             st.session_state["visible_count"] += PAGE_SIZE
             st.rerun()
 
-    export_button(candidates, f"covers_{st.session_state['last_query'] or 'search'}")
