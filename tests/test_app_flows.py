@@ -641,6 +641,54 @@ def test_a_failed_resolution_keeps_the_url_it_had(app, monkeypatch):
     assert favorites["k"]["preview_checked_at"] > 0
 
 
+def test_a_refresh_that_found_nothing_says_so(tmp_path, monkeypatch):
+    """כישלון שקט הוא מה שהחזיר את הבאג הזה שוב ושוב: המשתמש ראה ספינר,
+    אחריו כפתורים אפורים, ובלי מילה אחת של הסבר."""
+    import json
+    import search as search_module
+
+    monkeypatch.setattr(search_module, "refresh_preview", lambda e, client=None: ("", ""))
+    saved = {f"a{i}|t{i}": {"artist": f"A{i}", "track": f"T{i}", "source": "Deezer",
+                            "preview_url": f"http://old/{i}.mp3", "uid": f"deezer-{i}",
+                            "features": None, "added_at": 1.0}
+             for i in range(3)}
+    (tmp_path / "favorites.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.run()
+
+    assert not at.exception
+    # כולן נכשלו — זו כמעט תמיד תקלת רשת, ולכן אזהרה ולא הערה בשוליים
+    assert at.warning, "ריענון שלא מצא כלום עבר בשקט"
+    assert "3" in at.warning[0].value
+    # והכתובות הישנות נשמרו
+    on_disk = json.loads((tmp_path / "favorites.json").read_text(encoding="utf-8"))
+    assert all(e["preview_url"].startswith("http://old/") for e in on_disk.values())
+
+
+def test_a_partial_refresh_failure_is_a_caption_not_a_warning(tmp_path, monkeypatch):
+    """כשרק חלק נכשלו זה כנראה גרסאות שנמחקו מהחנות, לא תקלת רשת."""
+    import json
+    import search as search_module
+
+    def half(entry, client=None):
+        return ("http://new/x.mp3", entry["uid"]) if entry["uid"].endswith("0") else ("", "")
+
+    monkeypatch.setattr(search_module, "refresh_preview", half)
+    saved = {f"a{i}|t{i}": {"artist": f"A{i}", "track": f"T{i}", "source": "Deezer",
+                            "preview_url": f"http://old/{i}.mp3", "uid": f"deezer-{i}",
+                            "features": None, "added_at": 1.0}
+             for i in range(3)}
+    (tmp_path / "favorites.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.run()
+
+    assert not at.exception
+    assert not at.warning, "כישלון חלקי אינו תקלת רשת ואינו מצדיק אזהרה"
+    assert any("יישאר אפור" in c.value for c in at.caption)
+
+
 def test_a_saved_version_records_when_its_preview_was_checked(app):
     _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
 

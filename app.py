@@ -638,6 +638,12 @@ def _stale_previews(favorites: dict, now: float | None = None,
     return stale[:cap]
 
 
+# המפתח שבו נשמרת תוצאת הריענון האחרון. `refresh_previews` מסתיימת
+# ב-`st.rerun()`, ולכן ערך חזרה רגיל לא היה מגיע לקורא לעולם — התוצאה
+# חייבת לשרוד את הריצה מחדש.
+REFRESH_NOTE = "preview_refresh_note"
+
+
 def refresh_previews(favorites: dict, keys: list[str] | None = None,
                      quiet: bool = False):
     """מבקש כתובת תצוגה מקדימה חיה, ושומר.
@@ -694,8 +700,13 @@ def refresh_previews(favorites: dict, keys: list[str] | None = None,
     if progress:
         progress.empty()
     storage.save_favorites(favorites)
-    if not quiet:
-        st.toast(f"רועננו {changed} · {missing} לא נמצאו", icon="🔗")
+    # כישלון שקט הוא מה שהחזיר את הבאג הזה שוב ושוב: המשתמש ראה ספינר,
+    # אחריו כפתורים אפורים, ובלי מילה אחת של הסבר. הספירה נשמרת כדי
+    # שהסרגל יוכל לומר מה קרה — גם במעבר האוטומטי, שהוא בדיוק המקרה
+    # שבו איש לא ביקש את הריענון ולכן איש לא מצפה לתוצאה שלו.
+    st.session_state[REFRESH_NOTE] = {
+        "changed": changed, "missing": missing, "total": len(entries),
+    }
     st.rerun()
 
 
@@ -803,6 +814,18 @@ with st.sidebar:
                           "כפתור נגינה אפור הוא גרסה שהכתובת שלה כבר מתה — "
                           "כאן מבקשים מהחנות כתובת חדשה לכל הגרסאות השמורות."):
             refresh_previews(favorites)   # הכל, בלי קשר ל-TTL
+
+        _note = st.session_state.pop(REFRESH_NOTE, None)
+        if _note and _note["missing"]:
+            if _note["missing"] == _note["total"]:
+                # כולן נכשלו. גרסאות שנמחקו מהחנות אינן נכשלות יחד, ולכן
+                # זו כמעט תמיד תקלת רשת או שינוי בצד החנות
+                st.warning(f"לא הצלחתי להשיג כתובת נגינה חדשה לאף אחת מ-"
+                           f"{_note['total']} הגרסאות שנבדקו. כנראה תקלת "
+                           f"רשת — הכתובות הישנות נשמרו, נסה שוב בעוד רגע.")
+            else:
+                st.caption(f"{_note['missing']} מתוך {_note['total']} לא "
+                           f"נמצאה להן כתובת חיה — הכפתור שלהן יישאר אפור.")
 
         learned_sidebar = taste_profile()
         summary = taste.describe(learned_sidebar)
