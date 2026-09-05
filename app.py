@@ -330,14 +330,24 @@ def _audio_behaviour():
                     document.querySelectorAll(".ts-play").forEach(function (button) {
                         if (button.dataset.id !== audio.dataset.playing) return;
                         button.classList.add("is-dead");
+                        // ובלי זה הוא נשאר עם אייקון "עוצר" על שמע שלא רץ:
+                        // ב-Safari `paused` לא בהכרח חוזר ל-true אחרי שגיאת
+                        // טעינה, ולכן `paint` לבדה לא ניקתה את הסימון
+                        button.classList.remove("is-playing");
                         button.title = "התצוגה המקדימה של הגרסה הזו אינה זמינה יותר";
                     });
-                    paint();
                 }, true);
 
-                // כפתורים שנוצרו ב-rerun מקבלים את המצב הנוכחי
-                new MutationObserver(paint).observe(document.documentElement,
-                    { childList: true, subtree: true });
+                // כפתורים שנוצרו ב-rerun מקבלים את המצב הנוכחי. מקובץ
+                // ל-frame אחד ולא מורץ על כל מוטציה: במהלך חיפוש Streamlit
+                // משנה את העץ ברצף, וסריקה של כל `.ts-play` בכל שינוי היא
+                // עבודה מיותרת בדיוק ברגע שבו הדף גם נגלל.
+                let queued = false;
+                new MutationObserver(function () {
+                    if (queued) return;
+                    queued = true;
+                    requestAnimationFrame(function () { queued = false; paint(); });
+                }).observe(document.body, { childList: true, subtree: true });
             };
 
             const script = doc.createElement("script");
@@ -589,40 +599,114 @@ def _snapshot(track: dict) -> dict:
         # שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
         "features": features if audio.measured(features) else None,
         "added_at": time.time(),
+        # מתי הכתובת נבדקה לאחרונה מול המקור. ראו `_stale_previews`.
+        "preview_checked_at": time.time(),
     }
 
 
-def refresh_previews(favorites: dict):
-    """מבקש כתובת תצוגה מקדימה חיה לכל גרסה שמורה, ושומר.
+# כתובת preview היא כתובת CDN, והאפליקציה שמרה אותה ברגע הלייק והאמינה לה
+# לנצח. אצל Deezer היא חתומה וקצרת-מועד, ואצל iTunes ארוכת-מועד אבל לא
+# נצחית — וזה בדיוק מה שנראה בצילום: באותה קבוצה, שנשמרה באותו זמן, חלק
+# מנגן וחלק לא. ההבדל הוא המקור, לא הגיל.
+PREVIEW_TTL_SHORT = 6 * 3600      # Deezer
+PREVIEW_TTL_LONG = 30 * 86400     # iTunes וכל השאר
+AUTO_REFRESH_CAP = 40             # תקרה למעבר אחד; השאר במעבר הבא
 
-    כתובת preview היא כתובת CDN: גרסה ששמורה חודשים יכולה להצביע על קובץ
-    שכבר לא קיים, וכפתור הנגינה שלה פשוט לא מנגן. הבקשות במקביל מאותה סיבה
-    שהחיפוש מקבילי — שבעים גרסאות בזו אחר זו הן דקות של המתנה.
+
+def _stale_previews(favorites: dict, now: float | None = None,
+                    cap: int = AUTO_REFRESH_CAP) -> list[str]:
+    """המפתחות שכתובת התצוגה המקדימה שלהם כנראה כבר לא חיה.
+
+    טהורה בכוונה — בחירת המועמדים היא ההיגיון שאפשר לבדוק בלי רשת, ולכן
+    היא מופרדת מהבקשות עצמן. רשומה בלי כתובת כלל אינה מועמדת: אין לה מה
+    להתיישן, והיא מוצגת ממילא עם מציין "אין תצוגה מקדימה".
     """
-    entries = list(favorites.items())
+    now = now or time.time()
+    stale = []
+    for key, entry in favorites.items():
+        if not entry.get("preview_url"):
+            continue
+        ttl = (PREVIEW_TTL_SHORT if (entry.get("source") or "").lower() == "deezer"
+               else PREVIEW_TTL_LONG)
+        checked = entry.get("preview_checked_at")
+        try:
+            checked = float(checked)
+        except (TypeError, ValueError):
+            checked = 0.0          # מעולם לא נבדקה
+        if now - checked >= ttl:
+            stale.append(key)
+    return stale[:cap]
+
+
+# המפתח שבו נשמרת תוצאת הריענון האחרון. `refresh_previews` מסתיימת
+# ב-`st.rerun()`, ולכן ערך חזרה רגיל לא היה מגיע לקורא לעולם — התוצאה
+# חייבת לשרוד את הריצה מחדש.
+REFRESH_NOTE = "preview_refresh_note"
+
+
+def refresh_previews(favorites: dict, keys: list[str] | None = None,
+                     quiet: bool = False):
+    """מבקש כתובת תצוגה מקדימה חיה, ושומר.
+
+    `keys` — תת-קבוצה לרענון (ברירת מחדל: הכל). `quiet` — ספינר קצר במקום
+    פס התקדמות, למעבר האוטומטי שרץ בלי שביקשו אותו.
+
+    הבקשות במקביל מאותה סיבה שהחיפוש מקבילי: שבעים גרסאות בזו אחר זו הן
+    דקות של המתנה.
+    """
+    entries = [(key, favorites[key]) for key in (keys or list(favorites))
+               if key in favorites]
     if not entries:
         return
-    progress = st.progress(0.0, text="מבקש כתובות חדשות...")
-    changed = 0
-    with httpx.Client(timeout=10.0, follow_redirects=True) as client:
-        def resolve(item):
-            key, entry = item
-            try:
-                return key, search_module.refresh_preview(entry, client=client)
-            except Exception:
-                # גרסה אחת שנכשלה לא מפילה את הריענון כולו
-                return key, ""
+    now = time.time()
+    changed, missing = 0, 0
+    progress = None if quiet else st.progress(0.0, text="מבקש כתובות חדשות...")
+    spinner = st.spinner(f"מרענן קישורי נגינה ({len(entries)})...") if quiet else None
+    if spinner:
+        spinner.__enter__()
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            def resolve(item):
+                key, entry = item
+                try:
+                    return (key, *search_module.refresh_preview(entry, client=client))
+                except Exception:
+                    # גרסה אחת שנכשלה לא מפילה את הריענון כולו
+                    return key, "", ""
 
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for index, (key, url) in enumerate(pool.map(resolve, entries)):
-                progress.progress((index + 1) / len(entries),
-                                  text=f"{index + 1}/{len(entries)}")
-                if url and url != favorites[key].get("preview_url"):
-                    favorites[key]["preview_url"] = url
-                    changed += 1
-    progress.empty()
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for index, (key, url, uid) in enumerate(pool.map(resolve, entries)):
+                    if progress:
+                        progress.progress((index + 1) / len(entries),
+                                          text=f"{index + 1}/{len(entries)}")
+                    # נבדקה — גם כשלא נמצאה כתובת. אחרת אותה רשומה תיבדק
+                    # שוב בכל rerun והמעבר האוטומטי לא ייגמר לעולם.
+                    favorites[key]["preview_checked_at"] = now
+                    if not url:
+                        # כתובת ישנה שאולי עובדת עדיפה על שדה ריק: כך תקלת
+                        # רשת חד-פעמית לא מרוקנת את הפלייליסט
+                        missing += 1
+                        continue
+                    # ה-uid נשמר גם כשהכתובת לא השתנתה: הריענון הבא יהיה אז
+                    # שאילתה ישירה במקום חיפוש בחנות
+                    if uid and not favorites[key].get("uid"):
+                        favorites[key]["uid"] = uid
+                    if url != favorites[key].get("preview_url"):
+                        favorites[key]["preview_url"] = url
+                        changed += 1
+    finally:
+        if spinner:
+            spinner.__exit__(None, None, None)
+    if progress:
+        progress.empty()
     storage.save_favorites(favorites)
-    st.toast(f"רועננו {changed} מתוך {len(entries)}", icon="🔗")
+    # כישלון שקט הוא מה שהחזיר את הבאג הזה שוב ושוב: המשתמש ראה ספינר,
+    # אחריו כפתורים אפורים, ובלי מילה אחת של הסבר. הספירה נשמרת כדי
+    # שהסרגל יוכל לומר מה קרה — גם במעבר האוטומטי, שהוא בדיוק המקרה
+    # שבו איש לא ביקש את הריענון ולכן איש לא מצפה לתוצאה שלו.
+    st.session_state[REFRESH_NOTE] = {
+        "changed": changed, "missing": missing, "total": len(entries),
+    }
     st.rerun()
 
 
@@ -714,6 +798,35 @@ with st.sidebar:
     st.write(f"גרסאות שמורות: **{len(favorites)}**")
 
     if favorites:
+        # הריענון קורה מעצמו. כל פתרון שדורש מהמשתמש להבחין בכפתור אפור
+        # וללחוץ על משהו הוא טלאי: הכתובות מתות בין סשנים, והמשתמש מגלה
+        # זאת רק כשהוא לוחץ נגן ולא שומע כלום.
+        _stale = _stale_previews(favorites)
+        if _stale:
+            refresh_previews(favorites, keys=_stale, quiet=True)
+
+        # הכפתור נשאר כמוצא אחרון, ומתעלם מה-TTL — לגרסה שמתה באמצע סשן.
+        # מעל הקבוצות ולא מתחתיהן: עם שבעים גרסאות שמורות ומכווצות הוא
+        # ישב מתחת לכל הרשימה וגם מתחת לייצוא, ולא נמצא.
+        if st.button("רענן קישורי נגינה", icon=":material/refresh:",
+                     width="stretch",
+                     help="כתובת התצוגה המקדימה היא כתובת CDN ואינה חיה לנצח. "
+                          "כפתור נגינה אפור הוא גרסה שהכתובת שלה כבר מתה — "
+                          "כאן מבקשים מהחנות כתובת חדשה לכל הגרסאות השמורות."):
+            refresh_previews(favorites)   # הכל, בלי קשר ל-TTL
+
+        _note = st.session_state.pop(REFRESH_NOTE, None)
+        if _note and _note["missing"]:
+            if _note["missing"] == _note["total"]:
+                # כולן נכשלו. גרסאות שנמחקו מהחנות אינן נכשלות יחד, ולכן
+                # זו כמעט תמיד תקלת רשת או שינוי בצד החנות
+                st.warning(f"לא הצלחתי להשיג כתובת נגינה חדשה לאף אחת מ-"
+                           f"{_note['total']} הגרסאות שנבדקו. כנראה תקלת "
+                           f"רשת — הכתובות הישנות נשמרו, נסה שוב בעוד רגע.")
+            else:
+                st.caption(f"{_note['missing']} מתוך {_note['total']} לא "
+                           f"נמצאה להן כתובת חיה — הכפתור שלהן יישאר אפור.")
+
         learned_sidebar = taste_profile()
         summary = taste.describe(learned_sidebar)
         if summary:
@@ -761,10 +874,6 @@ with st.sidebar:
                            data=buffer.getvalue().encode("utf-8-sig"),
                            file_name="playlist.csv", mime="text/csv")
 
-        if st.button("רענן קישורי נגינה", icon=":material/refresh:",
-                     help="כתובת התצוגה המקדימה היא כתובת CDN ואינה חיה לנצח. "
-                          "כאן מבקשים מהחנות כתובת חדשה לכל גרסה שמורה."):
-            refresh_previews(favorites)
     else:
         st.caption("סמן ❤️ ליד גרסה שאהבת. היא תישמר כאן, והדירוג ילמד "
                    "מה מאפיין את מה שאתה אוהב ויעלה גרסאות כאלה לראש.")
