@@ -599,48 +599,103 @@ def _snapshot(track: dict) -> dict:
         # שוב בעתיד; אם עוד לא נמדד, נלמד ממנו קטגוריאלית בלבד
         "features": features if audio.measured(features) else None,
         "added_at": time.time(),
+        # מתי הכתובת נבדקה לאחרונה מול המקור. ראו `_stale_previews`.
+        "preview_checked_at": time.time(),
     }
 
 
-def refresh_previews(favorites: dict):
-    """מבקש כתובת תצוגה מקדימה חיה לכל גרסה שמורה, ושומר.
+# כתובת preview היא כתובת CDN, והאפליקציה שמרה אותה ברגע הלייק והאמינה לה
+# לנצח. אצל Deezer היא חתומה וקצרת-מועד, ואצל iTunes ארוכת-מועד אבל לא
+# נצחית — וזה בדיוק מה שנראה בצילום: באותה קבוצה, שנשמרה באותו זמן, חלק
+# מנגן וחלק לא. ההבדל הוא המקור, לא הגיל.
+PREVIEW_TTL_SHORT = 6 * 3600      # Deezer
+PREVIEW_TTL_LONG = 30 * 86400     # iTunes וכל השאר
+AUTO_REFRESH_CAP = 40             # תקרה למעבר אחד; השאר במעבר הבא
 
-    כתובת preview היא כתובת CDN: גרסה ששמורה חודשים יכולה להצביע על קובץ
-    שכבר לא קיים, וכפתור הנגינה שלה פשוט לא מנגן. הבקשות במקביל מאותה סיבה
-    שהחיפוש מקבילי — שבעים גרסאות בזו אחר זו הן דקות של המתנה.
+
+def _stale_previews(favorites: dict, now: float | None = None,
+                    cap: int = AUTO_REFRESH_CAP) -> list[str]:
+    """המפתחות שכתובת התצוגה המקדימה שלהם כנראה כבר לא חיה.
+
+    טהורה בכוונה — בחירת המועמדים היא ההיגיון שאפשר לבדוק בלי רשת, ולכן
+    היא מופרדת מהבקשות עצמן. רשומה בלי כתובת כלל אינה מועמדת: אין לה מה
+    להתיישן, והיא מוצגת ממילא עם מציין "אין תצוגה מקדימה".
     """
-    entries = list(favorites.items())
+    now = now or time.time()
+    stale = []
+    for key, entry in favorites.items():
+        if not entry.get("preview_url"):
+            continue
+        ttl = (PREVIEW_TTL_SHORT if (entry.get("source") or "").lower() == "deezer"
+               else PREVIEW_TTL_LONG)
+        checked = entry.get("preview_checked_at")
+        try:
+            checked = float(checked)
+        except (TypeError, ValueError):
+            checked = 0.0          # מעולם לא נבדקה
+        if now - checked >= ttl:
+            stale.append(key)
+    return stale[:cap]
+
+
+def refresh_previews(favorites: dict, keys: list[str] | None = None,
+                     quiet: bool = False):
+    """מבקש כתובת תצוגה מקדימה חיה, ושומר.
+
+    `keys` — תת-קבוצה לרענון (ברירת מחדל: הכל). `quiet` — ספינר קצר במקום
+    פס התקדמות, למעבר האוטומטי שרץ בלי שביקשו אותו.
+
+    הבקשות במקביל מאותה סיבה שהחיפוש מקבילי: שבעים גרסאות בזו אחר זו הן
+    דקות של המתנה.
+    """
+    entries = [(key, favorites[key]) for key in (keys or list(favorites))
+               if key in favorites]
     if not entries:
         return
-    progress = st.progress(0.0, text="מבקש כתובות חדשות...")
-    changed = 0
-    with httpx.Client(timeout=10.0, follow_redirects=True) as client:
-        def resolve(item):
-            key, entry = item
-            try:
-                return (key, *search_module.refresh_preview(entry, client=client))
-            except Exception:
-                # גרסה אחת שנכשלה לא מפילה את הריענון כולו
-                return key, "", ""
+    now = time.time()
+    changed, missing = 0, 0
+    progress = None if quiet else st.progress(0.0, text="מבקש כתובות חדשות...")
+    spinner = st.spinner(f"מרענן קישורי נגינה ({len(entries)})...") if quiet else None
+    if spinner:
+        spinner.__enter__()
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            def resolve(item):
+                key, entry = item
+                try:
+                    return (key, *search_module.refresh_preview(entry, client=client))
+                except Exception:
+                    # גרסה אחת שנכשלה לא מפילה את הריענון כולו
+                    return key, "", ""
 
-        missing = 0
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for index, (key, url, uid) in enumerate(pool.map(resolve, entries)):
-                progress.progress((index + 1) / len(entries),
-                                  text=f"{index + 1}/{len(entries)}")
-                if not url:
-                    missing += 1
-                    continue
-                # ה-uid נשמר גם כשהכתובת לא השתנתה: הריענון הבא יהיה אז
-                # שאילתה ישירה במקום חיפוש בחנות
-                if uid and not favorites[key].get("uid"):
-                    favorites[key]["uid"] = uid
-                if url != favorites[key].get("preview_url"):
-                    favorites[key]["preview_url"] = url
-                    changed += 1
-    progress.empty()
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for index, (key, url, uid) in enumerate(pool.map(resolve, entries)):
+                    if progress:
+                        progress.progress((index + 1) / len(entries),
+                                          text=f"{index + 1}/{len(entries)}")
+                    # נבדקה — גם כשלא נמצאה כתובת. אחרת אותה רשומה תיבדק
+                    # שוב בכל rerun והמעבר האוטומטי לא ייגמר לעולם.
+                    favorites[key]["preview_checked_at"] = now
+                    if not url:
+                        # כתובת ישנה שאולי עובדת עדיפה על שדה ריק: כך תקלת
+                        # רשת חד-פעמית לא מרוקנת את הפלייליסט
+                        missing += 1
+                        continue
+                    # ה-uid נשמר גם כשהכתובת לא השתנתה: הריענון הבא יהיה אז
+                    # שאילתה ישירה במקום חיפוש בחנות
+                    if uid and not favorites[key].get("uid"):
+                        favorites[key]["uid"] = uid
+                    if url != favorites[key].get("preview_url"):
+                        favorites[key]["preview_url"] = url
+                        changed += 1
+    finally:
+        if spinner:
+            spinner.__exit__(None, None, None)
+    if progress:
+        progress.empty()
     storage.save_favorites(favorites)
-    st.toast(f"רועננו {changed} · {missing} לא נמצאו", icon="🔗")
+    if not quiet:
+        st.toast(f"רועננו {changed} · {missing} לא נמצאו", icon="🔗")
     st.rerun()
 
 
@@ -732,15 +787,22 @@ with st.sidebar:
     st.write(f"גרסאות שמורות: **{len(favorites)}**")
 
     if favorites:
-        # מעל הקבוצות ולא מתחתיהן: עם שבעים גרסאות שמורות ומכווצות הכפתור
-        # ישב מתחת לכל הרשימה וגם מתחת לייצוא, ולא נמצא. כשכפתור נגינה
-        # אינו מנגן זה בדיוק המקום שאליו צריך להגיע.
+        # הריענון קורה מעצמו. כל פתרון שדורש מהמשתמש להבחין בכפתור אפור
+        # וללחוץ על משהו הוא טלאי: הכתובות מתות בין סשנים, והמשתמש מגלה
+        # זאת רק כשהוא לוחץ נגן ולא שומע כלום.
+        _stale = _stale_previews(favorites)
+        if _stale:
+            refresh_previews(favorites, keys=_stale, quiet=True)
+
+        # הכפתור נשאר כמוצא אחרון, ומתעלם מה-TTL — לגרסה שמתה באמצע סשן.
+        # מעל הקבוצות ולא מתחתיהן: עם שבעים גרסאות שמורות ומכווצות הוא
+        # ישב מתחת לכל הרשימה וגם מתחת לייצוא, ולא נמצא.
         if st.button("רענן קישורי נגינה", icon=":material/refresh:",
                      width="stretch",
                      help="כתובת התצוגה המקדימה היא כתובת CDN ואינה חיה לנצח. "
                           "כפתור נגינה אפור הוא גרסה שהכתובת שלה כבר מתה — "
                           "כאן מבקשים מהחנות כתובת חדשה לכל הגרסאות השמורות."):
-            refresh_previews(favorites)
+            refresh_previews(favorites)   # הכל, בלי קשר ל-TTL
 
         learned_sidebar = taste_profile()
         summary = taste.describe(learned_sidebar)

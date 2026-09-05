@@ -545,6 +545,109 @@ def test_the_playlist_offers_to_refresh_dead_preview_links(app):
     assert any("רענן קישורי נגינה" in b.label for b in app.button)
 
 
+def test_only_previews_that_are_probably_dead_are_refreshed():
+    """הבחירה מופרדת מהרשת בדיוק כדי שתיבדק בלי רשת.
+
+    ההבדל בין כתובת חיה למתה הוא המקור ולא הגיל: אצל Deezer היא חתומה
+    וקצרת-מועד, אצל iTunes ארוכת-מועד — וזה מסביר למה באותה קבוצה, שנשמרה
+    באותו זמן, חלק מנגן וחלק לא.
+    """
+    import app as app_module
+
+    now = 1_700_000_000.0
+    hour, day = 3600.0, 86400.0
+    favorites = {
+        "deezer-fresh": {"source": "Deezer", "preview_url": "u",
+                         "preview_checked_at": now - hour},
+        "deezer-stale": {"source": "Deezer", "preview_url": "u",
+                         "preview_checked_at": now - 8 * hour},
+        "itunes-fresh": {"source": "iTunes", "preview_url": "u",
+                         "preview_checked_at": now - 2 * day},
+        "itunes-stale": {"source": "iTunes", "preview_url": "u",
+                         "preview_checked_at": now - 40 * day},
+        "never-checked": {"source": "iTunes", "preview_url": "u"},
+        "no-preview": {"source": "iTunes", "preview_url": ""},
+        "corrupt-stamp": {"source": "iTunes", "preview_url": "u",
+                          "preview_checked_at": "לא מספר"},
+    }
+
+    stale = set(app_module._stale_previews(favorites, now=now))
+    assert stale == {"deezer-stale", "itunes-stale", "never-checked", "corrupt-stamp"}
+
+
+def test_the_automatic_refresh_is_capped_and_finishes_next_time():
+    """מעבר אחד לא חוסם את הסרגל על פלייליסט ענק; השאר נבחר במעבר הבא."""
+    import app as app_module
+
+    now = 1_700_000_000.0
+    favorites = {f"k{index}": {"source": "Deezer", "preview_url": "u"}
+                 for index in range(60)}
+    picked = app_module._stale_previews(favorites, now=now, cap=40)
+    assert len(picked) == 40
+
+    for key in picked:
+        favorites[key]["preview_checked_at"] = now
+    assert len(app_module._stale_previews(favorites, now=now, cap=40)) == 20
+
+
+def test_the_playlist_refreshes_dead_previews_by_itself_once(tmp_path, monkeypatch):
+    """הלב של התיקון: המשתמש לא צריך להבחין בכפתור אפור וללחוץ על משהו.
+    ואסור שזה ירוץ שוב בכל rerun — אחרת כל לחיצה באפליקציה היא סבב רשת.
+    """
+    import json
+    import search as search_module
+
+    calls = {"n": 0}
+
+    def fake_refresh(entry, client=None):
+        calls["n"] += 1
+        return f"http://new/{entry['uid']}.mp3", entry["uid"]
+
+    monkeypatch.setattr(search_module, "refresh_preview", fake_refresh)
+    saved = {f"a{i}|t{i}": {"artist": f"A{i}", "track": f"T{i}", "source": "Deezer",
+                            "preview_url": f"http://old/{i}.mp3", "uid": f"deezer-{i}",
+                            "features": None, "added_at": 1.0}
+             for i in range(5)}
+    (tmp_path / "favorites.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.run()
+
+    assert not at.exception
+    assert calls["n"] == 5, "לא כל הכתובות המתות רועננו"
+    on_disk = json.loads((tmp_path / "favorites.json").read_text(encoding="utf-8"))
+    assert all(entry["preview_url"].startswith("http://new/") for entry in on_disk.values())
+    assert all(entry.get("preview_checked_at") for entry in on_disk.values())
+
+    at.run()
+    assert calls["n"] == 5, "המעבר האוטומטי חוזר על עצמו בכל rerun"
+
+
+def test_a_failed_resolution_keeps_the_url_it_had(app, monkeypatch):
+    """כתובת ישנה שאולי עובדת עדיפה על שדה ריק: תקלת רשת חד-פעמית לא
+    מרוקנת את הפלייליסט."""
+    import app as app_module
+    import search as search_module
+
+    monkeypatch.setattr(search_module, "refresh_preview", lambda e, client=None: ("", ""))
+    favorites = {"k": {"artist": "2WEI", "track": "Zombie", "source": "Deezer",
+                       "preview_url": "http://old/preview.mp3"}}
+    try:
+        app_module.refresh_previews(favorites, keys=["k"], quiet=True)
+    except Exception:
+        pass          # st.rerun מחוץ להקשר של סקריפט
+    assert favorites["k"]["preview_url"] == "http://old/preview.mp3"
+    # ונרשמה כנבדקה, אחרת אותה רשומה נבדקת שוב בכל rerun
+    assert favorites["k"]["preview_checked_at"] > 0
+
+
+def test_a_saved_version_records_when_its_preview_was_checked(app):
+    _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
+
+    saved = list(app.session_state["favorites"].values())[0]
+    assert saved["preview_checked_at"] > 0
+
+
 def test_the_refresh_button_sits_above_the_saved_groups(app):
     """עם שבעים גרסאות מכווצות הוא ישב מתחת לכל הרשימה וגם מתחת לייצוא,
     ולא נמצא — בדיוק כשכפתור נגינה מפסיק לנגן."""
