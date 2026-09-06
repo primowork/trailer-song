@@ -132,11 +132,34 @@ def test_the_famous_pool_has_no_duplicates():
     assert len(keys) == len(set(keys))
 
 
+def test_billboard_500_is_a_third_independent_source_in_the_pool():
+    """BILLBOARD_500_POP אינה נגזרת מ-chart_data: כל שיר מדורג בעצמו
+    (500 עד 1), לא לפי משך שהייה במצעד. חפיפה עם המקורות האחרים תקינה —
+    היא מנופה — אבל הרשימה עצמה חייבת להיכנס, ובלי כפילות שנשארה בפנים."""
+    assert len(classics.BILLBOARD_500_POP) == 500
+    pool_keys = {(e["artist"].casefold(), e["track"].casefold())
+                 for e in classics.famous_pool()}
+    billboard_keys = {(e["artist"].casefold(), e["track"].casefold())
+                      for e in classics.BILLBOARD_500_POP}
+    assert billboard_keys <= pool_keys
+    # מדגם משירים שקודם לא היו ניתנים להגרלה כלל (לא ב-chart_data ולא
+    # ברשימות האצורות) — עכשיו הם בבריכה
+    for artist, track in [("Whitney Houston", "I Wanna Dance With Somebody (Who Loves Me)"),
+                          ("Fountains of Wayne", "Stacy's Mom"),
+                          ("The Crystals", "Then He Kissed Me")]:
+        assert (artist.casefold(), track.casefold()) in pool_keys
+
+
 def test_famous_pool_entries_have_the_expected_shape():
+    # 2020 היה התקרה כל עוד המקור היחיד היה chart_data (שנעצר ב-2010's).
+    # BILLBOARD_500_POP מביאה שירים עד 2023 (תאריך הכתבה) — תקרה קרובה
+    # להיום ולא 2020 הקשיח, כדי שרשימה שתעודכן מחר לא תשבור את הטסט.
+    import datetime
+    ceiling = datetime.date.today().year
     for entry in classics.famous_pool():
         assert entry["artist"].strip()
         assert entry["track"].strip()
-        assert 1950 <= entry["year"] <= 2020
+        assert 1950 <= entry["year"] <= ceiling
 
 
 def test_no_year_disappears_from_the_pool():
@@ -178,13 +201,16 @@ def test_pre_1960_chart_filler_stays_out_but_curated_fifties_stay_in():
 
 
 def test_blues_is_not_a_source_for_the_pool():
-    """הבקשה היא שיר שסביר שיש לו קאבר. שיר בלוז שגם היה להיט במצעד נשאר —
-    מה שנפסל הוא הרשימה כמקור."""
+    """הבקשה היא שיר שסביר שיש לו קאבר. שיר בלוז שגם היה להיט במצעד, ברשימה
+    האצורה של פופ/רוק, או ברשימת Billboard העצמאית — נשאר; מה שנפסל הוא
+    רשימת הבלוז *עצמה* כמקור (`entries.extend(BLUES_CLASSICS)` לא קיים
+    ב-`famous_pool`)."""
     pool = {(e["artist"], e["track"]) for e in classics.famous_pool()}
     charted = {(e["artist"], e["track"])
                for decade in chart_data.DECADE_HITS.values() for e in decade}
     curated = {(e["artist"], e["track"])
-               for e in classics.POP_CLASSICS + classics.ROCK_CLASSICS}
+               for e in classics.POP_CLASSICS + classics.ROCK_CLASSICS
+               + classics.BILLBOARD_500_POP}
     blues_only = [(e["artist"], e["track"]) for e in classics.BLUES_CLASSICS
                   if (e["artist"], e["track"]) not in charted | curated]
     assert blues_only, "הבדיקה חסרת משמעות אם כל הבלוז ממילא מופיע במקומות אחרים"
