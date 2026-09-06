@@ -124,7 +124,7 @@ def test_in_years_is_inclusive_on_both_ends():
 
 def test_the_famous_pool_is_a_reasonable_size():
     pool = classics.famous_pool()
-    assert 400 <= len(pool) <= 900
+    assert 1200 <= len(pool) <= 2500
 
 
 def test_the_famous_pool_has_no_duplicates():
@@ -139,18 +139,42 @@ def test_famous_pool_entries_have_the_expected_shape():
         assert 1950 <= entry["year"] <= 2020
 
 
-def test_the_famous_pool_takes_only_the_top_of_each_decade():
-    """הרשימות ב-`chart_data` מדורגות לפי המצעד, ולכן "הראשונים" = המוכרים."""
+def test_no_year_disappears_from_the_pool():
+    """הבאג שהחליף את הטסט הקודם: הרשימות מדורגות לפי ביצועים במצעד, ושיר
+    מתחילת העשור שהה בו הרבה יותר זמן. לכן חיתוך ב-40 הראשונים לא הוריד
+    "את הפחות מוכרים" אלא מחק שנים שלמות — 1986 עד 1989 לא היו בבריכה
+    בכלל, וכך גם 1965, 1974-75 ו-1991."""
+    pool_years = {e["year"] for e in classics.famous_pool()}
+    for label, decade in chart_data.DECADE_HITS.items():
+        for year in {e["year"] for e in decade}:
+            if year < classics.POOL_FIRST_CHART_YEAR:
+                continue
+            assert year in pool_years, f"{label}: {year} נעלמה מהבריכה"
+
+
+def test_the_whole_charted_decade_is_in_the_pool():
+    """אין יותר חיתוך: כל רשומת מצעד מ-1960 ואילך נכנסת."""
     pool = {(e["artist"], e["track"]) for e in classics.famous_pool()}
     for decade in chart_data.DECADE_HITS.values():
-        head = decade[:classics.FAMOUS_PER_DECADE]
-        tail = decade[classics.FAMOUS_PER_DECADE:]
-        assert all((e["artist"], e["track"]) in pool for e in head)
-        # הזנב יכול להופיע רק אם הוא ממילא ברשימות האצורות
-        curated = {(e["artist"], e["track"])
-                   for e in classics.POP_CLASSICS + classics.ROCK_CLASSICS}
-        assert all((e["artist"], e["track"]) not in pool
-                   for e in tail if (e["artist"], e["track"]) not in curated)
+        for entry in decade:
+            if entry["year"] < classics.POOL_FIRST_CHART_YEAR:
+                continue
+            assert (entry["artist"], entry["track"]) in pool
+
+
+def test_pre_1960_chart_filler_stays_out_but_curated_fifties_stay_in():
+    """ל-Topsy II ול-The Chipmunk Song אין גרסאות טריילר; ל-Elvis יש."""
+    pool = {(e["artist"], e["track"]) for e in classics.famous_pool()}
+    early = [e for e in chart_data.DECADE_HITS["50's"]
+             if e["year"] < classics.POOL_FIRST_CHART_YEAR]
+    assert early, "הבדיקה חסרת משמעות בלי רשומות מוקדמות בנתונים"
+    curated = {(e["artist"], e["track"])
+               for e in classics.POP_CLASSICS + classics.ROCK_CLASSICS}
+    assert not [e for e in early
+                if (e["artist"], e["track"]) in pool
+                and (e["artist"], e["track"]) not in curated]
+    # ובכל זאת יש בבריכה קלאסיקות משנות ה-50, מהרשימות האצורות
+    assert [e for e in classics.famous_pool() if e["year"] < 1960]
 
 
 def test_blues_is_not_a_source_for_the_pool():
