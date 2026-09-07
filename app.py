@@ -1439,7 +1439,9 @@ def roll_famous_song():
 # עם תווית ולא אמוג'י בלבד: בטלפון העמודות נערמות, וכפתור ברוחב מלא
 # שכתוב עליו רק "🎲" אינו מסביר את עצמו
 with searchbar:
-    if st.button("", key="btn_dice", icon=":material/casino:",
+    # אימוג'י ישיר, לא סמל Material: ":material/casino:" לא מרונדר בדפדפן
+    # (בעוד ":material/search:" הסמוך כן), ותקוע ריק במקום קובייה
+    if st.button("", key="btn_dice", icon="🎲",
                  help="מגריל שיר מוכר מהמצעדים ומחפש לו גרסאות טריילר. "
                       "ככל שהשיר מוכר יותר, כך גדל הסיכוי שמישהו כבר עשה לו קאבר."):
         roll_famous_song()
@@ -1472,10 +1474,13 @@ def suggestion_row(query: str):
     else:
         st.caption("השלמות מהקטלוג:")
 
-    columns = st.columns(4)
+    # מכולה אופקית, לא st.columns: Streamlit לא מכווץ עמודות בטלפון אלא
+    # עורם אותן לרוחב מלא (התיעוד המקורי לזה יושב ב-render_track) — ארבע
+    # עמודות הפכו לארבעה בלוקים מלאי-רוחב שנראו כמו כפילות שמציפה את הדף.
+    row = st.container(horizontal=True, wrap=True, vertical_alignment="top")
     for index, item in enumerate(items[:4]):
-        if columns[index].button(f"🎵 {item['label'][:38]}", key=f"sug_{index}",
-                                 help=item["label"], use_container_width=True):
+        if row.button(f"🎵 {item['label'][:38]}", key=f"sug_{index}",
+                      help=item["label"]):
             st.session_state["suggest_query"] = ""
             queue_fields(item["track"], item["artist"])
 
