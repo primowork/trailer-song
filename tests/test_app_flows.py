@@ -203,11 +203,22 @@ def _dice(app):
     return app.button(key="btn_dice")
 
 
-def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monkeypatch):
+def test_the_dice_fills_both_fields_but_does_not_search(app, monkeypatch):
+    """ההגרלה והחיפוש מופרדים, לבקשת המשתמש.
+
+    לחיצה חוזרת על הכפתור מגלגלת שירים עד שאחד מוצא חן; החיפוש — שהוא
+    היקר, קריאות רשת לקטלוג ולחנויות — רץ רק ב-"Find covers". קודם כל
+    גלגול יצא לרשת מיד, כלומר עשרה גלגולים היו עשרה חיפושים מלאים שאיש
+    לא ביקש.
+    """
     import classics
-    monkeypatch.setattr(covers, "find_all_covers",
-                        lambda title, artist="", **k: (
-                            [track("Someone", f"{title} (Cover)", "d1")], "src", None))
+    called = {"n": 0}
+
+    def _counted(title, artist="", **k):
+        called["n"] += 1
+        return [track("Someone", f"{title} (Cover)", "d1")], "src", None
+
+    monkeypatch.setattr(covers, "find_all_covers", _counted)
 
     _dice(app).click().run()
 
@@ -216,8 +227,23 @@ def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monke
     assert all(rolled)
     assert rolled in {(e["artist"], e["track"]) for e in classics.famous_pool()}
     assert app.session_state["search_mode"] == "Covers of a song"
-    # הוגרל *ורץ*, כמו לחיצה על שיר במצעדים
+    assert called["n"] == 0, "ההגרלה יצאה לרשת בלי שביקשו חיפוש"
+    assert not app.session_state["candidates"]
+
+
+def test_the_search_button_runs_what_the_dice_rolled(app, monkeypatch):
+    """הצד השני של אותה הפרדה: מה שהוגרל אכן נחפש כשלוחצים."""
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: (
+                            [track("Someone", f"{title} (Cover)", "d1")], "src", None))
+
+    _dice(app).click().run()
+    rolled = app.session_state["cover_title"]
+    app.button(key="btn_search").click().run()
+
+    assert not app.exception
     assert app.session_state["candidates"]
+    assert app.session_state["cover_title"] == rolled
 
 
 def test_two_rolls_in_a_row_are_not_the_same_song(app, monkeypatch):

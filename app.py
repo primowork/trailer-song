@@ -2229,7 +2229,12 @@ RECENT_ROLLS = 5
 
 
 def roll_famous_song():
-    """מגריל שיר מוכר ומריץ עליו חיפוש, כמו לחיצה על שיר במצעדים.
+    """ממלא את השדות בשיר מוכר — **בלי להריץ חיפוש**.
+
+    ההגרלה והחיפוש הופרדו לבקשת המשתמש: לחיצה חוזרת על הכפתור מגלגלת
+    שירים עד שאחד מוצא חן, והחיפוש (שהוא היקר — קריאות רשת לקטלוג
+    ולחנויות) רץ רק כשלוחצים על "Find covers". קודם כל הגרלה יצאה
+    לרשת מיד, כלומר עשר גלגולים היו עשרה חיפושים מלאים שאיש לא ביקש.
 
     הבריכה היא `classics.famous_pool()` — נתוני המצעד מ-1960 ואילך ועוד
     רשימות הפופ והרוק. פופולריות במצעד היא הקירוב ל"סביר שיש לו קאבר";
@@ -2245,7 +2250,7 @@ def roll_famous_song():
 
     st.session_state["recent_rolls"] = (
         recent + [(choice["artist"], choice["track"])])[-RECENT_ROLLS:]
-    queue_fields(choice["track"], choice["artist"], mode=MODE_SONG, auto_run=True)
+    queue_fields(choice["track"], choice["artist"], mode=MODE_SONG)
 
 
 # שדה חיפוש אחד ולא שלוש עמודות עם תווית מעל כל אחת: המסגרת היא של
@@ -2299,9 +2304,10 @@ with searchbar:
     # יצאו שניהם כנקודה כתומה). תווית מילולית פותרת את זה מהשורש, וגם
     # אומרת מה הכפתור עושה — דבר שאימוג'י בודד לא עשה.
     if st.button("Surprise me", key="btn_dice",
-                 help="Rolls a well-known song from the charts and finds "
-                      "trailer versions for it. The better known the song, "
-                      "the likelier someone has already covered it."):
+                 help="Drops a well-known song into the field — press again "
+                      "for another one. Nothing is searched until you press "
+                      "Find covers. The better known the song, the likelier "
+                      "someone has already covered it."):
         roll_famous_song()
 
     _clicked_search = st.button("Find covers", key="btn_search", type="primary")
