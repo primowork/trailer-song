@@ -40,6 +40,58 @@ def test_the_page_renders(app):
     assert not app.exception
 
 
+# ---------- מסך הפתיחה ----------
+
+def _start_buttons(app):
+    return [b for b in app.button if (b.key or "").startswith("start_")]
+
+
+def test_the_first_screen_is_not_an_empty_page(app):
+    """לפני החיפוש הראשון היה כאן שחור ריק עם שורת חיפוש שצפה בתוכו.
+
+    זה נראה כמו טרמינל, וגם לא אמר למשתמש מה האפליקציה יודעת לעשות.
+    אף טסט אחר לא נוגע במצב הריק, ולכן בלי הטסט הזה החזרה של הריק
+    הייתה עוברת בשקט.
+    """
+    assert not app.exception
+    assert not app.session_state["candidates"], "הטסט הזה בודק את המצב הריק"
+    assert _start_buttons(app), "אין נקודות התחלה במסך הריק"
+
+
+def test_the_start_screen_offers_songs_people_recognise(app):
+    """נקודות ההתחלה הן חלון הראווה, ולכן הן מראש רשימת Billboard ולא
+    מבריכת ההגרלה — שמכילה גם להיטי מצעד שאיש לא זוכר."""
+    import classics
+
+    import app as app_module
+
+    # הגבול נקרא מהקוד ולא מוקלד כאן: מספר שמוקלד פעמיים במקומות רחוקים
+    # מפסיק להיות אותו מספר בדיוק כשמשנים אותו
+    famous = {(e["artist"], e["track"])
+              for e in list(classics.BILLBOARD_500_POP)[-app_module.START_HERE_POOL:]}
+    offered = {(e["artist"], e["track"])
+               for e in app.session_state["start_here"]}
+    assert offered, "לא הוגרלו נקודות התחלה"
+    assert offered <= famous, "נקודת התחלה שאינה מראש הרשימה המוכרת"
+
+
+def test_the_start_screen_makes_way_for_results(app):
+    """ברגע שיש תוצאות, המסך הריק אינו רלוונטי ואסור לו להישאר מעליהן."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert not _start_buttons(app), "נקודות ההתחלה נשארו מעל התוצאות"
+
+
+def test_the_start_picks_do_not_reshuffle_on_every_interaction(app):
+    """רשת שמתחלפת בכל לחיצה על כל פקד אחר בדף היא רעש, לא הצעה."""
+    before = list(app.session_state["start_here"])
+    app.text_input(key="cover_title").set_value("Yellow").run()
+
+    assert app.session_state["start_here"] == before
+
+
 def _page_css(app) -> str:
     return " ".join(m.value for m in app.markdown if "<style>" in (m.value or ""))
 

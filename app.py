@@ -278,6 +278,16 @@ st.markdown(
     .st-key-searchbar [data-testid="stElementContainer"]:has(input) {
         flex-grow: 1; min-width: 120px;
     }
+    /* מכולת הזכוכית לא גדלה. ברירת המחדל של Streamlit למכולת אלמנט
+       בתוך מכולה אופקית היא `flex: 1 1 fit-content`, ולכן היא נמתחה על
+       כל רוחב השורה ודחפה את שדה השיר לשורה משלו — ארבע שורות בטלפון
+       במקום שתיים (נמדד). */
+    .st-key-searchbar [data-testid="stElementContainer"]:has(.ts-searchglyph) {
+        /* רוחב מפורש ולא `auto`: מכולת ה-`st.html` היא בלוק, ולכן
+           `flex-basis: auto` נותן לה 100% מהשורה גם כשהתוכן הוא
+           גליף של 13px. אותה תקלה בדיוק כמו בנגן (`.ts-player`). */
+        flex: 0 0 16px; width: 16px;
+    }
     /* זכוכית מגדלת מצוירת ב-CSS ולא ב-SVG: Streamlit מסנן <svg> מתוך
        st.html, ואייקון מוטמע פשוט לא מגיע לדף (נמדד בדפדפן) */
     .ts-searchglyph {
@@ -371,6 +381,30 @@ st.markdown(
         font-family: var(--mono); font-weight: 500; font-size: 10px;
         letter-spacing: .12em; color: var(--text-4);
         text-transform: uppercase; margin: 10px 0 2px;
+    }
+
+    /* ---- מסך הפתיחה ---- */
+    .ts-startcap { margin: 18px 0 10px; }
+    /* נקודות ההתחלה נראות כמו שורות תוצאה ולא ככפתורים גנריים: זו אותה
+       פעולה (לחיצה מריצה חיפוש), ולכן אותה שפה */
+    [class*="st-key-start_"] button {
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 10px; min-height: 52px; padding: 0 14px;
+        color: var(--text-2);
+    }
+    /* גם ה-div הפנימי, לא רק הכפתור: בלעדיו התווית יושבת במרכז השורה
+       ולא בתחילתה (אותו כלל בדיוק נדרש בשורות הפלייליסט) */
+    [class*="st-key-start_"] button,
+    [class*="st-key-start_"] button > div {
+        justify-content: flex-start; text-align: start; width: 100%;
+    }
+    [class*="st-key-start_"] button:hover {
+        background: var(--raised); border-color: var(--line-row);
+        color: var(--text);
+    }
+    [class*="st-key-start_"] button p {
+        font-size: 13.5px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap;
     }
 
     /* ---- מסך הפלייליסט ---- */
@@ -634,10 +668,18 @@ st.markdown(
         /* בלי `order` בכלל: סדר ה-DOM כבר נכון (זכוכית, שיר, אמן,
            הגרלה, חיפוש), ומה ששבר אותו קודם היה `flex-basis: 100%` על
            השדה — שדחף את הזכוכית לשורה משלה. */
-        /* שורה ראשונה: זכוכית + שם השיר לרוחב מלא, כמו שדה הסיכום
-           שבעיצוב. שדה האמן והכפתורים יורדים מתחת. */
+        /* שורה ראשונה: זכוכית + שם השיר יחד. שדה האמן יורד לשורה משלו,
+           והכפתורים מתחתיו.
+           `flex-basis: 100%` על **כל** שדה דחף גם את הזכוכית לשורה
+           נפרדת ועשה מזה ארבע שורות (נמדד). הבסיס הגמיש הוא על שדה
+           השיר, וה-100% רק על שדה האמן. */
         .st-key-searchbar { padding: 10px 13px; gap: 8px 9px; }
-        .st-key-searchbar [data-testid="stElementContainer"]:has(input) {
+        .st-key-searchbar .st-key-cover_title {
+            /* בסיס 0 ולא `auto`: הרוחב הטבעי של שדה הטקסט גדול מהמקום
+               שנשאר ליד הזכוכית, ולכן `auto` הפיל אותו לשורה משלו */
+            flex: 1 1 0; min-width: 0;
+        }
+        .st-key-searchbar .st-key-cover_artist {
             flex: 1 1 100%; min-width: 0;
         }
         .st-key-btn_dice button, .st-key-btn_search button {
@@ -2430,7 +2472,9 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                 clicked = column.button(label, key=key, use_container_width=True)
             else:
                 full_label = (f"{rank}. " if rank else "") + f"{entry['track']} — {entry['artist']}"
-                clicked = column.button(full_label[:60], key=key, help=full_label,
+                # חיתוך רך ב-CSS ולא קשה בפייתון: `[:60]` חתך באמצע מילה
+                # ("Barbra Streis"), בעוד ש-ellipsis נותן שלוש נקודות
+                clicked = column.button(full_label, key=key, help=full_label,
                                         use_container_width=True)
             if clicked:
                 # האינדקס ארוך (עד 120 שירים), והצעד הבא של המשתמש — תוצאות
@@ -2737,9 +2781,53 @@ if st.session_state["covers_source"]:
     st.caption(f"Source: {st.session_state['covers_source']}")
 
 
-# ---------- תוצאות ----------
+# ---------- מסך פתיחה ----------
+
+START_HERE_COUNT = 12
+# מתוך כמה מהמוכרים ביותר להגריל. 150 הראשונים ברשימת Billboard הם
+# שירים שכל אחד מזהה; מתחת לזה מתחילים שמות שדורשים היכרות.
+START_HERE_POOL = 150
+
+
+def _start_here():
+    """מה שרואים לפני החיפוש הראשון.
+
+    בלי זה המסך הוא שורת חיפוש שצפה בשמונים אחוז שחור — מה שנראה כמו
+    טרמינל ולא כמו אפליקציית מוזיקה, וגם לא אומר למשתמש מה האפליקציה
+    יודעת לעשות. ההנדאוף מציין את זה במפורש כמה שלא עוצב
+    ("empty/onboarding states"), ולכן זה נבנה כאן בשפה של שאר המסכים.
+
+    נקודות ההתחלה נלקחות מראש רשימת Billboard ("500 Best Pop Songs")
+    ולא מבריכת ההגרלה כולה. הבריכה בנויה לגיוון והיא מכילה גם להיטי
+    מצעד שאיש לא זוכר — הגרלה ממנה החזירה למסך הפתיחה שמות כמו
+    "Mother-In-Law — Ernie K-Doe". מסך הפתיחה הוא חלון הראווה: כל שם בו
+    חייב להיות מזוהה מיידית, אחרת הוא מרתיע במקום להזמין.
+    לחיצה מריצה חיפוש מלא, בדיוק כמו לחיצה במצעדים.
+    """
+    # מוגרל פעם אחת לסשן ולא בכל ריצה: רשת שמתחלפת בכל לחיצה על כל
+    # פקד אחר בדף היא רעש, לא הצעה
+    if not st.session_state.get("start_here"):
+        # הרשימה מסודרת מדירוג 500 ל-1, ולכן הסוף הוא הצד המוכר
+        famous = list(classics_module.BILLBOARD_500_POP)[-START_HERE_POOL:]
+        st.session_state["start_here"] = [
+            {"kind": "song", "artist": entry["artist"], "track": entry["track"]}
+            for entry in random.sample(famous, min(START_HERE_COUNT, len(famous)))
+        ]
+
+    st.html(
+        "<div class='ts-resulthead'>"
+        "<h2 class='ts-h2'>Find a cover worth cutting to</h2>"
+        "<span class='ts-lede'>Every version is measured in your browser, "
+        "so the loud ones rise to the top.</span>"
+        "</div>")
+    st.html("<div class='ts-railcap ts-startcap'>START WITH ONE OF THESE</div>")
+    _entry_grid(st.session_state["start_here"], "start")
+
 
 candidates = st.session_state["candidates"]
+
+if not candidates and not run_search:
+    _start_here()
 
 if candidates:
     # סמן הדור עבור שומר הגלילה: כל עוד הוא לא השתנה, מקום הגלילה שווה
