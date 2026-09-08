@@ -14,6 +14,7 @@ import httpx
 import streamlit as st
 import streamlit.components.v1 as components
 
+import accounts
 import artists as artists_module
 import audio
 import billboard as billboard_module
@@ -1116,11 +1117,37 @@ def audio_player(url: str, ident: str = "", track: dict | None = None):
 
 # ---------- מצב ----------
 
+# מי מבצע את הפעולה, פעם אחת לריצה. **לא** משתנה מודול שנקבע פעם אחת
+# בטעינה: Streamlit מריץ כל session בת'רד משלו על אותו תהליך, ו-`SUBJECT`
+# מחושב מחדש בכל ריצת סקריפט מתוך הקשר ה-session שלה. כל קריאה לאחסון
+# אישי מקבלת אותו במפורש.
+SUBJECT = accounts.current_subject()
+
+# חסימת השמירה מותנית בכך שהתחברות בכלל מוגדרת. בפיתוח מקומי ובטסטים אין
+# `[auth]`, ואז אין למי להתחבר — ולכן שם הכל נשאר כפי שהיה: משתמש יחיד
+# שיכול לשמור. בפרודקשן, שבה auth מוגדרת, השמירה היא החומה.
+LOGIN_ENABLED = accounts.login_available()
+
+
+# ההתחברות אינה מתנה של מכסה חדשה: המכסה שנוצלה אנונימית עוברת לחשבון
+# פעם אחת, ברגע המעבר. בלי זה "התחבר" היה הדרך המהירה ביותר לאפס מכסה.
+if LOGIN_ENABLED and SUBJECT.is_logged_in and not st.session_state.get("_quota_merged"):
+    st.session_state["_quota_merged"] = True
+    accounts.merge_anonymous_quota(SUBJECT)
+
+
+def _may_save() -> bool:
+    if not LOGIN_ENABLED or SUBJECT.is_logged_in:
+        return True
+    st.toast("Log in to keep covers in your playlist.", icon=":material/lock:")
+    return False
+
+
 def _init_state():
     defaults = {
-        "blacklist": storage.load_blacklist(),
-        "favorites": storage.load_favorites(),
-        "rejections": storage.load_rejections(),
+        "blacklist": storage.load_blacklist(SUBJECT),
+        "favorites": storage.load_favorites(SUBJECT),
+        "rejections": storage.load_rejections(SUBJECT),
         "candidates": [],
         "seen_keys": set(),
         "visible_count": PAGE_SIZE,
@@ -1344,7 +1371,7 @@ def refresh_previews(favorites: dict, keys: list[str] | None = None,
             spinner.__exit__(None, None, None)
     if progress:
         progress.empty()
-    storage.save_favorites(favorites)
+    storage.save_favorites(favorites, SUBJECT)
     # כישלון שקט הוא מה שהחזיר את הבאג הזה שוב ושוב: המשתמש ראה ספינר,
     # אחריו כפתורים אפורים, ובלי מילה אחת של הסבר. הספירה נשמרת כדי
     # שהסרגל יוכל לומר מה קרה — גם במעבר האוטומטי, שהוא בדיוק המקרה
@@ -1357,6 +1384,8 @@ def refresh_previews(favorites: dict, keys: list[str] | None = None,
 
 def toggle_favorite(track: dict):
     """מוסיף או מסיר מהפלייליסט. הפלייליסט הוא גם מאגר האימון החיובי."""
+    if not _may_save():
+        return
     favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
     key = track_key(track.get("artist", ""), track.get("track", ""))
     if key in favorites:
@@ -1365,12 +1394,14 @@ def toggle_favorite(track: dict):
         favorites[key] = _snapshot(track)
         # אותו טראק לא יכול להיות גם אהוב וגם דחוי
         if rejections.pop(key, None) is not None:
-            storage.save_rejections(rejections)
-    storage.save_favorites(favorites)
+            storage.save_rejections(rejections, SUBJECT)
+    storage.save_favorites(favorites, SUBJECT)
 
 
 def toggle_rejection(track: dict):
     """מסמן "לא זה". דוגמאות שליליות הן שנותנות ללמידה כיוון ולא רק מרכז."""
+    if not _may_save():
+        return
     favorites, rejections = st.session_state["favorites"], st.session_state["rejections"]
     key = track_key(track.get("artist", ""), track.get("track", ""))
     if key in rejections:
@@ -1378,8 +1409,8 @@ def toggle_rejection(track: dict):
     else:
         rejections[key] = _snapshot(track)
         if favorites.pop(key, None) is not None:
-            storage.save_favorites(favorites)
-    storage.save_rejections(rejections)
+            storage.save_favorites(favorites, SUBJECT)
+    storage.save_rejections(rejections, SUBJECT)
 
 
 def taste_profile(background: list[dict] | None = None) -> dict:
@@ -1435,7 +1466,7 @@ def _render_saved_versions(versions: list, favorites: dict):
             if st.button("", key=f"unfav_{key}", icon=":material/close:",
                          type="tertiary", help="Remove from Loved"):
                 favorites.pop(key)
-                storage.save_favorites(favorites)
+                storage.save_favorites(favorites, SUBJECT)
                 st.rerun()
 
 
@@ -1475,6 +1506,59 @@ def _rail_nav():
             if item == NAV_LOVED and st.session_state["favorites"]:
                 st.html("<span class='ts-navcount'>"
                         f"{len(st.session_state['favorites'])}</span>")
+
+
+def _rail_account():
+    """התחברות והמכסה שנשארה. מוצג רק כשהתחברות בכלל מוגדרת."""
+    if not LOGIN_ENABLED:
+        return
+    st.html("<div class='ts-railrule'></div>")
+    if SUBJECT.is_logged_in:
+        st.html("<div class='ts-railcap'>SIGNED IN</div>"
+                f"<p class='ts-railtaste'>{html.escape(SUBJECT.email or '')}</p>")
+        if st.button("Log out", key="btn_logout", type="tertiary", width="stretch"):
+            st.logout()
+    else:
+        st.html("<div class='ts-railcap'>GUEST</div>"
+                "<p class='ts-railtaste'>Log in to keep a playlist. Without an "
+                "account you can search and listen, but nothing is saved.</p>")
+        if st.button("Log in with Google", key="btn_login", type="tertiary",
+                     width="stretch"):
+            st.login()
+    left = int(accounts.remaining(SUBJECT))
+    st.html("<div class='ts-railcap'>SEARCHES LEFT "
+            f"<span class='ts-navcount'>{left}</span></div>")
+
+
+def _remember_anon():
+    """כותב את הזהות האנונימית לעוגייה, כדי שהמכסה תשרוד רענון.
+
+    **אמירה כנה: זה מהמור, לא חומה.** ניקוי עוגיות או חלון פרטי מייצרים
+    זהות חדשה ומכסה חדשה. לא משתמשים ב-IP במקום: התיעוד של Streamlit
+    אומר במפורש שאסור להשתמש בו לאבטחה כי קל לזייף אותו. החומה האמיתית
+    כאן היא השמירה, שדורשת התחברות.
+
+    הכתיבה היא ל-`window.parent.document` ולא לתוך ה-iframe, מאותה סיבה
+    שמתוארת ב-`_audio_behaviour`: ל-iframe יש origin משלו, ועוגייה
+    שתיכתב בו לא תגיע לעולם לשרת.
+    """
+    if not LOGIN_ENABLED or SUBJECT.is_logged_in:
+        return
+    value = SUBJECT.key.split(":", 1)[-1]
+    renderer = getattr(st, "iframe", None) or components.html
+    renderer(
+        f"""
+        <script>
+        (function () {{
+            const doc = window.parent.document;
+            const name = {accounts.ANON_COOKIE!r};
+            const has = doc.cookie.split('; ').some(c => c.indexOf(name + '=') === 0);
+            if (!has) {{
+                doc.cookie = name + '={value}; path=/; max-age=31536000; SameSite=Lax';
+            }}
+        }})();
+        </script>
+        """, height=0)
 
 
 def _rail_taste():
@@ -1671,7 +1755,7 @@ def _settings_screen():
                        "an artist completely, use Block artist.")
             if st.button("Clear rejections", icon=":material/delete:"):
                 st.session_state["rejections"] = {}
-                storage.save_rejections({})
+                storage.save_rejections({}, SUBJECT)
                 st.rerun()
 
     # החסימה עצמה נשארת פעילה; רק התצוגה שלה ירדה מהחזית לטובת הפלייליסט
@@ -1687,13 +1771,13 @@ def _settings_screen():
                 if st.button("", key=f"unblock_{artist}", type="tertiary",
                              icon=":material/undo:", help="Unblock"):
                     st.session_state["blacklist"].discard(artist)
-                    storage.save_blacklist(st.session_state["blacklist"])
+                    storage.save_blacklist(st.session_state["blacklist"], SUBJECT)
                     st.rerun()
 
         if blacklist and st.button("Clear blocked artists",
                                    icon=":material/delete:"):
             st.session_state["blacklist"] = set()
-            storage.save_blacklist(st.session_state["blacklist"])
+            storage.save_blacklist(st.session_state["blacklist"], SUBJECT)
             st.rerun()
 
 
@@ -1706,6 +1790,7 @@ with st.sidebar:
     # ממנו לעמודה הראשית: הם מסכי תוכן, ובסרגל של 210px מאה וארבעים
     # גרסאות מקובצות הפכו לעמודת כרטיסים שכל כותרת בה נשברה לשלוש שורות.
     _rail_nav()
+    _rail_account()
     st.html("<div class='ts-railrule'></div>")
     _rail_taste()
     st.html("<div class='ts-railfill'></div>")
@@ -1713,6 +1798,8 @@ with st.sidebar:
 
     for warning in storage.warnings:
         st.warning(warning)
+
+_remember_anon()
 
 
 # ---------- מדידת גודל בדפדפן ----------
@@ -2177,7 +2264,7 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             if st.button("Block artist", key=f"btn_block_{uid}",
                          icon=":material/block:", use_container_width=True):
                 st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
-                storage.save_blacklist(st.session_state["blacklist"])
+                storage.save_blacklist(st.session_state["blacklist"], SUBJECT)
                 st.session_state["candidates"] = apply_blacklist(st.session_state["candidates"])
                 st.toast(f"Blocked '{track['artist']}'")
                 st.rerun()
@@ -2663,6 +2750,20 @@ elif search_mode == MODE_ARTIST and cover_artist.strip():
                        "press 'Find covers' for a direct cover search.")
 
 run_search = _clicked_search or st.session_state.pop("auto_run", False)
+
+# המכסה נגבית **רק כשחיפוש באמת עומד לרוץ**, ופעם אחת לחיפוש: היא מגנה על
+# הקריאות היקרות לחנויות ולקטלוגים, לא על טעינת עמוד. כמו חסימת השמירה,
+# היא פעילה רק כשהתחברות מוגדרת — אחרת פיתוח מקומי היה נגמר אחרי עשרה
+# חיפושים בלי שיש למשתמש דרך להתחבר ולהמשיך.
+_quota_blocked = False
+if run_search and LOGIN_ENABLED and not accounts.spend(SUBJECT):
+    run_search = False
+    _quota_blocked = True
+
+if _quota_blocked:
+    st.error("You've used up your searches for now. They refill over time — "
+             + ("or log in for your own allowance." if not SUBJECT.is_logged_in
+                else "come back tomorrow."))
 
 
 def _run_similar():
