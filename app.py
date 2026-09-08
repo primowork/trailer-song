@@ -87,8 +87,34 @@ st.markdown(
     """
     <style>
     /* הגופנים נטענים כאן ולא ב-config.toml: ה-theme מקבל שם משפחה, לא
-       כתובת. שלוש משפחות, כל אחת בתפקיד אחד — ראו את ההערה ב-config. */
-    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+       כתובת. שלוש משפחות, כל אחת בתפקיד אחד — ראו את ההערה ב-config.
+
+       **מהפרויקט עצמו ולא מ-Google Fonts.** הגרסה הראשונה עשתה
+       `@import` מ-fonts.googleapis.com, ובפריסה בפועל זה נכשל: הבקשה
+       לגיליון הסגנונות יצאה, אבל **אף קובץ גופן לא ירד** (אפס בקשות
+       ל-fonts.gstatic.com) — וכל הממשק נפל לגופן ברירת המחדל של
+       המערכת. גופן שהוא חלק מהזהות אינו יכול להיות תלוי בכך שרשת
+       חיצונית תענה לדפדפן של המשתמש.
+
+       שלושת הקבצים (תת-קבוצת latin, 91KB יחד) יושבים ב-`static/fonts/`
+       ומוגשים על ידי Streamlit עצמו — `enableStaticServing` ב-config.
+       Instrument Sans ו-JetBrains Mono הם גופנים משתנים, ולכן טווח
+       משקלים אחד מכסה את כל המשקלים שבשימוש בקובץ אחד. */
+    @font-face {
+        font-family: 'Bricolage Grotesque';
+        src: url('app/static/fonts/bricolage-grotesque-800.woff2') format('woff2');
+        font-weight: 800; font-style: normal; font-display: swap;
+    }
+    @font-face {
+        font-family: 'Instrument Sans';
+        src: url('app/static/fonts/instrument-sans.woff2') format('woff2');
+        font-weight: 400 600; font-style: normal; font-display: swap;
+    }
+    @font-face {
+        font-family: 'JetBrains Mono';
+        src: url('app/static/fonts/jetbrains-mono-500.woff2') format('woff2');
+        font-weight: 500; font-style: normal; font-display: swap;
+    }
 
     :root {
         --ink: #0A0B0F;
@@ -347,6 +373,48 @@ st.markdown(
         text-transform: uppercase; margin: 10px 0 2px;
     }
 
+    /* ---- מסך הפלייליסט ---- */
+    /* קבוצה לכל שיר מקור. בעמודה הראשית יש לה את הרוחב לנשום, ולכן
+       הכותרת נקראת בשורה אחת במקום להישבר לשלוש (מה שקרה כשהמסך הזה
+       ישב ב-rail של 210px). */
+    [class*="st-key-lovedgroup_"] [data-testid="stExpander"] details {
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 10px;
+    }
+    [class*="st-key-lovedgroup_"] summary { font-size: 14px; font-weight: 500; }
+    /* שורת גרסה שמורה: אותה שפה כמו שורת תוצאה — נגן, שם, והסרה.
+       היישור לשמאל מוגדר כאן ולא דרך `[data-testid="stSidebar"]`: כשהמסך
+       ישב בסרגל הוא ירש אותו משם, ובמעבר לעמודה הראשית כל שם אמן קפץ
+       למרכז של 984px (נמדד). */
+    [class*="st-key-favrow_"] {
+        gap: 10px; padding: 4px 6px; border-radius: 8px;
+    }
+    [class*="st-key-favrow_"]:hover { background: var(--raised); }
+    [class*="st-key-favrow_"] .stButton button {
+        border: none; background: transparent; min-height: 34px;
+        padding: 0 4px; color: var(--text-2);
+    }
+    [class*="st-key-favrow_"] .stButton button:hover { color: var(--text); }
+    [class*="st-key-favrow_"] .stButton button,
+    [class*="st-key-favrow_"] .stButton button > div {
+        justify-content: flex-start; text-align: start;
+    }
+    [class*="st-key-favrow_"] .stButton button p {
+        font-size: 13.5px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* כפתור ההסרה נשאר ברוחב האייקון שלו ואינו נמתח על השורה */
+    [class*="st-key-favrow_"] [class*="st-key-unfav_"] button {
+        width: 32px; min-width: 32px; padding: 0;
+    }
+    .st-key-lovedactions { gap: 10px; margin: 0 0 14px; }
+    .st-key-lovedactions .stButton button,
+    .st-key-lovedactions [data-testid="stDownloadButton"] button {
+        border: 1px solid var(--line-strong); background: transparent;
+        color: var(--text-2); border-radius: 8px;
+        min-height: 32px; padding: 0 12px; font-size: 13px;
+    }
+
     /* ---- כותרת התוצאות ---- */
     .ts-resulthead {
         display: flex; align-items: baseline; gap: 10px;
@@ -566,11 +634,15 @@ st.markdown(
         /* בלי `order` בכלל: סדר ה-DOM כבר נכון (זכוכית, שיר, אמן,
            הגרלה, חיפוש), ומה ששבר אותו קודם היה `flex-basis: 100%` על
            השדה — שדחף את הזכוכית לשורה משלה. */
-        .st-key-searchbar { padding: 8px 10px; gap: 8px 10px; }
+        /* שורה ראשונה: זכוכית + שם השיר לרוחב מלא, כמו שדה הסיכום
+           שבעיצוב. שדה האמן והכפתורים יורדים מתחת. */
+        .st-key-searchbar { padding: 10px 13px; gap: 8px 9px; }
         .st-key-searchbar [data-testid="stElementContainer"]:has(input) {
-            flex: 1 1 140px; min-width: 0;
+            flex: 1 1 100%; min-width: 0;
         }
-        .st-key-btn_dice button, .st-key-btn_search button { height: 36px; }
+        .st-key-btn_dice button, .st-key-btn_search button {
+            height: 34px; min-height: 34px;
+        }
 
         /* מצבי החיפוש נגללים אופקית במקום להיערם לשלוש שורות. `!important`
            כי ה-flex-wrap מגיע מהרכיב עצמו ולא מהמכולה שלנו. */
@@ -585,48 +657,63 @@ st.markdown(
         .st-key-moderow [data-testid="stButtonGroup"]::-webkit-scrollbar {
             display: none;
         }
+        /* גלולות עגולות **נפרדות**, ולא קופסה אחת עם מסגרת: זה מה
+           שהעיצוב מגדיר לטלפון. */
+        .st-key-moderow [data-testid="stButtonGroup"],
+        .st-key-moderow [data-testid="stButtonGroup"] > div {
+            background: transparent; border: none; padding: 0; gap: 6px;
+        }
         .st-key-moderow [data-testid="stButtonGroup"] button {
             white-space: nowrap; flex: none;
+            border: 1px solid var(--line-strong) !important;
+            border-radius: 20px !important; padding: 6px 11px !important;
+            min-height: 32px;
+        }
+        .st-key-moderow [data-testid="stButtonGroup"] button[aria-checked="true"],
+        .st-key-moderow [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+            border-color: transparent !important;
         }
         .st-key-moderow { gap: 8px 10px; }
         .st-key-moderow [data-testid="stSelectbox"] { min-width: 130px; }
 
-        /* השורה בטלפון, בשתי שורות ולא בארבע:
-             שורה 1  עטיפה · כותרת ומטא · נגינה
-             שורה 2  מד העוצמה · לב, לא-זה, ⋯
-           הרוחבים למטה הם מה שכופה את השבירה בדיוק שם: מד ופעולות אינם
-           נכנסים לשורה הראשונה יחד עם הכותרת, ולכן הם גולשים יחד לשנייה.
-           כל יעדי המגע 44px, כפי שההנדאוף מחייב. */
+        /* השורה בטלפון היא **רשת** ולא flex, כדי לקבל את הצורה שבעיצוב:
+           העטיפה גבוהה לגובה שתי השורות, הכותרת והמד זה מעל זה לצידה,
+           והכפתורים בבלוק מימין.
+           `display: contents` על מכולת הפעולות הוא מה שמאפשר את זה:
+           בלעדיו שלושת הכפתורים הם תא **אחד** ברוחב 148px שאינו נכנס
+           לצד המד; איתו כל כפתור הוא פריט רשת בפני עצמו שאפשר למקם. */
         [class*="st-key-trow_"] {
-            flex-wrap: wrap !important; gap: 10px !important; padding: 11px;
-            border-radius: 12px;
+            display: grid !important;
+            grid-template-columns: 52px minmax(0, 1fr) 44px 44px;
+            grid-template-rows: auto auto;
+            gap: 8px 10px !important; align-items: center;
+            padding: 11px; border-radius: 12px;
         }
-        /* גם כאן בלי `order`: סדר ה-DOM (עטיפה, נגינה, כותרת, תגים,
-           מד, פעולות) נשבר לשתי שורות בדיוק במקום הנכון ברגע שהרוחבים
-           נכונים — עטיפה+נגינה+כותרת ממלאים את השורה הראשונה, ומד
-           ופעולות גולשים יחד לשנייה. */
         [class*="st-key-trow_"] > div:first-child {
-            flex: 0 0 52px !important;
-        }
-        [class*="st-key-trow_"] > div:has(> [class*="st-key-tplay_"]) {
-            flex: 0 0 44px !important;
+            grid-column: 1; grid-row: 1 / span 2; align-self: start;
         }
         [class*="st-key-trow_"] > div:has(> [class*="st-key-tmain_"]) {
-            flex: 1 1 120px !important; min-width: 0 !important;
+            grid-column: 2; grid-row: 1; min-width: 0;
         }
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-tmeter_"]) {
+            grid-column: 2; grid-row: 2; min-width: 0;
+        }
+        [class*="st-key-trow_"] .ts-meter { width: 100%; }
         /* בטלפון אין תגים בשורה גם בעיצוב עצמו: ברוחב 390px הם דחסו את
            שם האמן לשליש מהרוחב, וזו בדיוק התלונה שהם אמורים לשרת */
         [class*="st-key-trow_"] > div:has(> [class*="st-key-ttags_"]) {
             display: none !important;
         }
-        [class*="st-key-trow_"] > div:has(> [class*="st-key-tmeter_"]) {
-            flex: 1 1 150px !important; min-width: 0 !important;
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-tplay_"]) {
+            grid-column: 3; grid-row: 1;
         }
-        [class*="st-key-trow_"] .ts-meter { width: 100%; }
-        [class*="st-key-trow_"] > div:has(> [class*="st-key-tacts_"]) {
-            flex: 0 0 auto !important;
-        }
-        [class*="st-key-tacts_"] { gap: 8px; }
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-tacts_"]),
+        [class*="st-key-tacts_"] { display: contents !important; }
+        /* לב ליד הנגינה, ומתחתיהם "לא זה" ו-⋯: ארבעה יעדי 44px בבלוק
+           אחד, במקום שורה שנייה שמתחרה עם המד על הרוחב */
+        [class*="st-key-tacts_"] > div:nth-child(1) { grid-column: 4; grid-row: 1; }
+        [class*="st-key-tacts_"] > div:nth-child(2) { grid-column: 3; grid-row: 2; }
+        [class*="st-key-tacts_"] > div:nth-child(3) { grid-column: 4; grid-row: 2; }
         [class*="st-key-tacts_"] .stButton button,
         [class*="st-key-tacts_"] [data-testid="stPopover"] button {
             width: 44px; min-width: 44px; height: 44px; min-height: 44px;
@@ -1297,6 +1384,10 @@ def _render_saved_versions(versions: list, favorites: dict):
             if st.button(entry.get("artist", "") or entry.get("track", ""),
                          key=f"fav_open_{key}", type="tertiary", width="stretch",
                          help=f"{entry.get('artist', '')} — {entry.get('track', '')}"):
+                # חזרה ל-Discover, אחרת החיפוש רץ מאחורי מסך הפלייליסט
+                # ואף אחד לא רואה אותו — `queue_fields` קובע את השדות,
+                # אבל השדות עצמם לא נוצרים כלל במסך הזה
+                st.session_state["rail_nav"] = NAV_DISCOVER
                 queue_fields(entry.get("track", ""), entry.get("artist", ""),
                              mode=MODE_SONG, auto_run=True)
             if st.button("", key=f"unfav_{key}", icon=":material/close:",
@@ -1347,7 +1438,9 @@ def _rail_nav():
 def _rail_taste():
     """בלוק YOUR TASTE: מה הדירוג למד, במשפט אחד ובאותיות רגילות."""
     st.html("<div class='ts-railcap'>YOUR TASTE</div>")
-    summary = taste.describe(taste_profile())
+    # שלוש תכונות ולא חמש: ברוחב 210px חמש נשברות לשש שורות ודוחפות את
+    # RECENT מתחת לקפל. התמונה המלאה נשארת זמינה ב-⋯ של כל שורה.
+    summary = taste.describe(taste_profile(), limit=3)
     st.html(f"<p class='ts-railtaste'>{html.escape(summary)}</p>" if summary
             else "<p class='ts-railtaste'>Nothing learned yet. Love a few "
                  "covers and the ranking starts leaning your way.</p>")
@@ -1364,10 +1457,56 @@ def _rail_recent():
                 f"{html.escape(track)} · {html.escape(artist)}</div>")
 
 
-def _rail_loved():
-    """הפלייליסט: קבוצות לפי שיר המקור, ריענון כתובות, וייצוא."""
+# מפתחות ה-widget שחייבים לשרוד מעבר בין מסכים. Streamlit מוחק
+# מ-`session_state` מפתח של widget שלא נוצר בריצה מסוימת, ומסכי Loved
+# ו-Settings עוצרים את הסקריפט לפני שדות החיפוש — כלומר בלי המראה
+# הזאת, ביקור בפלייליסט היה מוחק את השאילתה שהמשתמש הקליד.
+# זה בדיוק אותו כשל שכבר תפס את שדה האמן כשהוחלף ב-chip.
+SCREEN_SAFE_KEYS = (
+    "cover_title", "cover_artist", "search_mode", "sort_by",
+    "filter_style", "filter_tempo", "filter_length", "filter_recency",
+    "filter_prefer_new", "filter_fresh_only", "filter_same_work",
+)
+
+
+def _remember_screen_state():
+    """מעתיק את מצב הפקדים לעותק שאינו widget, לפני שהסקריפט נעצר."""
+    for key in SCREEN_SAFE_KEYS:
+        if key in st.session_state:
+            st.session_state[f"kept_{key}"] = st.session_state[key]
+
+
+def _restore_screen_state():
+    """מחזיר את המצב לפני שהפקדים נוצרים מחדש."""
+    for key in SCREEN_SAFE_KEYS:
+        if key not in st.session_state and f"kept_{key}" in st.session_state:
+            st.session_state[key] = st.session_state[f"kept_{key}"]
+
+
+def _loved_screen():
+    """הפלייליסט, בעמודה הראשית: קבוצות לפי שיר המקור, ריענון, וייצוא.
+
+    **לא ב-rail.** הגרסה הראשונה רינדרה אותו בתוך סרגל של 210px, ומאה
+    וארבעים גרסאות מקובצות לפי שיר הפכו שם לעמודת כרטיסים שכל כותרת בה
+    נשברה לשלוש שורות. ה-rail הוא ניווט; זה מסך תוכן, והוא צריך את
+    הרוחב של העמודה הראשית — בדיוק כמו התוצאות.
+    """
     favorites = st.session_state["favorites"]
-    st.html(f"<div class='ts-railcap'>LOVED · {len(favorites)}</div>")
+
+    # מקובץ לפי שיר המקור, ולא רשימה שטוחה: כל הגרסאות של אותו שיר
+    # יושבות יחד, וזו גם הדרך שבה חושבים על פלייליסט של קאברים.
+    groups: dict[str, list[tuple[str, dict]]] = {}
+    for key, entry in favorites.items():
+        groups.setdefault(origin_key(entry), []).append((key, entry))
+
+    st.html(
+        "<div class='ts-resulthead'>"
+        f"<h2 class='ts-h2'>{len(favorites)} loved cover"
+        f"{'' if len(favorites) == 1 else 's'}</h2>"
+        + (f"<span class='ts-lede'>across {len(groups)} song"
+           f"{'' if len(groups) == 1 else 's'} · newest first</span>"
+           if groups else "")
+        + "</div>")
 
     if not favorites:
         st.caption("Tap the heart next to a cover you like. It is saved here, "
@@ -1381,13 +1520,33 @@ def _rail_loved():
     if _stale:
         refresh_previews(favorites, keys=_stale, quiet=True)
 
-    # הכפתור נשאר כמוצא אחרון, ומתעלם מה-TTL — לגרסה שמתה באמצע סשן.
-    if st.button("Refresh playback links", icon=":material/refresh:",
-                 width="stretch",
-                 help="A preview URL is a CDN URL and does not live forever. "
-                      "A greyed-out play button is a version whose URL has "
-                      "died — this asks the store for a fresh one."):
-        refresh_previews(favorites)   # הכל, בלי קשר ל-TTL
+    # שתי פעולות המסך בשורה אחת בראשו, ולא אחת למעלה ואחת מתחת לכל
+    # הקבוצות: עם מאה וארבעים גרסאות מכווצות, כפתור שיושב מתחתיהן פשוט
+    # לא נמצא.
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["origin song", "origin artist", "artist", "track", "album",
+                     "genre", "year", "preview"])
+    # ממוין באותו קיבוץ כמו במסך, אחרת הקובץ מאבד את מה שהמסך מראה
+    for _, entry in sorted(favorites.items(), key=lambda item: (
+            origin_key(item[1]), -item[1].get("added_at", 0))):
+        origin = entry.get("origin") or {}
+        writer.writerow([origin.get("track", ""), origin.get("artist", ""),
+                         entry.get("artist", ""), entry.get("track", ""),
+                         entry.get("album", ""), entry.get("genre", ""),
+                         entry.get("year", ""), entry.get("preview_url", "")])
+
+    with st.container(key="lovedactions", horizontal=True,
+                      vertical_alignment="center"):
+        # הכפתור הוא מוצא אחרון ומתעלם מה-TTL — לגרסה שמתה באמצע סשן
+        if st.button("Refresh playback links", icon=":material/refresh:",
+                     help="A preview URL is a CDN URL and does not live forever. "
+                          "A greyed-out play button is a version whose URL has "
+                          "died — this asks the store for a fresh one."):
+            refresh_previews(favorites)   # הכל, בלי קשר ל-TTL
+        st.download_button("Export playlist", icon=":material/download:",
+                           data=buffer.getvalue().encode("utf-8-sig"),
+                           file_name="playlist.csv", mime="text/csv")
 
     _note = st.session_state.pop(REFRESH_NOTE, None)
     if _note and _note["missing"]:
@@ -1402,12 +1561,6 @@ def _rail_loved():
             st.caption(f"{_note['missing']} of {_note['total']} had no live "
                        f"link — their play button stays greyed out.")
 
-    # מקובץ לפי שיר המקור, ולא רשימה שטוחה: כל הגרסאות של אותו שיר
-    # יושבות יחד, וזו גם הדרך שבה חושבים על פלייליסט של קאברים.
-    groups: dict[str, list[tuple[str, dict]]] = {}
-    for key, entry in favorites.items():
-        groups.setdefault(origin_key(entry), []).append((key, entry))
-
     def newest(items) -> float:
         return max(entry.get("added_at", 0) for _, entry in items)
 
@@ -1421,32 +1574,16 @@ def _rail_loved():
         # בלי מונה גרסאות: הן ממילא נספרות במבט אחד ברגע שפותחים את
         # הקבוצה, והמילה בכל שורה הייתה טקסט שממלא מסך.
         label = song + (f" · {by}" if by else "")
-        # מכווץ כברירת מחדל: שבעים גרסאות שמורות פרושות הן סרגל שאי
+        # מכווץ כברירת מחדל: מאה וארבעים גרסאות פרושות הן מסך שאי
         # אפשר לגלול בו אל שום דבר
-        with st.expander(label, expanded=False):
-            _render_saved_versions(versions, favorites)
-
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["origin song", "origin artist", "artist", "track", "album",
-                     "genre", "year", "preview"])
-    # ממוין באותו קיבוץ כמו במסך, אחרת הקובץ מאבד את מה שהסרגל מראה
-    for _, entry in sorted(favorites.items(), key=lambda item: (
-            origin_key(item[1]), -item[1].get("added_at", 0))):
-        origin = entry.get("origin") or {}
-        writer.writerow([origin.get("track", ""), origin.get("artist", ""),
-                         entry.get("artist", ""), entry.get("track", ""),
-                         entry.get("album", ""), entry.get("genre", ""),
-                         entry.get("year", ""), entry.get("preview_url", "")])
-    st.download_button("Export playlist", icon=":material/download:",
-                       data=buffer.getvalue().encode("utf-8-sig"),
-                       file_name="playlist.csv", mime="text/csv",
-                       width="stretch")
+        with st.container(key=f"lovedgroup_{origin_key(versions[0][1])}"):
+            with st.expander(label, expanded=False):
+                _render_saved_versions(versions, favorites)
 
 
-def _rail_settings():
-    """הגדרות, ייבוא מצעד, דחיות ורשימה שחורה."""
-    st.html("<div class='ts-railcap'>SETTINGS</div>")
+def _settings_screen():
+    """הגדרות, ייבוא מצעד, דחיות ורשימה שחורה — גם הוא מסך ולא סרגל."""
+    st.html("<div class='ts-resulthead'><h2 class='ts-h2'>Settings</h2></div>")
     st.caption(f"Data folder: `{storage.DATA_DIR or 'unavailable'}`")
     if not youtube_module.available():
         # מידע על פיצ'ר כבוי, לא שלב במסלול — ולכן כאן ולא בין התוצאות
@@ -1523,19 +1660,12 @@ with st.sidebar:
     st.html("<div class='ts-brand'><div class='ts-mark'></div>"
             "<span class='ts-word'>COVER<br>LOVER</span></div>")
 
+    # ה-rail הוא **ניווט בלבד**, בכל המסכים. הפלייליסט וההגדרות ירדו
+    # ממנו לעמודה הראשית: הם מסכי תוכן, ובסרגל של 210px מאה וארבעים
+    # גרסאות מקובצות הפכו לעמודת כרטיסים שכל כותרת בה נשברה לשלוש שורות.
     _rail_nav()
     st.html("<div class='ts-railrule'></div>")
-
-    nav = st.session_state["rail_nav"]
-    if nav == NAV_LOVED:
-        _rail_loved()
-    elif nav == NAV_SETTINGS:
-        _rail_settings()
-    else:
-        # Discover ו-Charts חולקים את אותו rail: מה שמשתנה ביניהם הוא
-        # התוכן במסך הראשי, לא כאן
-        _rail_taste()
-
+    _rail_taste()
     st.html("<div class='ts-railfill'></div>")
     _rail_recent()
 
@@ -2026,6 +2156,24 @@ with st.container(key="appbar", horizontal=True, vertical_alignment="center"):
     st.html(f"<span class='ts-navcount'>{len(st.session_state['favorites'])}"
             " loved</span>")
 
+# מסך ולא סרגל. `st.stop()` ולא הסתרה ב-CSS: זה מסך אחר, ואין סיבה
+# לשלם על רינדור של כל התוצאות מאחוריו. מה שנשמר לפני העצירה הוא מצב
+# הפקדים — ראו `_remember_screen_state`.
+_nav = st.session_state["rail_nav"]
+# שאילתה שממתינה פירושה שמישהו ביקש לראות תוצאות; מסך אחר היה בולע
+# אותה בשקט, כי השדות שהיא ממלאת אינם נוצרים שם בכלל
+if st.session_state.get("pending_fields"):
+    _nav = st.session_state["rail_nav"] = NAV_DISCOVER
+if _nav in (NAV_LOVED, NAV_SETTINGS):
+    _remember_screen_state()
+    if _nav == NAV_LOVED:
+        _loved_screen()
+    else:
+        _settings_screen()
+    st.stop()
+
+_restore_screen_state()
+
 _pending = st.session_state.pop("pending_fields", None)
 if _pending:
     _title, _artist, _mode, _auto_run = _pending
@@ -2124,9 +2272,12 @@ with searchbar:
 mode_row = st.container(key="moderow", horizontal=True, wrap=True,
                         vertical_alignment="center")
 with mode_row:
+    # בלי `default=`: Streamlit אוסר על widget לקבל גם ערך ב-session_state
+    # וגם ברירת מחדל, ו-`_restore_screen_state` כותב לשם בחזרה ממסך אחר.
+    # ערך ההתחלה מגיע מ-`_init_state` ממילא.
     search_mode = st.segmented_control(
         "Search mode", SEARCH_MODES, key="search_mode",
-        label_visibility="collapsed", default=MODE_SONG,
+        label_visibility="collapsed",
         help=f"{MODE_SONG}: merges the official cover catalogue "
              "(SecondHandSongs/MusicBrainz) with a store search for "
              f"'Epic/Trailer/Cinematic' tracks. {MODE_ARTIST}: finds the "
@@ -2145,21 +2296,28 @@ with mode_row:
 
     _active_filters = 0
     with st.popover("Filters", icon=":material/tune:"):
-        style_filter = st.selectbox("Style / genre", [ALL, *STYLES])
+        # לכל פקד `key`: בלי זה מעבר למסך Loved וחזרה היה מאפס את
+        # הפילטרים, כי Streamlit מוחק מצב של widget שלא נוצר בריצה
+        # (ראו `SCREEN_SAFE_KEYS`)
+        style_filter = st.selectbox("Style / genre", [ALL, *STYLES],
+                                    key="filter_style")
         tempo_filter = st.selectbox(
-            "Tempo", [ALL, audio.TEMPO_FAST, audio.TEMPO_SLOW])
-        length_filter = st.selectbox("Track length",
-                                     [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG])
-        recency = st.selectbox("Released", list(RECENCY_OPTIONS))
+            "Tempo", [ALL, audio.TEMPO_FAST, audio.TEMPO_SLOW],
+            key="filter_tempo")
+        length_filter = st.selectbox(
+            "Track length", [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG],
+            key="filter_length")
+        recency = st.selectbox("Released", list(RECENCY_OPTIONS),
+                               key="filter_recency")
         prefer_new = st.checkbox(
-            "Prefer newer with a high score", value=True,
+            "Prefer newer with a high score", value=True, key="filter_prefer_new",
             help="A freshness bonus that fades from 25 to zero over five years.")
         fresh_only = st.checkbox(
-            "Unheard only", value=False,
+            "Unheard only", value=False, key="filter_fresh_only",
             help="Skips results already shown in this session, to bring up "
                  "new material.")
         same_work_only = st.checkbox(
-            "Verified same work only", value=False,
+            "Verified same work only", value=False, key="filter_same_work",
             help="A store search matches by name alone, so \"I'm Sorry\" also "
                  "returns different songs with that title. This keeps only "
                  "recordings the catalogue (SecondHandSongs/MusicBrainz) "

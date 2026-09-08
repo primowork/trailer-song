@@ -963,7 +963,7 @@ def test_the_playlist_is_a_rail_screen_and_the_blacklist_is_not(app):
     """
     _nav(app, "Loved")
     rendered = _rendered(app)
-    assert "LOVED" in rendered
+    assert "loved cover" in rendered
     assert "Blocked artists" not in rendered
 
     _nav(app, "Settings")
