@@ -24,7 +24,7 @@ import youtube as youtube_module
 import preview as preview_module
 import storage
 import search as search_module
-import suggest as suggest_module
+import tags as tags_module
 import taste
 from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
@@ -377,13 +377,6 @@ st.markdown(
     .st-key-resortrow { margin: -2px 0 10px; }
     .st-key-btn_which { margin-top: 2px; }
 
-    /* ---- הצעות השלמה ---- */
-    .ts-suggestcap {
-        font-family: var(--mono); font-weight: 500; font-size: 10px;
-        letter-spacing: .12em; color: var(--text-4);
-        text-transform: uppercase; margin: 10px 0 2px;
-    }
-
     /* ---- מסך הפתיחה ---- */
     .ts-startcap { margin: 18px 0 10px; }
     /* נקודות ההתחלה נראות כמו שורות תוצאה ולא ככפתורים גנריים: זו אותה
@@ -509,6 +502,14 @@ st.markdown(
         letter-spacing: .06em; color: var(--amber);
         border: 1px solid rgba(255,176,32,.35); border-radius: 5px;
         padding: 3px 6px; white-space: nowrap;
+    }
+    /* התג הנגזר מהמדידה — מכוון ולא בענבר. הענבר שמור לפעולה ראשית
+       ולמדרגת "גדול" (טבלת הטוקנים בהנדאוף), ואקסנט שמופיע על כל שורה
+       מפסיק לסמן משהו. ההבדל בצבע הוא גם ההבדל במשמעות: הענבר הוא מה
+       שהכותרת מצהירה, האפור הוא מה שנמדד בפועל. */
+    .ts-tag-mood {
+        color: var(--text-3);
+        border-color: var(--line-strong);
     }
 
     /* מד העוצמה: אורך קבוע, ולכן אפשר להשוות שורה לשורה במבט אחד.
@@ -1170,8 +1171,6 @@ def _init_state():
         "evidence": {},
         "original": None,
         "all_inputs": [],
-        "suggest_query": "",
-        "suggestions": [],
         "artist_preview_query": "",
         "artist_preview_titles": [],
         "cors_retried": set(),
@@ -1590,7 +1589,7 @@ def _rail_recent():
 # זה בדיוק אותו כשל שכבר תפס את שדה האמן כשהוחלף ב-chip.
 SCREEN_SAFE_KEYS = (
     "cover_title", "cover_artist", "search_mode", "sort_by",
-    "filter_style", "filter_tempo", "filter_length", "filter_recency",
+    "filter_style", "filter_tempo", "filter_mood", "filter_length", "filter_recency",
     "filter_prefer_new", "filter_fresh_only", "filter_same_work",
 )
 
@@ -2136,6 +2135,10 @@ def render_track(track: dict, index: int, learned: dict | None = None):
     features = st.session_state.get("bigness", {}).get(uid)
     evidence = st.session_state.get("evidence", {}).get(uid) or []
     indicators = search_module.trailer_indicators(track)
+    # שני צירים שונים: מה שהכותרת **מצהירה** (epic/trailer) מול מה
+    # שהמדידה **מצאה** (ACTION/SLOW BURN). לכן אחד מכל סוג ולא שניים
+    # מאותו סוג — ושניהם יחד עדיין בתקרת שני התגים של הפריסה.
+    mood = tags_module.derive(features)
 
     # שורה אחת לכל תוצאה, ולא כרטיס עם מסגרת. Streamlit לא מכווץ עמודות
     # בטלפון אלא **עורם** אותן לרוחב מלא, כך שכל תוצאה הפכה לשמונה בלוקים
@@ -2200,10 +2203,14 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         # שניים לכל היותר. נמדד ברוחב 1080: שלושה תגים (SOUNDTRACK,
         # CINEMATIC) תפסו 260px ודחסו את שם האמן ל-16px. השאר נשארים
         # ב-⋯ דרך פירוק הדירוג, שם ממילא מפורטת הסיבה המלאה.
-        if indicators:
+        if indicators or mood:
+            shown = ([(indicators[0], "ts-tag"), (mood[0], "ts-tag ts-tag-mood")]
+                     if indicators and mood else
+                     [(sign, "ts-tag") for sign in indicators[:2]] +
+                     [(sign, "ts-tag ts-tag-mood") for sign in mood[:2]])
             st.html("<div class='ts-tags'>" + "".join(
-                f"<span class='ts-tag'>{html.escape(sign.upper())}</span>"
-                for sign in indicators[:2]) + "</div>")
+                f"<span class='{css}'>{html.escape(sign.upper())}</span>"
+                for sign, css in shown[:2]) + "</div>")
 
     with col_meter:
         _loudness_meter(features)
@@ -2260,6 +2267,11 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             st.caption(_rank_breakdown(track, learned, features))
             if audio.measured(features):
                 st.caption(audio.describe(features))
+                # השורה מציגה שני תגים לכל היותר (מגבלת פריסה אמיתית),
+                # ולכן הרשימה המלאה יושבת כאן — באותו מקום שבו כבר מפורט
+                # פירוק הדירוג המלא.
+                if mood:
+                    st.caption("sounds like: " + " · ".join(sign.lower() for sign in mood))
             st.divider()
             if st.button("Block artist", key=f"btn_block_{uid}",
                          icon=":material/block:", use_container_width=True):
@@ -2311,16 +2323,6 @@ if _pending:
         st.session_state["search_mode"] = _mode
     if _auto_run:
         st.session_state["auto_run"] = True
-    # שדה שמולא בלחיצה אינו שגיאת כתיב, ולכן אין מה להשלים לו.
-    #
-    # זה מה שנשאר "מחפש אוטומטית" אחרי שההגרלה עצמה כבר הופרדה מהחיפוש:
-    # `suggestion_row` רץ בכל ריצת סקריפט, ולכן ברגע שהקובייה מילאה את
-    # השדה הוא יצא ל-iTunes, הציג ספינר, והוריד שורת בלוקים — כלומר בדיוק
-    # מה שנראה כמו חיפוש שאיש לא ביקש. סימון השאילתה כמטופלת עוצר את
-    # הקריאה בלי לגעת בהשלמות עצמן: ברגע שהמשתמש יקליד משהו אחר, השאילתה
-    # תשתנה וההשלמות יחזרו לעבוד כרגיל.
-    st.session_state["suggest_query"] = (_title or "").strip()
-    st.session_state["suggestions"] = []
 
 RECENT_ROLLS = 5
 
@@ -2449,6 +2451,14 @@ with mode_row:
         tempo_filter = st.selectbox(
             "Tempo", [ALL, audio.TEMPO_FAST, audio.TEMPO_SLOW],
             key="filter_tempo")
+        # המסנן היחיד כאן שנשען על מה שנמדד בפועל ולא על מה שכתוב
+        # בכותרת. לכן הוא גם היחיד שמוחל על התוצאות המוצגות ולא נשלח
+        # לחנות: לחנות אין מושג איך הטראק נשמע.
+        mood_filter = st.selectbox(
+            "Sounds like", [ALL, *tags_module.VOCABULARY], key="filter_mood",
+            help="Derived from what your browser measured in the track, not "
+                 "from its title. Versions that have not been measured yet "
+                 "are kept, so the list does not empty out while measuring.")
         length_filter = st.selectbox(
             "Track length", [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG],
             key="filter_length")
@@ -2477,7 +2487,8 @@ with mode_row:
                        "filtering like that, so its versions always appear.")
 
     _active_filters = sum([
-        style_filter != ALL, tempo_filter != ALL, length_filter != ALL,
+        style_filter != ALL, tempo_filter != ALL, mood_filter != ALL,
+        length_filter != ALL,
         RECENCY_OPTIONS[recency] != 0, fresh_only, same_work_only,
     ])
     if _active_filters:
@@ -2488,45 +2499,10 @@ with mode_row:
 filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
 
-def suggestion_row(query: str):
-    """השלמת שם השיר ותיקון שגיאת כתיב, מול שמות אמיתיים מהקטלוג.
-
-    שם חלקי או משובש מחזיר מעט מאוד תוצאות, והמשתמש לא יודע אם השיר לא קיים או
-    שהוא פשוט טעה. ההצעות כאן הן שירים שקיימים במאגר שבו נחפש בפועל, ולכן לחיצה
-    עליהן מבטיחה שאילתה שתחזיר משהו.
-    """
-    query = (query or "").strip()
-    if len(query) < suggest_module.MIN_QUERY_LEN:
-        return
-    # ההצעות נשמרות לפי הטקסט: בלי זה כל rerun (סימון checkbox, מדידה) פונה שוב
-    # ל-iTunes על אותו שם בדיוק
-    if st.session_state["suggest_query"] != query:
-        st.session_state["suggest_query"] = query
-        with st.spinner("Looking for similar names..."):
-            st.session_state["suggestions"] = suggest_module.suggest(query)
-
-    items = st.session_state["suggestions"]
-    if not items:
-        return
-
-    correction = suggest_module.did_you_mean(query, items)
-    if correction:
-        st.warning(f"Did you mean: **{correction['label']}**")
-    else:
-        st.html("<div class='ts-suggestcap'>Completions from the catalogue</div>")
-
-    # מכולה אופקית, לא st.columns: Streamlit לא מכווץ עמודות בטלפון אלא
-    # עורם אותן לרוחב מלא (התיעוד המקורי לזה יושב ב-render_track) — ארבע
-    # עמודות הפכו לארבעה בלוקים מלאי-רוחב שנראו כמו כפילות שמציפה את הדף.
-    row = st.container(horizontal=True, wrap=True, vertical_alignment="top")
-    for index, item in enumerate(items[:4]):
-        if row.button(item["label"][:38], key=f"sug_{index}",
-                      help=item["label"]):
-            st.session_state["suggest_query"] = ""
-            queue_fields(item["track"], item["artist"])
-
-
-suggestion_row(cover_title)
+# ההשלמות מהקטלוג הוסרו לבקשת המשתמש: שורה של ארבעה בלוקים מתחת לשדה
+# החיפוש, שרצה בכל ריצת סקריפט ויצאה לרשת בכל שינוי טקסט. בטלפון היא
+# דחפה את התוצאות מתחת לקפל, וזה גם מה שגרם להגרלה להיראות כאילו היא
+# מחפשת מיד. `suggest.py` נשאר בריפו אבל אינו בשימוש.
 
 ARTIST_PREVIEW_COUNT = 20
 
@@ -2953,6 +2929,14 @@ if candidates:
         f"<span data-result-generation='{st.session_state['result_generation']}' hidden></span>",
         unsafe_allow_html=True)
     display = list(candidates)
+    if mood_filter != ALL:
+        # אותה מלכודת שמתועדת ב-`same_work_only` מיד מתחת: סינון על משהו
+        # שעוד לא קיים מרוקן את הרשימה. כאן זה נמנע במקור — גרסה שטרם
+        # נמדדה **עוברת** את המסנן (`tags.matches`), ולכן הרשימה לא
+        # מתרוקנת בזמן שהמדידה עדיין רצה.
+        display = [t for t in display
+                   if tags_module.matches(
+                       st.session_state.get("bigness", {}).get(t["uid"]), mood_filter)]
     if same_work_only:
         # רק כשיש בכלל אימות בתוצאות האלה. "קאברים לאמן", "עוד כמו זה"
         # והחיפוש החופשי אינם עוברים דרך הקטלוג, ולכן אין להם `work_verified`

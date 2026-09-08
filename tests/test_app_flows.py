@@ -14,7 +14,6 @@ import artists
 import covers
 import storage
 import search as search_module
-import suggest as suggest_module
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
 
@@ -232,36 +231,13 @@ def test_the_dice_fills_both_fields_but_does_not_search(app, monkeypatch):
     assert not app.session_state["candidates"]
 
 
-def test_the_dice_does_not_go_to_the_catalogue_for_completions(app, monkeypatch):
-    """מה שנשאר "מחפש אוטומטית" אחרי שההגרלה הופרדה מהחיפוש.
+def test_there_is_no_completions_row_under_the_search_box(app, monkeypatch):
+    """ההשלמות מהקטלוג הוסרו לבקשת המשתמש.
 
-    `suggestion_row` רץ בכל ריצת סקריפט, ולכן ברגע שהקובייה מילאה את
-    השדה הוא יצא ל-iTunes, הציג ספינר והוריד שורת בלוקים. מבחינת המשתמש
-    זה חיפוש שהוא לא ביקש, גם אם הוא לא `find_all_covers`. הטסט הקודם
-    ספר רק את חיפוש הקאברים — ולכן הקריאה הזו עברה בשקט.
+    שורה של ארבעה בלוקים מתחת לשדה, שרצה בכל ריצת סקריפט ויצאה לרשת בכל
+    שינוי טקסט. בטלפון היא דחפה את התוצאות מתחת לקפל, וזו גם הסיבה
+    שהגרלה נראתה כאילו היא מחפשת מיד.
     """
-    called = {"suggest": 0, "covers": 0}
-
-    def _suggest(query, limit=6):
-        called["suggest"] += 1
-        return []
-
-    def _covers(title, artist="", **k):
-        called["covers"] += 1
-        return [], "src", None
-
-    monkeypatch.setattr(suggest_module, "suggest", _suggest)
-    monkeypatch.setattr(covers, "find_all_covers", _covers)
-
-    _dice(app).click().run()
-
-    assert not app.exception
-    assert app.session_state["cover_title"], "הקובייה לא מילאה את השדה"
-    assert called == {"suggest": 0, "covers": 0}
-
-
-def test_typing_still_gets_completions(app, monkeypatch):
-    """הצד השני: השתקת ההשלמות היא לשדה שמולא בלחיצה, לא לשדה שהוקלד."""
     catalog = [track("The Verve", "Bitter Sweet Symphony", "v1")]
     monkeypatch.setattr(search_module, "itunes_search",
                         lambda *a, **k: [dict(c) for c in catalog])
@@ -270,7 +246,28 @@ def test_typing_still_gets_completions(app, monkeypatch):
     app.run()
 
     assert not app.exception
-    assert app.session_state["suggestions"], "ההשלמות נעלמו גם למי שהקליד"
+    assert "Completions from the catalogue" not in _rendered(app)
+    assert not [b for b in app.button if str(b.key or "").startswith("sug_")]
+
+
+def test_rolling_a_song_goes_nowhere_near_the_network(app, monkeypatch):
+    """ההגרלה ממלאת שדות בלבד. כל קריאת רשת כאן היא חיפוש שאיש לא ביקש —
+    גם כזו שאינה `find_all_covers`, כפי שהיו ההשלמות שהוסרו."""
+    calls = {"n": 0}
+
+    def _counted(*a, **k):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(search_module, "itunes_search", _counted)
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda *a, **k: (_counted() or [], "src", None))
+
+    _dice(app).click().run()
+
+    assert not app.exception
+    assert app.session_state["cover_title"], "הקובייה לא מילאה את השדה"
+    assert calls["n"] == 0
 
 
 def test_the_search_button_runs_what_the_dice_rolled(app, monkeypatch):
@@ -361,19 +358,6 @@ def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
     assert app.session_state["cover_title"] == "Yesterday"
     assert app.session_state["candidates"]
     assert app.session_state["candidates"][0]["uid"] == "itunes-c1"
-
-
-def test_suggestion_click_fills_both_fields(app, monkeypatch):
-    catalog = [track("The Verve", "Bitter Sweet Symphony", "v1")]
-    monkeypatch.setattr(search_module, "itunes_search", lambda *a, **k: [dict(c) for c in catalog])
-
-    app.session_state["cover_title"] = "bitter sweet symphany"
-    app.run()
-    app.button(key="sug_0").click().run()
-
-    assert not app.exception
-    assert app.session_state["cover_title"] == "Bitter Sweet Symphony"
-    assert app.session_state["cover_artist"] == "The Verve"
 
 
 def test_more_like_this_replaces_the_list(app, monkeypatch):
@@ -663,6 +647,56 @@ def test_only_unseen_applies_to_the_cover_search_too(app):
     assert [t["uid"] for t in app_module.drop_seen(tracks, None)] == \
         ["itunes-a", "itunes-b"], "בלי הסימון שום דבר לא יורד"
     assert [t["uid"] for t in app_module.drop_seen(tracks, seen)] == ["itunes-b"]
+
+
+def _features(**levels) -> dict:
+    """מדידה גולמית מתוך הטווחים המתועדים ב-`audio.py`, ולא מספרי קסם."""
+    import audio
+    ranges = {name: (floor, full) for name, (_, floor, full) in audio.WEIGHTS.items()}
+    ranges.update(audio.TIMBRE_RANGES)
+    features = {name: floor + 0.45 * (full - floor)
+                for name, (floor, full) in ranges.items()}
+    for name, level in levels.items():
+        floor, full = ranges[name]
+        features[name] = floor + level * (full - floor)
+    return features
+
+
+def test_the_sounds_like_filter_selects_on_the_measurement(app):
+    """המסנן היחיד שנשען על מה שנמדד בפועל ולא על מה שכתוב בכותרת."""
+    import tags as tags_module
+
+    loud = track("Loud Cover", "Yellow", "loud")
+    calm = track("Calm Cover", "Yellow", "calm")
+    app.session_state["candidates"] = [loud, calm]
+    app.session_state["bigness"] = {
+        "itunes-loud": _features(onset_rate=0.9, loudness=0.9),
+        "itunes-calm": _features(loudness=0.05, low_end=0.05, flux=0.05),
+    }
+    app.run()
+
+    app.selectbox(key="filter_mood").select(tags_module.ACTION).run()
+
+    assert not app.exception
+    shown = _rendered(app)
+    assert "Loud Cover" in shown
+    assert "Calm Cover" not in shown
+
+
+def test_the_sounds_like_filter_keeps_versions_that_are_not_measured_yet(app):
+    """אותה מלכודת שמתועדת ב-`same_work_only`: סינון על משהו שעוד לא קיים
+    מרוקן את הרשימה. כאן המדידה מגיעה מהדפדפן תוך כדי, ולכן מסנן שמעלים
+    את מה שטרם נמדד היה מרוקן את המסך בדיוק ברגע שהתוצאות הגיעו."""
+    import tags as tags_module
+
+    app.session_state["candidates"] = [track("Unmeasured Cover", "Yellow", "u")]
+    app.session_state["bigness"] = {}
+    app.run()
+
+    app.selectbox(key="filter_mood").select(tags_module.ACTION).run()
+
+    assert not app.exception
+    assert "Unmeasured Cover" in _rendered(app)
 
 
 def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):
