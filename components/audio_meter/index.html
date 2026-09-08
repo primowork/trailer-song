@@ -4,7 +4,7 @@
   body { margin: 0; font: 12px system-ui, sans-serif; direction: rtl; color: #666; }
   #status { padding: 2px 4px; }
 </style>
-<div id="status">ממתין למדידה…</div>
+<div id="status">Waiting to measure…</div>
 <script>
 // רכיב Streamlit ללא שלב build: פרוטוקול ה-postMessage ממומש כאן ידנית.
 const send = (type, data) =>
@@ -247,7 +247,7 @@ async function run(tracks) {
   // סדרתי בכוונה: 20 הורדות במקביל מציפות את הרשת של המשתמש
   for (let i = 0; i < tracks.length; i++) {
     const track = tracks[i];
-    setStatus(`מודד ${i + 1}/${tracks.length}…`);
+    setStatus(`Measuring ${i + 1}/${tracks.length}…`);
     try {
       results[track.uid] = await measure(track.url);
     } catch (err) {
@@ -256,7 +256,7 @@ async function run(tracks) {
       results[track.uid] = { error: cors ? "cors_failed" : String(err).slice(0, 120) };
     }
   }
-  setStatus(`נמדדו ${tracks.length} טראקים`);
+  setStatus(`Measured ${tracks.length} tracks`);
   setValue(results);
   running = false;
 }
@@ -270,7 +270,7 @@ window.addEventListener("message", (event) => {
   if (running || signature === lastBatch) return;
   lastBatch = signature;
   if (!tracks.length) {
-    setStatus("אין מה למדוד");
+    setStatus("Nothing to measure");
     return;
   }
   run(tracks);

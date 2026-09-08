@@ -334,11 +334,14 @@ def bonus(track: dict, features: dict | None, learned: dict) -> int:
     return int(round(MAX_TASTE_BONUS * match(track, features, learned)))
 
 
-def describe(learned: dict) -> str:
+def describe(learned: dict, limit: int = 5) -> str:
     """מה בדיוק נלמד, בשפה אנושית.
 
     בלי זה זו קופסה שחורה: המשתמש רואה שהסדר השתנה ואינו יכול לדעת אם
     המערכת הבינה אותו נכון, ולכן גם לא יכול לתקן אותה.
+
+    `limit` — כמה תכונות למנות. ב-rail של 210px חמש תכונות נשברות לשש
+    שורות, ולכן הוא מבקש פחות; במקומות רחבים יותר נשארת התמונה המלאה.
     """
     if not learned or not learned.get("count"):
         return ""
@@ -368,7 +371,7 @@ def describe(learned: dict) -> str:
         kind, _, name = trait.partition(":")
         label = _TRAIT_LABELS.get(kind, kind)
         parts.append(f"{label} {display.get(trait, name)}".strip())
-        if len(parts) >= 5:
+        if len(parts) >= limit:
             break
 
     source = f"{learned['count']} loves"
@@ -384,7 +387,7 @@ def describe(learned: dict) -> str:
 
     if not parts and not avoided:
         return f"Learning from {source} — no clear pattern yet"
-    text = f"Learning from {source}: " + " · ".join(parts[:5])
+    text = f"Learning from {source}: " + " · ".join(parts[:limit])
     if avoided:
         text += " · avoiding: " + " · ".join(avoided)
     return text
