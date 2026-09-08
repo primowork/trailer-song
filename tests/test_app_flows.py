@@ -14,6 +14,7 @@ import artists
 import covers
 import storage
 import search as search_module
+import suggest as suggest_module
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
 
@@ -229,6 +230,47 @@ def test_the_dice_fills_both_fields_but_does_not_search(app, monkeypatch):
     assert app.session_state["search_mode"] == "Covers of a song"
     assert called["n"] == 0, "ההגרלה יצאה לרשת בלי שביקשו חיפוש"
     assert not app.session_state["candidates"]
+
+
+def test_the_dice_does_not_go_to_the_catalogue_for_completions(app, monkeypatch):
+    """מה שנשאר "מחפש אוטומטית" אחרי שההגרלה הופרדה מהחיפוש.
+
+    `suggestion_row` רץ בכל ריצת סקריפט, ולכן ברגע שהקובייה מילאה את
+    השדה הוא יצא ל-iTunes, הציג ספינר והוריד שורת בלוקים. מבחינת המשתמש
+    זה חיפוש שהוא לא ביקש, גם אם הוא לא `find_all_covers`. הטסט הקודם
+    ספר רק את חיפוש הקאברים — ולכן הקריאה הזו עברה בשקט.
+    """
+    called = {"suggest": 0, "covers": 0}
+
+    def _suggest(query, limit=6):
+        called["suggest"] += 1
+        return []
+
+    def _covers(title, artist="", **k):
+        called["covers"] += 1
+        return [], "src", None
+
+    monkeypatch.setattr(suggest_module, "suggest", _suggest)
+    monkeypatch.setattr(covers, "find_all_covers", _covers)
+
+    _dice(app).click().run()
+
+    assert not app.exception
+    assert app.session_state["cover_title"], "הקובייה לא מילאה את השדה"
+    assert called == {"suggest": 0, "covers": 0}
+
+
+def test_typing_still_gets_completions(app, monkeypatch):
+    """הצד השני: השתקת ההשלמות היא לשדה שמולא בלחיצה, לא לשדה שהוקלד."""
+    catalog = [track("The Verve", "Bitter Sweet Symphony", "v1")]
+    monkeypatch.setattr(search_module, "itunes_search",
+                        lambda *a, **k: [dict(c) for c in catalog])
+
+    app.session_state["cover_title"] = "bitter sweet symphany"
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["suggestions"], "ההשלמות נעלמו גם למי שהקליד"
 
 
 def test_the_search_button_runs_what_the_dice_rolled(app, monkeypatch):
