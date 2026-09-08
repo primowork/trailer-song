@@ -281,7 +281,7 @@ def find_epic_versions(title: str, artist: str = "", limit: int = 60,
         track["trailer_indicator"] = is_trailer_indicator(track)
 
     results.sort(key=lambda t: (t["trailer_indicator"], t.get("score", 0)), reverse=True)
-    return results[:limit], "חיפוש בחנויות"
+    return results[:limit], "store search"
 
 
 def find_covers(title: str, artist: str = "",
@@ -494,7 +494,7 @@ def find_artist_covers(artist: str, limit: int = 80, filters: dict | None = None
             continue
         seen.add(track["uid"])
         unique.append(track)
-    return unique[:limit], "חיפוש בחנויות לפי אמן", titles
+    return unique[:limit], "store search by artist", titles
 
 
 # ---------- "עוד כמו זה" ----------
@@ -550,7 +550,7 @@ def more_like_style(track: dict, limit: int = SIMILAR_LIMIT) -> tuple[list[dict]
             continue
         seen.add(item["uid"])
         unique.append(item)
-    return unique[:limit], "שכנים לפי ז'אנר ואמן"
+    return unique[:limit], "neighbours by genre and artist"
 
 
 def famous_recording(title: str) -> dict | None:

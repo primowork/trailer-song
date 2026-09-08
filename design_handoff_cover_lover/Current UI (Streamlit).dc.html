@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=Assistant:wght@400;600&display=swap" rel="stylesheet"><style>body{margin:0;background:#0B0D12;font-family:Assistant,sans-serif;color:#E9EBF0;font-variant-numeric:tabular-nums}a{color:#C3C8D4;text-decoration:none}a:hover{color:#FFB020;text-decoration:underline}</style></helmet>
+<div style="direction:rtl;display:flex;min-height:100vh;background:#0B0D12">
+
+<main style="flex:1;min-width:0;display:flex;justify-content:center">
+<div style="width:100%;max-width:1180px;padding:2.5rem 1rem 4rem;display:flex;flex-direction:column;gap:0">
+
+  <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.9rem">
+    <div style="width:26px;height:26px;border-radius:7px;background:#FFB020;position:relative;flex:none"><div style="position:absolute;inset:9px;border-radius:50%;background:#0B0D12"></div></div>
+    <h4 style="margin:0;padding:0;font-family:Heebo,sans-serif;font-weight:800;font-size:1.12rem">סורק קאברים לטריילרים</h4>
+    <div style="flex:1"></div>
+    <span style="color:#8A91A3;font-size:0.95rem">3 שמורות</span>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;border:1px solid #2C3342;border-radius:12px;background:#14171F;padding:5px">
+    <div style="flex:1 1 240px;min-width:0"><input value="Yellow" style="width:100%;box-sizing:border-box;border:none;background:transparent;color:#E9EBF0;font-family:Assistant,sans-serif;font-size:0.95rem;padding:0.5rem 0.6rem;outline:none" placeholder="שם השיר"></div>
+    <div style="flex:0 1 220px;min-width:0"><input style="width:100%;box-sizing:border-box;border:none;background:transparent;color:#E9EBF0;font-family:Assistant,sans-serif;font-size:0.95rem;padding:0.5rem 0.6rem;outline:none" placeholder="אמן מקורי (לא חובה)"></div>
+    <button style="border:1px solid #262B38;background:#0B0D12;color:#E9EBF0;border-radius:8px;padding:0.4rem 0.7rem;font-size:1rem;cursor:pointer">🎲</button>
+    <button style="border:none;background:#FFB020;color:#0B0D12;border-radius:8px;padding:0.45rem 0.9rem;font-family:Assistant,sans-serif;font-weight:600;font-size:0.95rem;cursor:pointer;display:flex;align-items:center;gap:0.3rem">
+      <span style="font-size:1.05rem">⌕</span>חפש</button>
+  </div>
+
+  <p style="color:#8A91A3;font-size:0.79rem;line-height:1.45;margin:0.7rem 0 0.35rem">השלמות מהקטלוג:</p>
+  <div style="display:flex;flex-wrap:wrap;gap:0.4rem">
+    <button style="border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.4rem 0.7rem;font-family:Assistant,sans-serif;font-size:0.86rem;cursor:pointer">🎵 Yellow — Coldplay (2000)</button>
+    <button style="border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.4rem 0.7rem;font-family:Assistant,sans-serif;font-size:0.86rem;cursor:pointer">🎵 Yellow Submarine — The Beatles</button>
+    <button style="border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.4rem 0.7rem;font-family:Assistant,sans-serif;font-size:0.86rem;cursor:pointer">🎵 Mellow Yellow — Donovan (1966)</button>
+  </div>
+
+  <div style="display:flex;gap:0.5rem;margin:1rem 0 0.9rem;flex-wrap:wrap">
+    <div style="flex:1 1 300px;min-width:0;border:1px solid #262B38;border-radius:8px;background:transparent;padding:0.65rem 0.8rem;display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+      <span style="color:#C3C8D4;font-size:0.95rem">☰</span><span style="font-size:0.95rem">אינדקס מצעדים</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span>
+    </div>
+    <div style="flex:1 1 300px;min-width:0;border:1px solid #262B38;border-radius:8px;background:transparent;padding:0.65rem 0.8rem;display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+      <span style="color:#C3C8D4;font-size:0.95rem">⚙</span><span style="font-size:0.95rem">פילטרים</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem">
+    <div style="display:flex;border:1px solid #262B38;border-radius:8px;overflow:hidden">
+      <span style="padding:0.4rem 0.75rem;font-size:0.9rem;background:#14171F;color:#FFB020;border-inline-end:1px solid #262B38">קאברים לשיר</span>
+      <span style="padding:0.4rem 0.75rem;font-size:0.9rem;color:#C3C8D4;border-inline-end:1px solid #262B38">קאברים לאמן</span>
+      <span style="padding:0.4rem 0.75rem;font-size:0.9rem;color:#C3C8D4">חיפוש חופשי + פילטרים</span>
+    </div>
+    <button style="border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.4rem 0.7rem;font-size:0.9rem;cursor:pointer">אילו שירים בשם הזה?</button>
+  </div>
+
+  <p style="color:#8A91A3;font-size:0.79rem;line-height:1.45;margin:0.9rem 0 0">גרסת ייחוס להשוואה: <strong style="color:#C3C8D4">Coldplay</strong> — Yellow (2000)</p>
+  <p style="color:#8A91A3;font-size:0.79rem;line-height:1.45;margin:0.2rem 0 0">מקור הנתונים: SecondHandSongs · חיפוש בחנויות</p>
+  <p style="color:#8A91A3;font-size:0.79rem;line-height:1.45;margin:0.2rem 0 0">📣 6 גרסאות עם סימן טריילר. השאר נשארות ברשימה — רמיקס יכול להיות ענק בלי לכתוב זאת. כל המוצגים נמדדים אוטומטית בדפדפן, ומי שנמדד כגדול מסומן 🔊.</p>
+
+  <hr style="border:none;border-top:1px solid #262B38;margin:1.2rem 0">
+
+  <label style="color:#C3C8D4;font-size:0.88rem">מיון:</label>
+  <div style="border:1px solid #262B38;border-radius:8px;background:#14171F;padding:0.45rem 0.7rem;max-width:320px;display:flex;align-items:center;gap:0.5rem;margin:0.25rem 0 0.9rem">
+    <span style="font-size:0.92rem">הכי מתאים (טעם + סימני טריילר)</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span>
+  </div>
+  <button style="align-self:flex-start;border:1px solid #262B38;background:transparent;color:#5A6274;border-radius:8px;padding:0.4rem 0.7rem;font-size:0.9rem;margin-bottom:0.9rem">⇅ הסדר מעודכן</button>
+
+  <h2 style="font-family:Heebo,sans-serif;font-weight:800;font-size:1.4rem;margin:0">מוצגים 20 מתוך 63</h2>
+  <p style="color:#8A91A3;font-size:0.79rem;margin:0.25rem 0 1rem">סה"כ במאגר: 63</p>
+
+  <sc-for list="{{ tracks }}" as="t" hint-placeholder-count="4">
+    <div style="border:1px solid #262B38;border-radius:12px;background:#14171F;padding:0.9rem;margin-bottom:0.75rem">
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start">
+        <div style="width:56px;height:56px;flex:none;border-radius:8px;border:1px solid #262B38;background:linear-gradient(135deg,#232936,#14171F);display:flex;align-items:center;justify-content:center;color:#3C4457;font-size:1.3rem">♪</div>
+        <div style="flex:1 1 220px;min-width:0;text-align:right">
+          <div style="font-size:1rem"><strong>{{ t.artist }}</strong> &nbsp;<a href="#">{{ t.track }}</a></div>
+          <p style="color:#8A91A3;font-size:0.79rem;line-height:1.45;margin:0.25rem 0 0">{{ t.meta }}</p>
+          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.35rem">
+            <sc-for list="{{ t.signs }}" as="s" hint-placeholder-count="2">
+              <span style="background:rgba(255,176,32,0.14);color:#FFB020;border-radius:6px;padding:0.1rem 0.4rem;font-size:0.76rem">{{ s }}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:none;display:flex;flex-direction:column;gap:0.25rem;align-items:flex-end">
+          <span style="border-radius:6px;padding:0.15rem 0.45rem;font-size:0.8rem;background:{{ t.badgeBg }};color:{{ t.badgeFg }};white-space:nowrap">≋ {{ t.score }}</span>
+          <span style="color:#8A91A3;font-size:0.79rem;white-space:nowrap">{{ t.fit }}</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;margin-top:0.7rem">
+        <button style="width:32px;height:32px;flex:none;border:none;border-radius:50%;background:#FFB020;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">
+          <span style="width:0;height:0;border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent #0B0D12;margin-inline-start:2px"></span>
+        </button>
+        <button style="border:1px solid #262B38;background:transparent;color:#C3C8D4;border-radius:8px;width:36px;height:32px;cursor:pointer">♡</button>
+        <button style="border:1px solid #262B38;background:transparent;color:#C3C8D4;border-radius:8px;width:36px;height:32px;cursor:pointer">👎</button>
+        <button style="border:1px solid #262B38;background:transparent;color:#C3C8D4;border-radius:8px;width:36px;height:32px;cursor:pointer">⋯</button>
+      </div>
+    </div>
+  </sc-for>
+
+  <button style="align-self:flex-start;border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.45rem 0.8rem;font-size:0.92rem;cursor:pointer">⌄ טען עוד 20 תוצאות</button>
+</div>
+</main>
+
+<aside style="width:244px;flex:none;background:#14171F;border-inline-start:1px solid #262B38;padding:1.5rem 1rem;direction:rtl;text-align:right">
+  <h3 style="font-family:Heebo,sans-serif;font-weight:800;font-size:1.15rem;margin:0 0 0.5rem">הפלייליסט שלי</h3>
+  <p style="font-size:0.92rem;margin:0 0 0.6rem">גרסאות שמורות: <strong>3</strong></p>
+  <button style="width:100%;border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.4rem;font-size:0.88rem;cursor:pointer;margin-bottom:0.5rem">↻ רענן קישורי נגינה</button>
+  <p style="color:#8A91A3;font-size:0.79rem;line-height:1.45;margin:0 0 0.6rem">אתה נוטה לגרסאות גדולות, סימפוניות, מ-2015 והלאה.</p>
+  <div style="display:flex;flex-direction:column;gap:0.3rem">
+    <div style="border:1px solid #262B38;border-radius:8px;padding:0.5rem 0.6rem;display:flex;align-items:center;gap:0.4rem;font-size:0.9rem"><span>⁨Yellow⁩ · ⁨Coldplay⁩</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span></div>
+    <div style="border:1px solid #262B38;border-radius:8px;padding:0.5rem 0.6rem;display:flex;align-items:center;gap:0.4rem;font-size:0.9rem"><span>⁨Creep⁩ · ⁨Radiohead⁩</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span></div>
+    <div style="border:1px solid #262B38;border-radius:8px;padding:0.5rem 0.6rem;display:flex;flex-direction:column;gap:0.3rem;font-size:0.9rem">
+      <div style="display:flex;align-items:center;gap:0.4rem"><span>⁨Bittersweet Symphony⁩</span><div style="flex:1"></div><span style="color:#8A91A3">⌃</span></div>
+      <div style="display:flex;align-items:center;gap:0.35rem">
+        <span style="width:32px;height:32px;flex:none;border-radius:50%;background:#FFB020;display:flex;align-items:center;justify-content:center"><span style="width:0;height:0;border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent #0B0D12;margin-inline-start:2px"></span></span>
+        <span style="font-size:0.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext;flex:1;text-align:start">Bad Wolves String Orchestra</span>
+        <span style="color:#8A91A3">✕</span>
+      </div>
+    </div>
+  </div>
+  <button style="width:100%;border:1px solid #262B38;background:transparent;color:#E9EBF0;border-radius:8px;padding:0.4rem;font-size:0.88rem;cursor:pointer;margin-top:0.6rem">↓ ייצא פלייליסט</button>
+  <hr style="border:none;border-top:1px solid #262B38;margin:1.2rem 0">
+  <h3 style="font-family:Heebo,sans-serif;font-weight:800;font-size:1.15rem;margin:0 0 0.4rem">הגדרות</h3>
+  <p style="color:#8A91A3;font-size:0.79rem;margin:0 0 0.5rem">תיקיית נתונים: <code style="background:#0B0D12;border-radius:4px;padding:0 4px">~/.trailer-song</code></p>
+  <p style="color:#8A91A3;font-size:0.79rem;margin:0 0 0.6rem">אימות שימוש בטריילר כבוי (הגדר YOUTUBE_API_KEY)</p>
+  <div style="border:1px solid #262B38;border-radius:8px;padding:0.5rem 0.6rem;font-size:0.9rem;display:flex;gap:0.4rem;align-items:center;margin-bottom:0.35rem"><span>⬆</span><span>ייבוא מצעד בילבורד</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span></div>
+  <div style="border:1px solid #262B38;border-radius:8px;padding:0.5rem 0.6rem;font-size:0.9rem;display:flex;gap:0.4rem;align-items:center;margin-bottom:0.35rem"><span>👎 סימנת 'לא זה' (4)</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span></div>
+  <div style="border:1px solid #262B38;border-radius:8px;padding:0.5rem 0.6rem;font-size:0.9rem;display:flex;gap:0.4rem;align-items:center"><span>🚫 רשימה שחורה (2)</span><div style="flex:1"></div><span style="color:#8A91A3">⌄</span></div>
+</aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const amber = {badgeBg: "rgba(255,176,32,0.14)", badgeFg: "#FFB020"};
+    const gray = {badgeBg: "#1B2030", badgeFg: "#8A91A3"};
+    return {
+      tracks: [
+        {artist: "Bad Wolves String Orchestra", track: "Yellow (Epic Trailer Version)", meta: "Soundtrack · 2021 · 3:12", signs: ["Epic", "Trailer"], score: 87, fit: "78% לטעם שלך", ...amber},
+        {artist: "Vitamin String Quartet", track: "Yellow", meta: "Classical Crossover · 2019 · 3:44", signs: ["Cinematic"], score: 61, fit: "", ...gray},
+        {artist: "Jodi Marie", track: "Yellow (Cover)", meta: "Pop · 2018 · 4:02", signs: [], score: 34, fit: "", ...gray},
+        {artist: "Tommee Profitt", track: "Yellow (Trailer Mix)", meta: "Soundtrack · 2022 · 2:58", signs: ["Trailer", "Epic", "Remix"], score: 91, fit: "84% לטעם שלך", ...amber}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

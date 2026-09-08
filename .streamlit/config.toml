@@ -2,25 +2,34 @@
 # רכיבים שאין לנו CSS עליהם (בוררים, popover, סרגל הצד) — בניגוד להזרקת CSS,
 # שמכסה רק את מה שנזכרנו לכסות.
 #
+# הערכים מגיעים מטבלת הטוקנים ב-`design_handoff_cover_lover/README.md`
+# (כיוון 1a — STUDIO), והם ערכי כוונה סופיים ולא הצעה: שינוי כאן הוא סטייה
+# מהעיצוב, לא כוונון.
+#
 # כהה וקולנועי, כי זה מה שהתוכן: מוזיקת טריילרים. הרקע הכהה גם מבליט את
-# עטיפות האלבומים ואת תגי הציון, שהם המידע שבאמת מבדיל בין תוצאות.
-# אקסנט אחד — ענבר — ששמור ל"גדול"/פעולה ראשית; צבע סמנטי רק לסטטוס הרפרטואר.
+# עטיפות האלבומים ואת מדי העוצמה, שהם המידע שבאמת מבדיל בין תוצאות.
+# ענבר ואלמוג הם שני האקסנטים היחידים: ענבר לפעולה ראשית ולמדרגת "גדול",
+# אלמוג ללב בלבד. אקסנט שמופיע על כל שורה מפסיק לסמן משהו.
 [theme]
 base = "dark"
 primaryColor = "#FFB020"
-backgroundColor = "#0B0D12"
-secondaryBackgroundColor = "#14171F"
-textColor = "#E9EBF0"
-borderColor = "#262B38"
+backgroundColor = "#0A0B0F"
+secondaryBackgroundColor = "#14161D"
+textColor = "#ECEEF3"
+borderColor = "#1E2230"
 baseRadius = "medium"
 buttonRadius = "medium"
 showWidgetBorder = true
-# Heebo ו-Assistant הן משפחות עבריות-לטיניות מלאות, ולכן שם אמן באנגלית ושם
-# שדה בעברית נראים כמו אותה מערכת ולא כמו שתי מערכות שהודבקו
+# שלוש משפחות ולא אחת, כי לכל אחת תפקיד: Bricolage Grotesque 800 נושאת
+# את ההיררכיה (כותרות, מספר העוצמה, ה-wordmark), Instrument Sans היא הגוף,
+# ו-JetBrains Mono היא **כל מספר** — רוחב ספרה קבוע הוא מה שמאפשר לקרוא
+# עמודת ציונים מלמעלה למטה בלי שהעין תקפוץ.
+# הגופנים עצמם נטענים ב-`app.py`: ה-theme מקבל שם משפחה, לא כתובת.
+font = "Instrument Sans, sans-serif"
+headingFont = "Bricolage Grotesque, sans-serif"
+codeFont = "JetBrains Mono, monospace"
 # קישורים בצבע הטקסט המשני ולא בכחול ברירת המחדל: שם השיר הוא קישור
 # ל-YouTube Music, והוא צריך להיקרא ככותרת — לא כקישור צועק. ה-hover
 # (ב-CSS) הוא מה שמסמן שהוא לחיץ.
 linkColor = "#C3C8D4"
 linkUnderline = false
-font = "Assistant, sans-serif"
-headingFont = "Heebo, sans-serif"

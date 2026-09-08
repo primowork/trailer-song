@@ -44,19 +44,38 @@ def _page_css(app) -> str:
     return " ".join(m.value for m in app.markdown if "<style>" in (m.value or ""))
 
 
-def test_the_root_stays_ltr_below_the_mobile_breakpoint(app):
-    """`direction: rtl` על השורש שבר את קיפול הסרגל בטלפון.
+def _rendered(app) -> str:
+    """כל מה שמצויר על המסך — markdown וגם `st.html`.
 
-    Streamlit מסתיר את הסרגל בנייד עם `translateX` שלילי. כיווניות הפוכה על
-    `stAppViewContainer` הפכה את ההזזה: הסרגל נשאר על המסך, נמעך לכ-50px,
-    וחפף לתוכן — האפליקציה הייתה בלתי שמישה בטלפון. הכיווניות על השורש
-    חייבת להישאר מאחורי media query של דסקטופ.
+    שם האמן ומד העוצמה עברו ל-`st.html` (הם כותרת השורה וגרפיקה, לא
+    פסקאות), ולכן בדיקה שמסתכלת רק על `app.markdown` מפספסת בדיוק את
+    מה שהמשתמש רואה קודם.
     """
-    css = _page_css(app)
-    assert '[data-testid="stMain"] { direction: rtl; }' in css
+    return " ".join(
+        [str(m.value) for m in app.markdown if m.value]
+        + [str(e.proto) for e in app.get("html")])
 
-    before_root_rule = css.split('[data-testid="stAppViewContainer"]')[0]
-    assert "@media (min-width: 768px)" in before_root_rule
+
+def _nav(app, item):
+    """בוחר פריט ניווט ב-rail ומריץ מחדש.
+
+    מאז המעבר ל-rail, הפלייליסט, ההגדרות ואינדקס המצעדים אינם מרונדרים
+    יחד — כל אחד מהם הוא מסך. טסט שנוגע באחד מהם חייב לבחור אותו קודם,
+    בדיוק כמו המשתמש.
+    """
+    app.session_state["rail_nav"] = item
+    return app.run()
+
+
+def test_nothing_forces_a_direction_on_the_page(app):
+    """הממשק אנגלי ו-LTR, ולכן אסור שיישאר כלל כיווניות כלשהו.
+
+    זה לא ניקיון: `direction: rtl` על השורש הפך בעבר את ה-`translateX`
+    השלילי שבו Streamlit מקפל את הסרגל בטלפון — הסרגל נשאר על המסך, נמעך
+    לכ-50px, וחפף לתוכן. כלל RTL ששרד את המעבר לאנגלית היה מחזיר בדיוק
+    את הבאג הזה, בלי שאף אחד יחפש אותו שם.
+    """
+    assert "direction: rtl" not in _page_css(app)
 
 
 def test_the_content_column_is_capped_so_it_does_not_stretch(app):
@@ -66,7 +85,9 @@ def test_the_content_column_is_capped_so_it_does_not_stretch(app):
 
 def test_classics_is_the_default_index_source_and_needs_no_network(app):
     # אין כאן שום monkeypatch לרשת — קלאסיקות היא רשימה סטטית
-    assert app.radio(key="index_source").value.startswith("🎻 קלאסיקות")
+    _nav(app, "Charts")
+    _nav(app, "Charts")
+    assert app.radio(key="index_source").value.startswith("Classics")
     assert any((b.key or "").startswith("classic_") for b in app.button)
 
 
@@ -78,42 +99,49 @@ def test_classics_song_click_runs_a_focused_song_search(app, monkeypatch):
                         lambda title, artist="", **k: (
                             [track(first["artist"], f"{title} (Cover)", "c1")], "src", None))
 
+    _nav(app, "Charts")
     classics_button = [b for b in app.button if (b.key or "").startswith("classic_")][0]
     classics_button.click().run()
 
     assert not app.exception
-    assert app.session_state["search_mode"] == "קאברים לשיר"
+    assert app.session_state["search_mode"] == "Covers of a song"
     assert app.session_state["cover_title"] == first["track"]
     assert app.session_state["cover_artist"] == first["artist"]
     assert app.session_state["candidates"]
 
 
-def test_picking_a_song_collapses_the_chart_index(app, monkeypatch):
-    """נמדד בדפדפן: העברת `expanded=False` כשהוא כבר False אינה סוגרת רכיב
-    שהמשתמש פתח ידנית. מה שסוגר הוא מפתח חדש, ולכן זה מה שנבדק."""
+def test_picking_a_song_leaves_the_chart_index_for_the_results(app, monkeypatch):
+    """הבחירה במצעד היא בקשה לראות תוצאות, ולכן היא מחזירה ל-Discover.
+
+    קודם האינדקס היה אקספנדר שנסגר בעזרת מפתח נגזר-מונה (העברת
+    `expanded=False` כשהוא כבר False אינה סוגרת דבר). כמסך נפרד אין צורך
+    בפטנט — אבל התוצאה למשתמש חייבת להישאר זהה: אחרי לחיצה על שיר הוא
+    רואה את התוצאות ולא רשת של 120 כפתורים.
+    """
     import classics
     first = classics.CATEGORIES[next(iter(classics.CATEGORIES))][0]
     monkeypatch.setattr(covers, "find_all_covers",
                         lambda title, artist="", **k: (
                             [track(first["artist"], f"{title} (Cover)", "c1")], "src", None))
 
-    before = app.session_state["index_generation"]
+    _nav(app, "Charts")
     [b for b in app.button if (b.key or "").startswith("classic_")][0].click().run()
 
     assert not app.exception
-    assert app.session_state["index_generation"] > before
+    assert app.session_state["rail_nav"] == "Discover"
 
 
-def test_picking_an_artist_also_collapses_it(app, monkeypatch):
+def test_picking_an_artist_also_leaves_the_index(app, monkeypatch):
     monkeypatch.setattr(covers, "artist_top_titles", lambda artist, limit=8: ["Yesterday"])
+    _nav(app, "Charts")
+    _nav(app, "Charts")
     source = app.radio(key="index_source")
     source.set_value(source.options[1]).run()
 
-    before = app.session_state["index_generation"]
     app.button(key="goat_0").click().run()
 
     assert not app.exception
-    assert app.session_state["index_generation"] > before
+    assert app.session_state["rail_nav"] == "Discover"
 
 
 # ---------- הגרלת שיר מוכר ----------
@@ -135,7 +163,7 @@ def test_the_dice_fills_both_fields_from_the_famous_pool_and_searches(app, monke
     rolled = (app.session_state["cover_artist"], app.session_state["cover_title"])
     assert all(rolled)
     assert rolled in {(e["artist"], e["track"]) for e in classics.famous_pool()}
-    assert app.session_state["search_mode"] == "קאברים לשיר"
+    assert app.session_state["search_mode"] == "Covers of a song"
     # הוגרל *ורץ*, כמו לחיצה על שיר במצעדים
     assert app.session_state["candidates"]
 
@@ -171,20 +199,21 @@ def test_greatest_artist_click_shows_a_preview_before_searching(app, monkeypatch
                             ([track("Epic", f"{title} (Epic)", "e1")], "src"))
 
     # האינדקס נפתח על המצעד החי; רשימת בילבורד היא המקור השני
+    _nav(app, "Charts")
     source = app.radio(key="index_source")
     source.set_value(source.options[1]).run()
     app.button(key="goat_0").click().run()
 
     assert not app.exception
     assert app.session_state["cover_artist"] == artists.GREATEST_ARTISTS[0]
-    assert app.session_state["search_mode"] == "קאברים לאמן"
+    assert app.session_state["search_mode"] == "Covers of an artist"
     # לא הורץ חיפוש קאברים יקר מיד — קודם מוצגת תצוגה מקדימה זולה
     assert app.session_state["candidates"] == []
     assert any("Yesterday" in b.label for b in app.button
               if (b.key or "").startswith("artist_preview_"))
 
     # "חפש" מריץ את החיפוש המלא לפי האמן, בדיוק כמו היום
-    search_button = [b for b in app.button if b.label == "חפש"][0]
+    search_button = [b for b in app.button if b.key == "btn_search"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -198,6 +227,7 @@ def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
                         lambda title, artist="", **k: (
                             [track("Beatles", f"{title} (Cover)", "c1")], "src", None))
 
+    _nav(app, "Charts")
     source = app.radio(key="index_source")
     source.set_value(source.options[1]).run()
     app.button(key="goat_0").click().run()
@@ -207,7 +237,7 @@ def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
     preview_button.click().run()
 
     assert not app.exception
-    assert app.session_state["search_mode"] == "קאברים לשיר"
+    assert app.session_state["search_mode"] == "Covers of a song"
     assert app.session_state["cover_title"] == "Yesterday"
     assert app.session_state["candidates"]
     assert app.session_state["candidates"][0]["uid"] == "itunes-c1"
@@ -240,21 +270,27 @@ def test_more_like_this_replaces_the_list(app, monkeypatch):
     assert [t["uid"] for t in app.session_state["candidates"]] == ["itunes-o1"]
 
 
-def test_measured_row_shows_the_score_as_a_badge_and_keeps_the_numbers(app):
-    """הציון הוא תג על הכרטיס; המספרים הגולמיים ירדו ל-⋯ ולא נמחקו."""
+def test_measured_row_shows_the_score_as_a_meter_and_keeps_the_numbers(app):
+    """העוצמה היא מד שקוראים לרוחב, והמספרים הגולמיים ירדו ל-⋯ ולא נמחקו.
+
+    המד החליף תג: תג נקרא שורה-שורה, בעוד שרצועה באורך קבוע מאפשרת
+    להשוות את כל התוצאות במבט אחד. מה שנבדק כאן הוא ששלושת החלקים
+    קיימים — הרצועה, המילוי בצבע המדרגה, והמספר עצמו.
+    """
     app.session_state["candidates"] = [track("Epic Covers", "Yellow (Epic)", "e1")]
     app.session_state["bigness"] = {"itunes-e1": {"loudness": 0.30, "low_end": 3.0,
                                                  "onset_rate": 4.0, "dynamic_span": 6.0}}
     app.run()
 
     assert not app.exception
-    # התג נושא את המספר בלבד; המדרגה מקודדת בצבע (ענבר = גדול)
-    badges = [m.value for m in app.markdown if m.value and "badge[" in m.value]
-    assert any("orange-badge" in text and "graphic_eq" in text for text in badges), \
-        "אין תג ציון על הכרטיס"
+    html = " ".join(str(e.proto) for e in app.get("html"))
+    assert "ts-meterfill" in html, "אין מד עוצמה על השורה"
+    # ענבר שמור למדרגת "גדול", וזו בדיוק מדידה גדולה
+    assert "#FFB020" in html
 
     captions = [c.value for c in app.caption]
-    assert any("עוצמה" in text for text in captions), "המספרים הגולמיים נעלמו לגמרי"
+    assert any("loudness" in text for text in captions), \
+        "המספרים הגולמיים נעלמו לגמרי"
 
 
 def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch):
@@ -269,6 +305,7 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     monkeypatch.setattr(covers, "find_covers", lambda *a, **k: ([], "", None))
 
     app = AppTest.from_file(APP, default_timeout=120).run()
+    _nav(app, "Charts")
     source = app.radio(key="index_source")
     source.set_value(source.options[-1]).run()
     app.button(key="imp_hot-100_0").click().run()
@@ -276,13 +313,13 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     assert not app.exception
     assert app.session_state["cover_title"] == "Umbrella"
     assert app.session_state["cover_artist"] == "Rihanna"
-    assert app.session_state["search_mode"] == "קאברים לשיר"
+    assert app.session_state["search_mode"] == "Covers of a song"
     assert app.session_state["candidates"]
 
 
 def test_search_mode_has_three_options(app):
     modes = app.get("button_group")[0]
-    assert modes.options == ["קאברים לשיר", "קאברים לאמן", "חיפוש חופשי + פילטרים"]
+    assert modes.options == ["Covers of a song", "Covers of an artist", "Free search"]
 
 
 def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
@@ -291,7 +328,7 @@ def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
                         lambda *a, **k: (called.setdefault("hit", True) and
                                         [track("X", "Y", "y1")], "src", None))
     app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.label == "חפש"][0]
+    search_button = [b for b in app.button if b.key == "btn_search"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -305,9 +342,9 @@ def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
                         lambda *a, **k: (called.setdefault("hit", True) and
                                         [track("X", "Y", "y2")], "src", ["Y"]))
     modes = app.get("button_group")[0]
-    modes.set_value("קאברים לאמן").run()
+    modes.set_value("Covers of an artist").run()
     app.text_input(key="cover_artist").set_value("Coldplay").run()
-    search_button = [b for b in app.button if b.label == "חפש"][0]
+    search_button = [b for b in app.button if b.key == "btn_search"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -321,9 +358,9 @@ def test_free_mode_dispatches_to_search_covers(app, monkeypatch):
                         lambda *a, **k: called.setdefault("hit", True) and
                                         [track("X", "Y", "y3")])
     modes = app.get("button_group")[0]
-    modes.set_value("חיפוש חופשי + פילטרים").run()
+    modes.set_value("Free search").run()
     app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.label == "חפש"][0]
+    search_button = [b for b in app.button if b.key == "btn_search"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -341,7 +378,7 @@ def test_filters_thread_through_to_song_mode(app, monkeypatch):
 
     monkeypatch.setattr(covers, "find_all_covers", fake)
     app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.label == "חפש"][0]
+    search_button = [b for b in app.button if b.key == "btn_search"][0]
     search_button.click().run()
 
     assert not app.exception
@@ -400,11 +437,19 @@ def test_heart_toggles_off(app):
 
 def _save(app, artist, title, uid, searched="Bitter Sweet Symphony",
           origin_artist="The Verve", **extra):
+    """שומר גרסה לפלייליסט, ומשאיר את ה-rail על Loved.
+
+    הלייק עצמו נלחץ בתוצאות (מסך Discover), והפלייליסט נצפה במסך Loved —
+    שני מסכים, כמו אצל המשתמש. לכן ההחלפה בשני הכיוונים כאן, ולא בכל
+    טסט בנפרד.
+    """
+    app.session_state["rail_nav"] = "Discover"
     app.session_state["cover_title"] = searched
     app.session_state["cover_artist"] = origin_artist
     app.session_state["candidates"] = [track(artist, title, uid, **extra)]
     app.run()
     app.button(key=f"btn_favorite_itunes-{uid}").click().run()
+    _nav(app, "Loved")
 
 
 def test_saving_a_cover_records_the_song_it_covers(app):
@@ -474,13 +519,13 @@ def test_a_work_chosen_for_one_song_is_not_used_for_the_next_search(monkeypatch)
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
     at.text_input(key="cover_title").set_value("Sweet Dreams").run()
-    [b for b in at.button if "אילו שירים בשם הזה" in b.label][0].click().run()
-    chooser = [r for r in at.radio if "איזו יצירה" in r.label]
+    [b for b in at.button if "Which songs have this name" in b.label][0].click().run()
+    chooser = [r for r in at.radio if "Which work did you mean" in r.label]
     assert chooser, "בורר היצירה לא הופיע"
     chooser[0].set_value(list(chooser[0].options)[1]).run()
 
     at.text_input(key="cover_title").set_value("Yellow").run()
-    [b for b in at.button if b.label == "חפש"][0].click().run()
+    [b for b in at.button if b.key == "btn_search"][0].click().run()
 
     assert not at.exception
     assert calls == [("Yellow", "")], f"נשלח work_id של שיר אחר: {calls}"
@@ -510,29 +555,29 @@ def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):
     app.session_state["candidates"] = [same, other]
     app.run()
 
-    box = [c for c in app.checkbox if "מאומת מול הקטלוג" in c.label]
+    box = [c for c in app.checkbox if "Verified same work" in c.label]
     assert box, "אין פילטר לגרסאות של אותה יצירה"
     box[0].check().run()
 
     assert not app.exception
-    shown = " ".join(str(m.value) for m in app.markdown if m.value)
+    shown = _rendered(app)
     assert "Slow Cover" in shown
     assert "Other Band" not in shown
 
 
 def test_the_same_work_filter_does_not_empty_results_it_cannot_verify(app):
-    """"קאברים לאמן", "עוד כמו זה" והחיפוש החופשי אינם עוברים דרך הקטלוג,
+    """"Covers of an artist", "עוד כמו זה" והחיפוש החופשי אינם עוברים דרך הקטלוג,
     ולכן אין להם `work_verified` — וסינון עליו רוקן את הרשימה עד
     "מוצגים 0 מתוך 0"."""
     app.session_state["candidates"] = [track("2WEI", "Zombie", "a"),
                                        track("Hidden Citizens", "Alive", "b")]
     app.run()
-    [c for c in app.checkbox if "מאומת מול הקטלוג" in c.label][0].check().run()
+    [c for c in app.checkbox if "Verified same work" in c.label][0].check().run()
 
     assert not app.exception
-    shown = " ".join(str(m.value) for m in app.markdown if m.value)
+    shown = _rendered(app)
     assert "2WEI" in shown and "Hidden Citizens" in shown
-    assert any("האימות מול הקטלוג קיים רק" in c.value for c in app.caption), \
+    assert any("Catalogue verification only exists" in c.value for c in app.caption), \
         "הפילטר לא סינן — וצריך להגיד למה"
 
 
@@ -542,7 +587,7 @@ def test_the_playlist_offers_to_refresh_dead_preview_links(app):
     _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
 
     assert not app.exception
-    assert any("רענן קישורי נגינה" in b.label for b in app.button)
+    assert any("Refresh playback links" in b.label for b in app.button)
 
 
 def test_only_previews_that_are_probably_dead_are_refreshed():
@@ -611,6 +656,7 @@ def test_the_playlist_refreshes_dead_previews_by_itself_once(tmp_path, monkeypat
     (tmp_path / "favorites.json").write_text(json.dumps(saved), encoding="utf-8")
 
     at = AppTest.from_file(APP, default_timeout=120)
+    at.session_state["rail_nav"] = "Loved"
     at.run()
 
     assert not at.exception
@@ -655,6 +701,7 @@ def test_a_refresh_that_found_nothing_says_so(tmp_path, monkeypatch):
     (tmp_path / "favorites.json").write_text(json.dumps(saved), encoding="utf-8")
 
     at = AppTest.from_file(APP, default_timeout=120)
+    at.session_state["rail_nav"] = "Loved"
     at.run()
 
     assert not at.exception
@@ -682,11 +729,12 @@ def test_a_partial_refresh_failure_is_a_caption_not_a_warning(tmp_path, monkeypa
     (tmp_path / "favorites.json").write_text(json.dumps(saved), encoding="utf-8")
 
     at = AppTest.from_file(APP, default_timeout=120)
+    at.session_state["rail_nav"] = "Loved"
     at.run()
 
     assert not at.exception
     assert not at.warning, "כישלון חלקי אינו תקלת רשת ואינו מצדיק אזהרה"
-    assert any("יישאר אפור" in c.value for c in at.caption)
+    assert any("stays greyed out" in c.value for c in at.caption)
 
 
 def test_a_saved_version_records_when_its_preview_was_checked(app):
@@ -705,8 +753,8 @@ def test_the_refresh_button_sits_above_the_saved_groups(app):
 
     labels = [b.label for b in app.button]
     groups = [b.label for b in app.get("expander")]
-    assert "רענן קישורי נגינה" in labels
-    refresh_at = labels.index("רענן קישורי נגינה")
+    assert "Refresh playback links" in labels
+    refresh_at = labels.index("Refresh playback links")
     opens = [labels.index(l) for l in labels
              if l and l.startswith("Artist")]
     assert groups, "אין קבוצות בפלייליסט"
@@ -755,14 +803,19 @@ def test_the_playlist_groups_start_collapsed(app):
     assert not any(b.proto.expanded for b in groups), "כל הקבוצות מכווצות"
 
 
-def test_the_group_label_isolates_the_song_name(app):
-    """בלי בידוד דו-כיווני סדר הקריאה נשבר כשאחד מהשניים לטיני והשני
-    עברי — "Heroes5 גרסאות" בצילום מהטלפון."""
+def test_the_group_label_is_the_song_and_the_artist(app):
+    """כותרת הקבוצה היא שיר המקור, ולא שם אחת הגרסאות שבתוכה.
+
+    (הבידוד הדו-כיווני `\u2068…\u2069` שהיה כאן קודם היה תיקון RTL: בלעדיו
+    "Heroes" ו-"5 גרסאות" נקראו הפוך בטלפון. הממשק אנגלי ו-LTR, ואין לו
+    מה לבודד.)
+    """
     _save(app, "2WEI", "Heroes (Epic Trailer Version)", "a", searched="Heroes")
     _save(app, "Hidden Citizens", "Heroes (Cover)", "b", searched="Heroes")
 
     labels = " ".join(str(b.proto) for b in app.get("expander"))
-    assert "\u2068Heroes\u2069" in labels
+    assert "Heroes · The Verve" in labels
+    assert "Epic Trailer Version" not in labels
 
 
 def test_removing_the_last_version_removes_the_group(app):
@@ -785,9 +838,9 @@ def test_the_track_name_links_to_youtube_music(app):
     app.run()
 
     assert not app.exception
-    titles = [m.value for m in app.markdown if m.value and "2WEI" in m.value]
-    assert any("music.youtube.com/search?q=" in text for text in titles)
-    assert any("2WEI+Zombie" in text for text in titles), "השאילתה חייבת לכלול אמן ושיר"
+    rendered = _rendered(app)
+    assert "music.youtube.com/search?q=" in rendered
+    assert "2WEI+Zombie" in rendered, "השאילתה חייבת לכלול אמן ושיר"
 
 
 def test_brackets_in_a_track_name_do_not_break_the_link(app):
@@ -796,8 +849,10 @@ def test_brackets_in_a_track_name_do_not_break_the_link(app):
     app.run()
 
     assert not app.exception
-    titles = [m.value for m in app.markdown if m.value and "Coldplay" in m.value]
-    assert any("\\[Radio Edit\\]" in text for text in titles)
+    # הכותרת עוברת דרך `html.escape` ולא דרך תחביר קישור של markdown,
+    # ולכן סוגריים מרובעים אינם יכולים לשבור את הקישור מלכתחילה
+    rendered = _rendered(app)
+    assert "[Radio Edit]" in rendered and "music.youtube.com" in rendered
 
 
 # ---------- הנגן ----------
@@ -813,10 +868,10 @@ def test_the_player_is_ours_and_still_a_real_audio_element(app):
     assert "<audio" in html and "preload=" in html
 
 
-def test_the_card_head_keeps_the_css_hook_for_narrow_screens(app):
+def test_the_result_row_keeps_the_css_hook_for_narrow_screens(app):
     """ב-390px העטיפה ועמודת הציון השאירו לכותרת 124px — שליש מהרוחב —
-    ושם ארוך נשבר לשבע שורות. ה-key הוא מה שמאפשר ל-CSS להוריד את עמודת
-    הציון לשורה משלה."""
+    ושם ארוך נשבר לשבע שורות. ה-key הוא מה שמאפשר ל-CSS לסדר מחדש את
+    השורה בטלפון, ולתת לנגינה וללב יעדי מגע של 44px."""
     import pathlib
 
     import app as app_module
@@ -825,12 +880,14 @@ def test_the_card_head_keeps_the_css_hook_for_narrow_screens(app):
     app.run()
 
     css = " ".join(str(e.proto) for e in app.get("markdown")
-                   if "st-key-cardhead" in str(e.proto))
-    assert css, "כלל ה-CSS לעמודת הציון בטלפון נעלם"
+                   if "st-key-trow_" in str(e.proto))
+    assert css, "כלל ה-CSS לשורת התוצאה בטלפון נעלם"
+    assert "st-key-tacts_" in css, "כלל ה-CSS לעמודת הפעולות בטלפון נעלם"
     # AppTest אינו חושף מכולות רגילות ואת המפתחות שלהן, ולכן הצד השני של
     # הצמד נבדק על המקור: כלל CSS בלי המפתח שהוא תופס הוא כלל מת
     source = pathlib.Path(app_module.__file__).read_text(encoding="utf-8")
-    assert 'key=f"cardhead_' in source, "המכולה כבר לא נושאת את ה-key"
+    assert 'key=f"trow_' in source, "המכולה כבר לא נושאת את ה-key"
+    assert 'key=f"tacts_' in source, "מכולת הפעולות כבר לא נושאת את ה-key"
 
 
 def test_the_page_has_one_audio_element_for_all_the_players(app):
@@ -862,8 +919,11 @@ def test_the_player_is_a_play_button_with_nothing_around_it(app):
     app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "e1")]
     app.run()
 
+    # `ts-bar` הוא היום סרגל הנגן התחתון ולכן הוא **אמור** להיות בדף;
+    # מה שנבדק כאן הוא שהשורה עצמה לא הצמיחה פס התקדמות ושעון
     html = " ".join(str(e.proto) for e in app.get("html"))
-    assert "ts-bar" not in html and "ts-time" not in html
+    assert "ts-progress" not in html and "ts-time" not in html
+    assert "<progress" not in html
 
 
 def test_the_audio_element_is_not_removed_from_the_render_tree(app):
@@ -895,11 +955,19 @@ def test_the_player_script_runs_in_the_page_and_not_in_the_iframe(app):
     assert "doc.head.appendChild" in script
 
 
-def test_the_playlist_replaces_the_blacklist_in_the_sidebar(app):
-    headers = [m.value for m in app.markdown]
-    assert any("הפלייליסט שלי" in text for text in headers)
-    # החסימה עדיין קיימת — רק ירדה לאקספנדר מכווץ
-    assert not any("### 🚫 אמנים ברשימה השחורה" in text for text in headers)
+def test_the_playlist_is_a_rail_screen_and_the_blacklist_is_not(app):
+    """הפלייליסט הוא פריט ניווט; הרשימה השחורה ירדה לתוך ההגדרות.
+
+    קודם שניהם היו זה מתחת לזה באותו סרגל, והסרגל היה עמוד שני שגוללים
+    בו במקום ניווט.
+    """
+    _nav(app, "Loved")
+    rendered = _rendered(app)
+    assert "LOVED" in rendered
+    assert "Blocked artists" not in rendered
+
+    _nav(app, "Settings")
+    assert "Blocked artists" in " ".join(str(b.proto) for b in app.get("expander"))
 
 
 # ---------- עדות טריילר בדירוג ----------
@@ -977,7 +1045,7 @@ def test_a_verified_cover_is_not_buried_under_generic_declared_cues(app):
 
 
 def test_without_catalogue_verification_the_order_is_unchanged(app):
-    """ב"קאברים לאמן", "עוד כמו זה" ובחיפוש החופשי אף תוצאה אינה נושאת את
+    """ב"Covers of an artist", "עוד כמו זה" ובחיפוש החופשי אף תוצאה אינה נושאת את
     השדה — הרכיב קבוע לכולם, ולכן אסור לו לשנות דבר."""
     app.session_state["candidates"] = [_plain(), _epic()]
     app.session_state["bigness"] = {"itunes-plain": BIG}
@@ -995,7 +1063,8 @@ def test_the_overflow_menu_explains_where_the_row_ranks(app):
     app.run()
 
     captions = [c.value for c in app.caption]
-    assert any("דירוג" in text and "מאומת בקטלוג" in text and "טריילר" in text
+    assert any("rank" in text and "verified in catalogue" in text
+               and "trailer" in text
                for text in captions), "אין שורת פירוק דירוג ב-⋯"
 
 
@@ -1006,8 +1075,8 @@ def test_the_reason_shown_is_the_reason_it_ranks(app):
     assert search_module.trailer_strength(_epic()) > search_module.trailer_strength(_plain())
     app.session_state["candidates"] = [_epic()]
     app.run()
-    badges = [m.value for m in app.markdown if m.value and "badge[" in m.value]
-    assert any("כותרת אפית" in text and "ז'אנר פסקול" in text for text in badges)
+    tags = " ".join(str(e.proto) for e in app.get("html") if "ts-tag" in str(e.proto))
+    assert "EPIC" in tags and "SOUNDTRACK" in tags
 
 
 def test_a_one_letter_artist_is_not_a_trailer_artist():
@@ -1082,8 +1151,8 @@ def test_changing_the_sort_still_reorders(app):
     app.run()
     before = _row_order(app)
 
-    picker = [s for s in app.selectbox if s.label == "מיון:"][0]
-    picker.set_value("אמן").run()
+    picker = [s for s in app.selectbox if s.key == "sort_by"][0]
+    picker.set_value("Artist").run()
 
     assert not app.exception
     assert _row_order(app) != before
@@ -1100,7 +1169,7 @@ def test_a_new_search_recomputes_the_order(app, monkeypatch):
     monkeypatch.setattr(covers, "find_all_covers",
                         lambda title, artist="", **k: ([track("New", "Fresh", "n1")], "src", None))
     app.text_input(key="cover_title").set_value("Fresh").run()
-    [b for b in app.button if b.label == "חפש"][0].click().run()
+    [b for b in app.button if b.key == "btn_search"][0].click().run()
 
     assert not app.exception
     assert app.session_state["result_generation"] > generation
@@ -1127,15 +1196,15 @@ def test_the_resort_control_never_appears_or_disappears(app):
     """
     app.session_state["candidates"] = _thirty()
     app.run()
-    quiet = [b for b in app.button if (b.label or "").startswith(("סדר מחדש", "הסדר מעודכן"))]
+    quiet = [b for b in app.button if (b.label or "").startswith(("Re-sort", "Order is up to date"))]
     assert len(quiet) == 1 and quiet[0].disabled
 
     app.session_state["bigness"] = {f"itunes-u{i}": (BIG if i in (5, 17, 19) else SMALL)
                                     for i in range(20)}
     app.run()
-    active = [b for b in app.button if (b.label or "").startswith(("סדר מחדש", "הסדר מעודכן"))]
+    active = [b for b in app.button if (b.label or "").startswith(("Re-sort", "Order is up to date"))]
     assert len(active) == 1 and not active[0].disabled
-    assert "יזוזו" in active[0].label
+    assert "will move" in active[0].label
 
 
 def test_the_scroll_keeper_is_a_persistent_observer(app):
@@ -1192,7 +1261,7 @@ def test_taste_lifts_tracks_that_match_what_was_hearted(app):
     frozen = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert frozen.index("btn_favorite_itunes-calm") < frozen.index("btn_favorite_itunes-loud")
 
-    [b for b in app.button if (b.label or "").startswith("סדר מחדש")][0].click().run()
+    [b for b in app.button if (b.label or "").startswith("Re-sort")][0].click().run()
     order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert order.index("btn_favorite_itunes-loud") < order.index("btn_favorite_itunes-calm")
 
@@ -1261,6 +1330,7 @@ def test_switching_classics_category_changes_the_songs(app):
     import classics
     labels = list(classics.CATEGORIES)
 
+    _nav(app, "Charts")
     picker = app.selectbox(key="classics_category")
     assert picker.options == labels
 
@@ -1277,8 +1347,9 @@ def test_switching_classics_category_changes_the_songs(app):
 
 
 def test_blues_category_is_reachable(app):
+    _nav(app, "Charts")
     picker = app.selectbox(key="classics_category")
-    picker.set_value("🎺 בלוז").run()
+    picker.set_value("Blues").run()
 
     assert not app.exception
     labels = " ".join(b.label for b in app.button if (b.key or "").startswith("classic_"))
@@ -1291,6 +1362,7 @@ def test_every_category_renders_without_a_repeating_artist(app):
 
     import classics
 
+    _nav(app, "Charts")
     picker = app.selectbox(key="classics_category")
     for label in classics.CATEGORIES:
         picker.set_value(label).run()
@@ -1312,14 +1384,14 @@ def test_a_saved_version_is_clickable_and_searches_for_it_again(app, monkeypatch
         "2wei|zombie": {"artist": "2WEI", "track": "Zombie", "genre": "Soundtrack",
                         "year": "2018", "features": None, "added_at": 1.0}
     }
-    app.run()
+    _nav(app, "Loved")
 
     app.button(key="fav_open_2wei|zombie").click().run()
 
     assert not app.exception
     assert app.session_state["cover_title"] == "Zombie"
     assert app.session_state["cover_artist"] == "2WEI"
-    assert app.session_state["search_mode"] == "קאברים לשיר"
+    assert app.session_state["search_mode"] == "Covers of a song"
     assert app.session_state["candidates"]
 
 

@@ -146,11 +146,11 @@ def test_show_album_is_detected_without_a_soundtrack_genre():
 
 
 def test_indicators_name_which_signal_matched():
-    assert search.trailer_indicators(_album("The Crown S5 (OST)")) == ["אלבום של סדרה/סרט"]
+    assert search.trailer_indicators(_album("The Crown S5 (OST)")) == ["cinematic"]
     assert search.trailer_indicators(_album("Urban Hymns", genre="Alternative")) == []
     both = search.trailer_indicators(
         _album("Epic Trailer Covers Vol 3", genre="Soundtrack"))
-    assert "כותרת אפית" in both and "ז'אנר פסקול" in both
+    assert "epic" in both and "soundtrack" in both
 
 
 def test_show_album_outranks_the_original():

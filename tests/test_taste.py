@@ -153,7 +153,7 @@ def test_describe_names_the_dimension_the_user_is_consistent_about():
     favorites = [liked(feature_fields={"low_end": 2.9, "onset_rate": 0.9 + i * 0.8})
                  for i in range(4)]
     text = taste.describe(taste.profile(favorites))
-    assert "בס חזק" in text
+    assert "heavy low end" in text
     assert "4" in text
 
 
@@ -229,8 +229,8 @@ def test_describe_names_what_is_avoided():
     favorites = [liked({"genre": "Metal"}) for _ in range(4)]
     rejections = [liked({"genre": "Classical"}) for _ in range(4)]
     text = taste.describe(taste.profile(favorites, rejections=rejections))
-    assert "דחיות" in text
-    assert "נמנע מ" in text and "Classical" in text
+    assert "rejections" in text
+    assert "avoiding" in text and "Classical" in text
 
 
 # ---------- מדדי גוון ----------
@@ -301,7 +301,7 @@ def test_describe_can_name_a_timbre_trait():
                                                 low_end=1.0 + i * 0.6)}
                  for i in range(4)]
     text = taste.describe(taste.profile(favorites))
-    assert "בהיר" in text
+    assert "bright" in text
 
 
 # ---------- אמן שכבר שמור בפלייליסט ----------

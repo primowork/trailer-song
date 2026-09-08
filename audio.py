@@ -113,21 +113,28 @@ def describe(features: "dict | None") -> str:
     """המספרים הגולמיים לתצוגה, כדי שהכיול הבא יהיה מבוסס ולא ניחוש."""
     if not measured(features):
         return ""
-    return (f"עוצמה {_number(features, 'loudness'):.2f} · "
-            f"בס ×{_number(features, 'low_end'):.2f} · "
-            f"מכות {_number(features, 'onset_rate'):.1f}/שנ׳ · "
-            f"קשת ×{_number(features, 'dynamic_span'):.1f}")
+    return (f"loudness {_number(features, 'loudness'):.2f} · "
+            f"low end \u00d7{_number(features, 'low_end'):.2f} · "
+            f"hits {_number(features, 'onset_rate'):.1f}/s · "
+            f"dynamic span \u00d7{_number(features, 'dynamic_span'):.1f}")
+
+
+# שני ערכי הסינון שיש להם משמעות כאן. כל ערך אחר — כולל התווית "בלי
+# סינון" — פירושו שהמסנן כבוי.
+#
+# קודם השורה השוותה מפורשות לתווית "הכל" שהוקלדה כאן ביד, בעוד שהתווית
+# עצמה מוגדרת ב-`search.py`. תרגום התווית שם היה משתיק את המסנן בשקט,
+# בלי שום סימן. בדיקה חיובית ("האם זה אחד משני הערכים שאני יודע לסנן")
+# לא יכולה להישבר ככה, והיא גם שומרת על הקובץ הזה בלי תלויות.
+TEMPO_FAST = "Fast Action"
+TEMPO_SLOW = "Slow Build-up"
 
 
 def matches_tempo(features: "dict | None", tempo_filter: str) -> bool:
     """סינון קצב לפי צפיפות המכות שנמדדה. בלי מדידה — הכל עובר."""
-    if not tempo_filter or tempo_filter == "הכל" or not measured(features):
+    if tempo_filter not in (TEMPO_FAST, TEMPO_SLOW) or not measured(features):
         return True
     rate = _number(features, "onset_rate")
     if not rate:
         return True
-    if tempo_filter == "Fast Action":
-        return rate >= 2.0
-    if tempo_filter == "Slow Build-up":
-        return rate < 2.0
-    return True
+    return rate >= 2.0 if tempo_filter == TEMPO_FAST else rate < 2.0

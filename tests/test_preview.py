@@ -46,7 +46,7 @@ def test_blocked_server_reports_the_reason(serve):
         raise httpx.ConnectTimeout("timed out")
     serve(boom)
     data_uri, error = preview.fetch_data_uri("http://store/preview.m4a")
-    assert not data_uri and "השרת" in error
+    assert not data_uri and "the server" in error
 
 
 def test_http_error_is_an_error_not_empty_audio(serve):
@@ -57,11 +57,11 @@ def test_http_error_is_an_error_not_empty_audio(serve):
 
 def test_empty_and_oversized_are_rejected(serve):
     serve(lambda request: httpx.Response(200, content=b""))
-    assert preview.fetch_data_uri("http://store/p")[1] == "קובץ ריק"
+    assert preview.fetch_data_uri("http://store/p")[1] == "empty file"
 
     serve(lambda request: httpx.Response(200, content=b"x" * (preview.MAX_BYTES + 1)))
-    assert "גדול מדי" in preview.fetch_data_uri("http://store/p")[1]
+    assert "too large" in preview.fetch_data_uri("http://store/p")[1]
 
 
 def test_missing_url_is_not_a_network_call():
-    assert preview.fetch_data_uri("") == ("", "אין preview")
+    assert preview.fetch_data_uri("") == ("", "no preview URL")
