@@ -11,3 +11,6 @@ beautifulsoup4>=4.12.0
 thefuzz>=0.22.0
 # מדידת עוצמת האודיו רצה בדפדפן של המשתמש (Web Audio API) ולכן אין כאן תלות
 # ניתוח אודיו: אין numba/llvmlite, אין מאות MB בתמונת ה-Docker.
+# Postgres, לבקאנד השרתי של `storage.py`. אופציונלי בפועל: בלי
+# `DATABASE_URL` הקוד לא נוגע בו כלל וממשיך על קבצי JSON.
+psycopg[binary]>=3.1

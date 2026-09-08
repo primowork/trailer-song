@@ -18,7 +18,10 @@ import storage
 
 API_URL = "https://www.googleapis.com/youtube/v3/search"
 API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
-CACHE_FILE = "youtube_evidence.json"
+# שם הקובץ עצמו חי היום ב-`storage.EVIDENCE_FILE`; הקאש הזה משותף
+# לכל המשתמשים, ולכן הוא עובר דרך ה-API הציבורי של storage ולא
+# דרך הפונקציות הפרטיות שלו.
+CACHE_FILE = storage.EVIDENCE_FILE
 CACHE_TTL = 30 * 24 * 60 * 60
 
 # ביטויים שמעידים על שימוש בטריילר, לא סתם על סגנון "אפי"
@@ -48,7 +51,7 @@ def available() -> bool:
 def _load_cache() -> dict:
     global _cache
     if _cache is None:
-        raw = storage._load_json(CACHE_FILE, {}) or {}
+        raw = storage.load_evidence()
         now = time.time()
         _cache = {k: v for k, v in raw.items()
                   if isinstance(v, dict) and now - v.get("cached_at", 0) < CACHE_TTL}
@@ -57,7 +60,7 @@ def _load_cache() -> dict:
 
 def _save_cache():
     if _cache is not None:
-        storage._save_json(CACHE_FILE, _cache)
+        storage.save_evidence(_cache)
 
 
 def looks_like_trailer_use(text: str) -> bool:
