@@ -87,8 +87,34 @@ st.markdown(
     """
     <style>
     /* הגופנים נטענים כאן ולא ב-config.toml: ה-theme מקבל שם משפחה, לא
-       כתובת. שלוש משפחות, כל אחת בתפקיד אחד — ראו את ההערה ב-config. */
-    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+       כתובת. שלוש משפחות, כל אחת בתפקיד אחד — ראו את ההערה ב-config.
+
+       **מהפרויקט עצמו ולא מ-Google Fonts.** הגרסה הראשונה עשתה
+       `@import` מ-fonts.googleapis.com, ובפריסה בפועל זה נכשל: הבקשה
+       לגיליון הסגנונות יצאה, אבל **אף קובץ גופן לא ירד** (אפס בקשות
+       ל-fonts.gstatic.com) — וכל הממשק נפל לגופן ברירת המחדל של
+       המערכת. גופן שהוא חלק מהזהות אינו יכול להיות תלוי בכך שרשת
+       חיצונית תענה לדפדפן של המשתמש.
+
+       שלושת הקבצים (תת-קבוצת latin, 91KB יחד) יושבים ב-`static/fonts/`
+       ומוגשים על ידי Streamlit עצמו — `enableStaticServing` ב-config.
+       Instrument Sans ו-JetBrains Mono הם גופנים משתנים, ולכן טווח
+       משקלים אחד מכסה את כל המשקלים שבשימוש בקובץ אחד. */
+    @font-face {
+        font-family: 'Bricolage Grotesque';
+        src: url('app/static/fonts/bricolage-grotesque-800.woff2') format('woff2');
+        font-weight: 800; font-style: normal; font-display: swap;
+    }
+    @font-face {
+        font-family: 'Instrument Sans';
+        src: url('app/static/fonts/instrument-sans.woff2') format('woff2');
+        font-weight: 400 600; font-style: normal; font-display: swap;
+    }
+    @font-face {
+        font-family: 'JetBrains Mono';
+        src: url('app/static/fonts/jetbrains-mono-500.woff2') format('woff2');
+        font-weight: 500; font-style: normal; font-display: swap;
+    }
 
     :root {
         --ink: #0A0B0F;
@@ -566,11 +592,15 @@ st.markdown(
         /* בלי `order` בכלל: סדר ה-DOM כבר נכון (זכוכית, שיר, אמן,
            הגרלה, חיפוש), ומה ששבר אותו קודם היה `flex-basis: 100%` על
            השדה — שדחף את הזכוכית לשורה משלה. */
-        .st-key-searchbar { padding: 8px 10px; gap: 8px 10px; }
+        /* שורה ראשונה: זכוכית + שם השיר לרוחב מלא, כמו שדה הסיכום
+           שבעיצוב. שדה האמן והכפתורים יורדים מתחת. */
+        .st-key-searchbar { padding: 10px 13px; gap: 8px 9px; }
         .st-key-searchbar [data-testid="stElementContainer"]:has(input) {
-            flex: 1 1 140px; min-width: 0;
+            flex: 1 1 100%; min-width: 0;
         }
-        .st-key-btn_dice button, .st-key-btn_search button { height: 36px; }
+        .st-key-btn_dice button, .st-key-btn_search button {
+            height: 34px; min-height: 34px;
+        }
 
         /* מצבי החיפוש נגללים אופקית במקום להיערם לשלוש שורות. `!important`
            כי ה-flex-wrap מגיע מהרכיב עצמו ולא מהמכולה שלנו. */
@@ -585,48 +615,63 @@ st.markdown(
         .st-key-moderow [data-testid="stButtonGroup"]::-webkit-scrollbar {
             display: none;
         }
+        /* גלולות עגולות **נפרדות**, ולא קופסה אחת עם מסגרת: זה מה
+           שהעיצוב מגדיר לטלפון. */
+        .st-key-moderow [data-testid="stButtonGroup"],
+        .st-key-moderow [data-testid="stButtonGroup"] > div {
+            background: transparent; border: none; padding: 0; gap: 6px;
+        }
         .st-key-moderow [data-testid="stButtonGroup"] button {
             white-space: nowrap; flex: none;
+            border: 1px solid var(--line-strong) !important;
+            border-radius: 20px !important; padding: 6px 11px !important;
+            min-height: 32px;
+        }
+        .st-key-moderow [data-testid="stButtonGroup"] button[aria-checked="true"],
+        .st-key-moderow [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+            border-color: transparent !important;
         }
         .st-key-moderow { gap: 8px 10px; }
         .st-key-moderow [data-testid="stSelectbox"] { min-width: 130px; }
 
-        /* השורה בטלפון, בשתי שורות ולא בארבע:
-             שורה 1  עטיפה · כותרת ומטא · נגינה
-             שורה 2  מד העוצמה · לב, לא-זה, ⋯
-           הרוחבים למטה הם מה שכופה את השבירה בדיוק שם: מד ופעולות אינם
-           נכנסים לשורה הראשונה יחד עם הכותרת, ולכן הם גולשים יחד לשנייה.
-           כל יעדי המגע 44px, כפי שההנדאוף מחייב. */
+        /* השורה בטלפון היא **רשת** ולא flex, כדי לקבל את הצורה שבעיצוב:
+           העטיפה גבוהה לגובה שתי השורות, הכותרת והמד זה מעל זה לצידה,
+           והכפתורים בבלוק מימין.
+           `display: contents` על מכולת הפעולות הוא מה שמאפשר את זה:
+           בלעדיו שלושת הכפתורים הם תא **אחד** ברוחב 148px שאינו נכנס
+           לצד המד; איתו כל כפתור הוא פריט רשת בפני עצמו שאפשר למקם. */
         [class*="st-key-trow_"] {
-            flex-wrap: wrap !important; gap: 10px !important; padding: 11px;
-            border-radius: 12px;
+            display: grid !important;
+            grid-template-columns: 52px minmax(0, 1fr) 44px 44px;
+            grid-template-rows: auto auto;
+            gap: 8px 10px !important; align-items: center;
+            padding: 11px; border-radius: 12px;
         }
-        /* גם כאן בלי `order`: סדר ה-DOM (עטיפה, נגינה, כותרת, תגים,
-           מד, פעולות) נשבר לשתי שורות בדיוק במקום הנכון ברגע שהרוחבים
-           נכונים — עטיפה+נגינה+כותרת ממלאים את השורה הראשונה, ומד
-           ופעולות גולשים יחד לשנייה. */
         [class*="st-key-trow_"] > div:first-child {
-            flex: 0 0 52px !important;
-        }
-        [class*="st-key-trow_"] > div:has(> [class*="st-key-tplay_"]) {
-            flex: 0 0 44px !important;
+            grid-column: 1; grid-row: 1 / span 2; align-self: start;
         }
         [class*="st-key-trow_"] > div:has(> [class*="st-key-tmain_"]) {
-            flex: 1 1 120px !important; min-width: 0 !important;
+            grid-column: 2; grid-row: 1; min-width: 0;
         }
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-tmeter_"]) {
+            grid-column: 2; grid-row: 2; min-width: 0;
+        }
+        [class*="st-key-trow_"] .ts-meter { width: 100%; }
         /* בטלפון אין תגים בשורה גם בעיצוב עצמו: ברוחב 390px הם דחסו את
            שם האמן לשליש מהרוחב, וזו בדיוק התלונה שהם אמורים לשרת */
         [class*="st-key-trow_"] > div:has(> [class*="st-key-ttags_"]) {
             display: none !important;
         }
-        [class*="st-key-trow_"] > div:has(> [class*="st-key-tmeter_"]) {
-            flex: 1 1 150px !important; min-width: 0 !important;
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-tplay_"]) {
+            grid-column: 3; grid-row: 1;
         }
-        [class*="st-key-trow_"] .ts-meter { width: 100%; }
-        [class*="st-key-trow_"] > div:has(> [class*="st-key-tacts_"]) {
-            flex: 0 0 auto !important;
-        }
-        [class*="st-key-tacts_"] { gap: 8px; }
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-tacts_"]),
+        [class*="st-key-tacts_"] { display: contents !important; }
+        /* לב ליד הנגינה, ומתחתיהם "לא זה" ו-⋯: ארבעה יעדי 44px בבלוק
+           אחד, במקום שורה שנייה שמתחרה עם המד על הרוחב */
+        [class*="st-key-tacts_"] > div:nth-child(1) { grid-column: 4; grid-row: 1; }
+        [class*="st-key-tacts_"] > div:nth-child(2) { grid-column: 3; grid-row: 2; }
+        [class*="st-key-tacts_"] > div:nth-child(3) { grid-column: 4; grid-row: 2; }
         [class*="st-key-tacts_"] .stButton button,
         [class*="st-key-tacts_"] [data-testid="stPopover"] button {
             width: 44px; min-width: 44px; height: 44px; min-height: 44px;

@@ -33,3 +33,9 @@ codeFont = "JetBrains Mono, monospace"
 # (ב-CSS) הוא מה שמסמן שהוא לחיץ.
 linkColor = "#C3C8D4"
 linkUnderline = false
+
+# הגשת `static/` על ידי Streamlit. זו הדרך שבה קבצי הגופן מגיעים
+# לדפדפן בלי תלות ב-Google Fonts — ראו את ההערה ליד ה-`@font-face`
+# ב-`app.py`.
+[server]
+enableStaticServing = true
