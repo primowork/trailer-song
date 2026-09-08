@@ -168,7 +168,7 @@ def test_declared_epic_versions_come_first(monkeypatch):
     declared = [t["artist"] for t in results if t["trailer_indicator"]]
     assert set(declared) == {"2WEI", "Someone"}
     assert [t["artist"] for t in results[:2]] == declared
-    assert source == "חיפוש בחנויות"
+    assert source == "store search"
 
 
 def test_a_remix_is_not_dropped_for_lacking_the_word_epic(monkeypatch):
@@ -220,12 +220,12 @@ def test_find_all_covers_merges_and_tags_both_sources(monkeypatch):
                         lambda title, artist="", limit=80, work_id="": (catalog, "MusicBrainz", None))
     monkeypatch.setattr(covers, "find_epic_versions",
                         lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0:
-                            (store, "חיפוש בחנויות"))
+                            (store, "store search"))
 
     results, source, original = covers.find_all_covers("Zombie")
     assert {t["artist"] for t in results} == {"MB Cover", "Store Cover"}
-    assert {t["catalog_source"] for t in results} == {"MusicBrainz", "חיפוש בחנויות"}
-    assert "MusicBrainz" in source and "חיפוש בחנויות" in source
+    assert {t["catalog_source"] for t in results} == {"MusicBrainz", "store search"}
+    assert "MusicBrainz" in source and "store search" in source
 
 
 def test_find_all_covers_dedupes_the_same_track_from_both_sources(monkeypatch):
@@ -235,7 +235,7 @@ def test_find_all_covers_dedupes_the_same_track_from_both_sources(monkeypatch):
                         lambda title, artist="", limit=80, work_id="": ([same_from_catalog], "MusicBrainz", None))
     monkeypatch.setattr(covers, "find_epic_versions",
                         lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0:
-                            ([same_from_store], "חיפוש בחנויות"))
+                            ([same_from_store], "store search"))
 
     results, _, _ = covers.find_all_covers("Zombie")
     assert len(results) == 1
@@ -247,11 +247,11 @@ def test_find_all_covers_when_one_source_is_empty(monkeypatch):
     store = [make("Store Cover", "Zombie (Epic)", uid="s1")]
     monkeypatch.setattr(covers, "find_epic_versions",
                         lambda title, artist="", limit=60, filters=None, prefer_new=False, min_year=0:
-                            (store, "חיפוש בחנויות"))
+                            (store, "store search"))
 
     results, source, _ = covers.find_all_covers("Zombie")
     assert [t["artist"] for t in results] == ["Store Cover"]
-    assert source == "חיפוש בחנויות"
+    assert source == "store search"
 
 
 # ---------- חיפוש לפי אמן ----------
@@ -426,7 +426,7 @@ def test_a_store_result_that_is_a_version_of_the_work_is_marked(monkeypatch):
     monkeypatch.setattr(covers, "find_covers",
                         lambda *a, **k: (catalog, "SecondHandSongs", None))
     monkeypatch.setattr(covers, "find_epic_versions",
-                        lambda *a, **k: (store, "חיפוש בחנויות"))
+                        lambda *a, **k: (store, "store search"))
 
     results, _, _ = covers.find_all_covers("I'm Sorry", "Brenda Lee")
     verified = {t["artist"]: t["work_verified"] for t in results}

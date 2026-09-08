@@ -38,7 +38,7 @@ def resolve_data_dir() -> str:
         if _is_writable(candidate):
             return candidate
 
-    warnings.append("לא נמצאה תיקייה הניתנת לכתיבה — הנתונים לא יישמרו בין הרצות.")
+    warnings.append("No writable folder found — data will not be kept between runs.")
     return ""
 
 
@@ -63,10 +63,10 @@ def _load_json(name: str, default):
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception as exc:
-        warnings.append(f"קריאת {name} נכשלה ({exc}) — נטען ערך ריק.")
+        warnings.append(f"Reading {name} failed ({exc}) — loaded an empty value.")
         return default
     if type(data) is not type(default):
-        warnings.append(f"המבנה של {name} אינו כצפוי — נטען ערך ריק.")
+        warnings.append(f"The structure of {name} is not what was expected — loaded an empty value.")
         return default
     return data
 
@@ -83,7 +83,7 @@ def _save_json(name: str, payload) -> bool:
         os.replace(tmp, path)
         return True
     except Exception as exc:
-        warnings.append(f"שמירת {name} נכשלה ({exc}) — השינוי לא יישמר בין הרצות.")
+        warnings.append(f"Saving {name} failed ({exc}) — the change will not be kept between runs.")
         return False
 
 

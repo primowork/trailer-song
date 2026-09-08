@@ -66,18 +66,18 @@ DIMENSIONS = tuple(audio.WEIGHTS) + tuple(audio.TIMBRE_RANGES)
 
 # תווית לכל קצה של כל מימד, ל-describe
 _DIMENSION_LABELS = {
-    "loudness": ("עוצמה גבוהה", "עוצמה נמוכה"),
-    "low_end": ("בס חזק", "בס מינימלי"),
-    "onset_rate": ("קצב מהיר", "קצב איטי"),
-    "dynamic_span": ("קשת דינמית רחבה", "דינמיקה שטוחה"),
-    "centroid": ("צליל בהיר", "צליל אפל"),
-    "flatness": ("מרקם רועש ומעוות", "מרקם טונאלי ונקי"),
-    "air": ("אוויר וברק בגבהים", "גבהים מרוסנים"),
-    "presence": ("חוד ונוכחות באמצע-גבוה", "אמצע-גבוה רך"),
-    "flux": ("ספקטרום נע — פרקושן קצבי", "ספקטרום יציב — מתמשך ולגאטו"),
+    "loudness": ("loud", "quiet"),
+    "low_end": ("heavy low end", "minimal low end"),
+    "onset_rate": ("fast", "slow"),
+    "dynamic_span": ("wide dynamics", "flat dynamics"),
+    "centroid": ("bright", "dark"),
+    "flatness": ("noisy, distorted texture", "tonal, clean texture"),
+    "air": ("airy highs", "restrained highs"),
+    "presence": ("present upper-mids", "soft upper-mids"),
+    "flux": ("moving spectrum, percussive", "steady spectrum, sustained"),
 }
-_TRAIT_LABELS = {"genre": "ז'אנר", "artist": "אמן", "source": "מקור",
-                 "mark": "סימן", "decade": "שנות"}
+_TRAIT_LABELS = {"genre": "genre", "artist": "artist", "source": "source",
+                 "mark": "mark", "decade": ""}
 
 
 def traits(track: dict, labels: dict | None = None) -> set:
@@ -371,9 +371,9 @@ def describe(learned: dict) -> str:
         if len(parts) >= 5:
             break
 
-    source = f"{learned['count']} לייקים"
+    source = f"{learned['count']} loves"
     if learned.get("reject_count"):
-        source += f" ו-{learned['reject_count']} דחיות"
+        source += f" and {learned['reject_count']} rejections"
 
     reject_support = learned.get("reject_support") or {}
     avoided = [f"{_TRAIT_LABELS.get(t.partition(':')[0], '')} "
@@ -383,8 +383,8 @@ def describe(learned: dict) -> str:
                if value <= -0.4 and reject_support.get(t, 0) >= MIN_SUPPORT][:2]
 
     if not parts and not avoided:
-        return f"לומד מ-{source} — עדיין אין דפוס מובהק"
-    text = f"לומד מ-{source}: " + " · ".join(parts[:5])
+        return f"Learning from {source} — no clear pattern yet"
+    text = f"Learning from {source}: " + " · ".join(parts[:5])
     if avoided:
-        text += " · נמנע מ: " + " · ".join(avoided)
+        text += " · avoiding: " + " · ".join(avoided)
     return text

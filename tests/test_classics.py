@@ -68,8 +68,8 @@ def test_the_fifties_bridge_the_gap_before_the_hot_100():
 
 
 def test_derived_categories_are_subsets_of_their_source():
-    assert set(map(id, classics.CATEGORIES["🎤 פופ קלאסי"])) <= set(map(id, classics.POP_CLASSICS))
-    assert set(map(id, classics.CATEGORIES["🎸 רוק קלאסי"])) <= set(map(id, classics.ROCK_CLASSICS))
+    assert set(map(id, classics.CATEGORIES["Classic pop"])) <= set(map(id, classics.POP_CLASSICS))
+    assert set(map(id, classics.CATEGORIES["Classic rock"])) <= set(map(id, classics.ROCK_CLASSICS))
 
 
 # ---------- תקרת חזרתיות ----------
@@ -93,7 +93,7 @@ def test_cap_by_artist_keeps_the_first_entries_in_order():
 
 def test_cap_by_artist_is_a_display_filter_not_a_deletion():
     """השיר נשאר בקוד — רק לא נדחס לאותה קטגוריה."""
-    capped = {(e["artist"], e["track"]) for e in classics.CATEGORIES["🎸 רוק"]}
+    capped = {(e["artist"], e["track"]) for e in classics.CATEGORIES["Rock"]}
     everything = {(e["artist"], e["track"]) for e in classics.ROCK_CLASSICS}
     assert capped < everything
 
@@ -105,10 +105,10 @@ def test_no_song_appears_twice_inside_one_category():
 
 
 def test_oldies_is_fifties_and_sixties_across_all_genres():
-    years = [e["year"] for e in classics.CATEGORIES["📻 אולדיס"]]
+    years = [e["year"] for e in classics.CATEGORIES["Oldies"]]
     assert max(years) <= 1969
     # ומכל שלושת הז'אנרים, לא רק מאחד
-    artists = {e["artist"] for e in classics.CATEGORIES["📻 אולדיס"]}
+    artists = {e["artist"] for e in classics.CATEGORIES["Oldies"]}
     assert artists & {e["artist"] for e in classics.BLUES_CLASSICS}
     assert artists & {e["artist"] for e in classics.POP_CLASSICS}
 

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><style>
+body{margin:0;background:#F0EEE9;font-family:'Instrument Sans',system-ui,sans-serif}
+a{color:#1a1a1a;text-decoration:none}a:hover{color:#B4491F}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px 'JetBrains Mono',monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px}
+.dv-tname{font:600 13px/1.2 'Instrument Sans',sans-serif;color:#1a1a1a}
+.dv-opts{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px 'JetBrains Mono',monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.4 'Instrument Sans',sans-serif;color:rgba(0,0,0,.55);max-width:760px}
+.dv-card{background:#0A0B0F;border:1px solid rgba(0,0,0,.12);border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.10);overflow:hidden}
+.dv-opt:target .dv-oid{background:#B4491F;color:#fff}
+.dv-next{margin:24px 0 0;font:12px/1.6 'Instrument Sans',sans-serif;color:rgba(0,0,0,.5)}
+@keyframes clbar{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+</style></helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><span class="dv-tid">1</span><span class="dv-tname">COVER LOVER — three directions, dark cinematic, English UI, responsive</span></div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a">
+  <div class="dv-olabel"><span class="dv-oid">1a</span>STUDIO — the by-the-book consumer version. Search stays at the top, results become a scannable list, and the loudness score becomes a meter you read across rows instead of a badge you decode. Persistent player bar; playlist lives in a left rail.</div>
+  <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+
+  <div class="dv-card" style="width:1080px;color:#ECEEF3;font-family:'Instrument Sans',sans-serif">
+    <div style="display:flex;min-height:660px">
+      <div style="width:210px;flex:none;background:#101219;border-inline-end:1px solid #1E2230;padding:18px 14px;display:flex;flex-direction:column;gap:18px">
+        <div style="display:flex;align-items:center;gap:9px">
+          <div style="width:22px;height:22px;border-radius:6px;background:#FFB020;position:relative"><div style="position:absolute;inset:8px;border-radius:50%;background:#0A0B0F"></div></div>
+          <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:13px;letter-spacing:.14em">COVER<br>LOVER</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;background:#1A1E29;font-size:13.5px;font-weight:500">Discover</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;color:#8A91A3;font-size:13.5px">Charts</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;color:#8A91A3;font-size:13.5px">Loved <span style="margin-inline-start:auto;font:500 11px 'JetBrains Mono',monospace;color:#FFB020">12</span></div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;color:#8A91A3;font-size:13.5px">Settings</div>
+        </div>
+        <div style="height:1px;background:#1E2230"></div>
+        <div>
+          <div style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;color:#9AA1B2;margin-bottom:9px">YOUR TASTE</div>
+          <p style="margin:0;font-size:12px;line-height:1.55;color:#8A91A3">Big, orchestral, 2015 and newer. Ranking leans that way.</p>
+        </div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:7px">
+          <div style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;color:#9AA1B2">RECENT</div>
+          <div style="font-size:12.5px;color:#C3C8D4">Creep · Radiohead</div>
+          <div style="font-size:12.5px;color:#C3C8D4">Bittersweet Symphony</div>
+        </div>
+      </div>
+
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <div style="padding:22px 26px 0">
+          <div style="display:flex;align-items:center;gap:10px;background:#14161D;border:1px solid #232838;border-radius:12px;padding:6px 6px 6px 14px">
+            <span style="color:#9AA1B2;font-size:15px">⌕</span>
+            <input value="Yellow" style="flex:1;min-width:0;border:none;background:transparent;color:#ECEEF3;font-family:'Instrument Sans',sans-serif;font-size:15px;outline:none" placeholder="Song or artist">
+            <span style="font:500 11px 'JetBrains Mono',monospace;color:#9AA1B2;border:1px solid #232838;border-radius:5px;padding:3px 6px">Coldplay ✕</span>
+            <button style="border:1px solid #232838;background:transparent;color:#C3C8D4;border-radius:8px;height:32px;padding:0 10px;font-size:13px;cursor:pointer">Surprise me</button>
+            <button style="border:none;background:#FFB020;color:#0A0B0F;border-radius:8px;height:32px;padding:0 16px;font-family:'Instrument Sans',sans-serif;font-weight:600;font-size:13.5px;cursor:pointer">Find covers</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <div style="display:flex;background:#14161D;border:1px solid #232838;border-radius:9px;padding:3px">
+              <span style="padding:5px 11px;border-radius:6px;background:#252A38;font-size:12.5px;font-weight:500">Covers of a song</span>
+              <span style="padding:5px 11px;font-size:12.5px;color:#8A91A3">Covers of an artist</span>
+              <span style="padding:5px 11px;font-size:12.5px;color:#8A91A3">Free search</span>
+            </div>
+            <div style="flex:1"></div>
+            <span style="font-size:12.5px;color:#8A91A3">Sort</span>
+            <span style="font-size:12.5px;border:1px solid #232838;border-radius:8px;padding:5px 10px;color:#ECEEF3">Best match ⌄</span>
+            <span style="font-size:12.5px;border:1px solid #232838;border-radius:8px;padding:5px 10px;color:#8A91A3">Filters · 2 ⌄</span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:10px;margin:22px 0 4px">
+            <h2 style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:26px;margin:0;letter-spacing:-.01em">63 covers of Yellow</h2>
+            <span style="font-size:12.5px;color:#8A91A3">6 declare a trailer version · measured in your browser</span>
+          </div>
+        </div>
+
+        <div style="padding:10px 26px 90px;display:flex;flex-direction:column;gap:6px;overflow:hidden">
+          <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:14px;padding:11px 12px;border-radius:10px;background:{{ r.rowBg }};border:1px solid {{ r.rowBorder }}">
+              <div style="width:48px;height:48px;flex:none;border-radius:7px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px);display:flex;align-items:center;justify-content:center;font:500 7px 'JetBrains Mono',monospace;color:#7B839A">ART</div>
+              <button onClick="{{ r.onPlay }}" style="width:34px;height:34px;flex:none;border:none;border-radius:50%;background:{{ r.playBg }};cursor:pointer;display:flex;align-items:center;justify-content:center;color:{{ r.playFg }};font-size:12px">{{ r.playIcon }}</button>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.artist }}</div>
+                <div style="font-size:12.5px;color:#8A91A3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">{{ r.track }} · {{ r.meta }}</div>
+              </div>
+              <div style="flex:none;display:flex;gap:5px">
+                <sc-for list="{{ r.signs }}" as="s" hint-placeholder-count="1">
+                  <span style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.06em;color:#FFB020;border:1px solid rgba(255,176,32,.35);border-radius:5px;padding:3px 6px">{{ s }}</span>
+                </sc-for>
+              </div>
+              <div style="flex:none;width:150px;display:flex;align-items:center;gap:9px">
+                <div style="flex:1;height:6px;border-radius:3px;background:#1E2230;overflow:hidden"><div style="height:100%;width:{{ r.pct }};background:{{ r.meterColor }};border-radius:3px"></div></div>
+                <span style="font:500 12.5px 'JetBrains Mono',monospace;color:{{ r.meterColor }};width:22px;text-align:right">{{ r.score }}</span>
+              </div>
+              <button onClick="{{ r.onLove }}" style="width:32px;height:32px;flex:none;border:1px solid {{ r.loveBorder }};background:transparent;color:{{ r.loveColor }};border-radius:8px;cursor:pointer;font-size:14px">{{ r.loveIcon }}</button>
+              <button style="width:32px;height:32px;flex:none;border:1px solid #232838;background:transparent;color:#9AA1B2;border-radius:8px;cursor:pointer;font-size:14px">⋯</button>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="margin-top:auto;border-top:1px solid #1E2230;background:#101219;padding:12px 26px;display:flex;align-items:center;gap:14px">
+          <div style="width:40px;height:40px;flex:none;border-radius:7px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px)"></div>
+          <div style="display:flex;gap:2px;align-items:flex-end;height:22px;width:34px">
+            <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out infinite"></div>
+            <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out .15s infinite"></div>
+            <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out .3s infinite"></div>
+            <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out .45s infinite"></div>
+          </div>
+          <div style="min-width:0">
+            <div style="font-size:13.5px;font-weight:600">{{ nowArtist }}</div>
+            <div style="font-size:12px;color:#8A91A3">30-second preview · full version on YouTube Music ↗</div>
+          </div>
+          <div style="flex:1"></div>
+          <span style="font:500 11px 'JetBrains Mono',monospace;color:#9AA1B2">SPACE play · ↑↓ move · L love</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:390px;color:#ECEEF3;font-family:'Instrument Sans',sans-serif">
+    <div style="min-height:760px;display:flex;flex-direction:column">
+      <div style="padding:16px 16px 0;display:flex;align-items:center;gap:9px">
+        <div style="width:20px;height:20px;border-radius:6px;background:#FFB020;position:relative"><div style="position:absolute;inset:7px;border-radius:50%;background:#0A0B0F"></div></div>
+        <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:12.5px;letter-spacing:.16em">COVER LOVER</span>
+        <div style="flex:1"></div>
+        <span style="font:500 11px 'JetBrains Mono',monospace;color:#FFB020">12 loved</span>
+      </div>
+      <div style="padding:14px 16px 0">
+        <div style="display:flex;align-items:center;gap:9px;background:#14161D;border:1px solid #232838;border-radius:12px;padding:11px 13px">
+          <span style="color:#9AA1B2">⌕</span><span style="font-size:15px">Yellow</span><span style="font-size:12.5px;color:#8A91A3">· Coldplay</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px;overflow:hidden">
+          <span style="font-size:12.5px;padding:6px 11px;border-radius:20px;background:#252A38;font-weight:500;white-space:nowrap">Covers of a song</span>
+          <span style="font-size:12.5px;padding:6px 11px;border-radius:20px;border:1px solid #232838;color:#8A91A3;white-space:nowrap">Artist</span>
+          <span style="font-size:12.5px;padding:6px 11px;border-radius:20px;border:1px solid #232838;color:#8A91A3;white-space:nowrap">Free</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin:18px 0 10px">
+          <h2 style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px;margin:0">63 covers</h2>
+          <span style="font-size:12px;color:#8A91A3">sorted by best match</span>
+        </div>
+      </div>
+      <div style="padding:0 16px 96px;display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex;gap:11px;align-items:center;padding:11px;border-radius:12px;background:#14161D;border:1px solid #1E2230">
+            <div style="width:52px;height:52px;flex:none;border-radius:8px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px);display:flex;align-items:center;justify-content:center;font:500 7px 'JetBrains Mono',monospace;color:#7B839A">ART</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.artist }}</div>
+              <div style="font-size:12px;color:#8A91A3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 6px">{{ r.meta }}</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="flex:1;height:5px;border-radius:3px;background:#1E2230;overflow:hidden"><div style="height:100%;width:{{ r.pct }};background:{{ r.meterColor }}"></div></div>
+                <span style="font:500 11.5px 'JetBrains Mono',monospace;color:{{ r.meterColor }}">{{ r.score }}</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px;flex:none">
+              <button onClick="{{ r.onPlay }}" style="width:44px;height:44px;border:none;border-radius:50%;background:{{ r.playBg }};color:{{ r.playFg }};cursor:pointer;font-size:13px">{{ r.playIcon }}</button>
+              <button onClick="{{ r.onLove }}" style="width:44px;height:44px;border:1px solid {{ r.loveBorder }};background:transparent;color:{{ r.loveColor }};border-radius:12px;cursor:pointer;font-size:15px">{{ r.loveIcon }}</button>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:auto;border-top:1px solid #1E2230;background:#101219;padding:11px 16px;display:flex;align-items:center;gap:11px">
+        <div style="width:36px;height:36px;border-radius:7px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px)"></div>
+        <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ nowArtist }}</div><div style="font-size:11.5px;color:#8A91A3">preview · 0:12 / 0:30</div></div>
+        <div style="display:flex;gap:2px;align-items:flex-end;height:18px;width:26px">
+          <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out infinite"></div>
+          <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out .2s infinite"></div>
+          <div style="flex:1;background:#FFB020;height:100%;transform-origin:bottom;animation:clbar .9s ease-in-out .4s infinite"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div class="dv-opt" id="1b">
+  <div class="dv-olabel"><span class="dv-oid">1b</span>STACK — one cover at a time, audio first. The app plays as soon as a card lands; love or skip decides the next one, so the taste model is trained by listening instead of by reading a list. Desktop keeps the stack and adds an up-next queue.</div>
+  <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+
+  <div class="dv-card" style="width:390px;color:#ECEEF3;font-family:'Instrument Sans',sans-serif">
+    <div style="min-height:760px;display:flex;flex-direction:column;background:radial-gradient(120% 55% at 50% 0%,#231A12 0%,#0A0B0F 62%)">
+      <div style="padding:16px;display:flex;align-items:center;gap:9px">
+        <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:12.5px;letter-spacing:.16em">COVER LOVER</span>
+        <div style="flex:1"></div>
+        <span style="font:500 11px 'JetBrains Mono',monospace;color:#8A91A3">{{ stackPos }}</span>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.14em;color:#9AA1B2">COVERS OF</div>
+        <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px;margin-top:4px">Yellow <span style="color:#8A91A3;font-weight:400;font-size:15px">Coldplay, 2000</span></div>
+      </div>
+      <div style="padding:20px 16px 0;position:relative">
+        <div style="position:absolute;inset:20px 30px auto;height:300px;border-radius:18px;background:#14161D;border:1px solid #1E2230;transform:translateY(14px) scale(.96);opacity:.55"></div>
+        <div style="position:relative;border-radius:18px;background:#161A24;border:1px solid #262B3A;padding:18px;box-shadow:0 18px 40px rgba(0,0,0,.5)">
+          <div style="width:100%;aspect-ratio:1;border-radius:12px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1F242F 0 8px,#181C26 8px 16px);display:flex;align-items:flex-end;padding:14px;box-sizing:border-box">
+            <span style="font:500 8px 'JetBrains Mono',monospace;color:#7B839A">ALBUM ART · 640×640</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-top:16px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:19px;font-weight:600;line-height:1.25">{{ card.artist }}</div>
+              <div style="font-size:13px;color:#8A91A3;margin-top:3px">{{ card.track }}</div>
+              <div style="font-size:12.5px;color:#8A91A3;margin-top:6px">{{ card.meta }}</div>
+            </div>
+            <div style="flex:none;text-align:center">
+              <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:34px;line-height:1;color:{{ card.color }}">{{ card.score }}</div>
+              <div style="font:500 9px 'JetBrains Mono',monospace;letter-spacing:.1em;color:#9AA1B2;margin-top:3px">LOUDNESS</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:5px;margin-top:14px;flex-wrap:wrap">
+            <sc-for list="{{ card.signs }}" as="s" hint-placeholder-count="2">
+              <span style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.06em;color:#FFB020;border:1px solid rgba(255,176,32,.35);border-radius:5px;padding:3px 7px">{{ s }}</span>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:2px;align-items:flex-end;height:34px;margin-top:16px">
+            <sc-for list="{{ wave }}" as="h" hint-placeholder-count="40">
+              <div style="flex:1;background:#2C3242;height:{{ h }}"></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <div style="padding:20px 16px;display:flex;align-items:center;justify-content:center;gap:16px">
+        <button onClick="{{ onSkip }}" style="width:56px;height:56px;border-radius:50%;border:1px solid #262B3A;background:#14161D;color:#8A91A3;font-size:19px;cursor:pointer">✕</button>
+        <button onClick="{{ onPlayCard }}" style="width:76px;height:76px;border-radius:50%;border:none;background:#FFB020;color:#0A0B0F;font-size:22px;cursor:pointer;box-shadow:0 8px 24px rgba(255,176,32,.28)">{{ cardPlayIcon }}</button>
+        <button onClick="{{ onLoveCard }}" style="width:56px;height:56px;border-radius:50%;border:1px solid rgba(255,107,74,.45);background:rgba(255,107,74,.12);color:#FF6B4A;font-size:19px;cursor:pointer">♥</button>
+      </div>
+      <div style="margin-top:auto;padding:0 16px 20px;display:flex;align-items:center;gap:10px">
+        <div style="flex:1;height:1px;background:#1E2230"></div>
+        <span style="font-size:11.5px;color:#9AA1B2">{{ lovedCount }} loved from this song</span>
+        <div style="flex:1;height:1px;background:#1E2230"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:860px;color:#ECEEF3;font-family:'Instrument Sans',sans-serif">
+    <div style="min-height:560px;display:flex;background:radial-gradient(80% 60% at 22% 0%,#231A12 0%,#0A0B0F 60%)">
+      <div style="flex:1;min-width:0;padding:26px;display:flex;flex-direction:column;gap:18px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:20px;height:20px;border-radius:6px;background:#FFB020;position:relative"><div style="position:absolute;inset:7px;border-radius:50%;background:#0A0B0F"></div></div>
+          <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:12px;letter-spacing:.16em">COVER LOVER</span>
+          <div style="flex:1"></div>
+          <span style="font:500 11px 'JetBrains Mono',monospace;color:#9AA1B2">← skip · → love · SPACE play</span>
+        </div>
+        <div style="display:flex;gap:22px;align-items:flex-start">
+          <div style="width:220px;height:220px;flex:none;border-radius:14px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1F242F 0 8px,#181C26 8px 16px);display:flex;align-items:flex-end;padding:12px;box-sizing:border-box"><span style="font:500 8px 'JetBrains Mono',monospace;color:#7B839A">ALBUM ART</span></div>
+          <div style="flex:1;min-width:0">
+            <div style="font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.14em;color:#9AA1B2">COVER OF YELLOW · COLDPLAY</div>
+            <h2 style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:34px;margin:8px 0 0;letter-spacing:-.015em">{{ card.artist }}</h2>
+            <div style="font-size:15px;color:#C3C8D4;margin-top:6px">{{ card.track }}</div>
+            <div style="font-size:13px;color:#8A91A3;margin-top:8px">{{ card.meta }}</div>
+            <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
+              <sc-for list="{{ card.signs }}" as="s" hint-placeholder-count="2">
+                <span style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.06em;color:#FFB020;border:1px solid rgba(255,176,32,.35);border-radius:5px;padding:4px 7px">{{ s }}</span>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;margin-top:22px">
+              <button onClick="{{ onPlayCard }}" style="width:60px;height:60px;border-radius:50%;border:none;background:#FFB020;color:#0A0B0F;font-size:18px;cursor:pointer">{{ cardPlayIcon }}</button>
+              <div style="flex:1;display:flex;gap:2px;align-items:flex-end;height:44px">
+                <sc-for list="{{ wave }}" as="h" hint-placeholder-count="40"><div style="flex:1;background:#2C3242;height:{{ h }}"></div></sc-for>
+              </div>
+              <div style="text-align:center;flex:none"><div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:30px;line-height:1;color:{{ card.color }}">{{ card.score }}</div><div style="font:500 9px 'JetBrains Mono',monospace;letter-spacing:.1em;color:#9AA1B2">LOUDNESS</div></div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:20px">
+              <button onClick="{{ onSkip }}" style="border:1px solid #262B3A;background:#14161D;color:#C3C8D4;border-radius:10px;padding:11px 20px;font-size:13.5px;cursor:pointer">Skip</button>
+              <button onClick="{{ onLoveCard }}" style="border:1px solid rgba(255,107,74,.45);background:rgba(255,107,74,.12);color:#FF6B4A;border-radius:10px;padding:11px 20px;font-size:13.5px;cursor:pointer">♥ Love this version</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="width:250px;flex:none;border-inline-start:1px solid #1E2230;background:#101219;padding:22px 18px">
+        <div style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;color:#9AA1B2;margin-bottom:12px">UP NEXT · {{ stackPos }}</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <sc-for list="{{ queue }}" as="q" hint-placeholder-count="4">
+            <div style="display:flex;gap:10px;align-items:center;opacity:{{ q.opacity }}">
+              <div style="width:36px;height:36px;flex:none;border-radius:6px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px)"></div>
+              <div style="min-width:0;flex:1">
+                <div style="font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ q.artist }}</div>
+                <div style="font-size:11px;color:#8A91A3">{{ q.meta }}</div>
+              </div>
+              <span style="font:500 11.5px 'JetBrains Mono',monospace;color:{{ q.color }}">{{ q.score }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div class="dv-opt" id="1c">
+  <div class="dv-olabel"><span class="dv-oid">1c</span>FIELD — not a list. Every cover is a dot placed by loudness (up) and year (across), sized by how well it fits your taste; the amber band is trailer territory. Click a dot to play it. Mobile keeps the field as a compact strip above a short shortlist.</div>
+  <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+
+  <div class="dv-card" style="width:900px;color:#ECEEF3;font-family:'Instrument Sans',sans-serif">
+    <div style="min-height:620px;display:flex;flex-direction:column">
+      <div style="padding:22px 26px 0;display:flex;align-items:center;gap:12px">
+        <div style="width:20px;height:20px;border-radius:6px;background:#FFB020;position:relative"><div style="position:absolute;inset:7px;border-radius:50%;background:#0A0B0F"></div></div>
+        <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:12px;letter-spacing:.16em">COVER LOVER</span>
+        <div style="flex:1"></div>
+        <span style="font-size:12.5px;border:1px solid #232838;border-radius:8px;padding:6px 11px;color:#ECEEF3">Yellow · Coldplay ✕</span>
+        <span style="font-size:12.5px;border:1px solid #232838;border-radius:8px;padding:6px 11px;color:#8A91A3">63 covers ⌄</span>
+      </div>
+      <div style="padding:18px 26px 0;display:flex;align-items:baseline;gap:12px">
+        <h2 style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:26px;margin:0;letter-spacing:-.015em">The field</h2>
+        <span style="font-size:12.5px;color:#8A91A3">loudness ↑ · release year → · dot size = fit to your taste</span>
+      </div>
+
+      <div style="padding:18px 26px 0;display:flex;gap:22px;align-items:stretch">
+        <div style="flex:1;min-width:0;position:relative;height:340px;border:1px solid #1E2230;border-radius:12px;background:#0E1016;overflow:hidden">
+          <div style="position:absolute;inset:0 0 auto;height:33%;background:rgba(255,176,32,.055);border-bottom:1px dashed rgba(255,176,32,.22)"></div>
+          <span style="position:absolute;top:9px;left:12px;font:500 9.5px 'JetBrains Mono',monospace;letter-spacing:.1em;color:rgba(255,176,32,.75)">TRAILER TERRITORY</span>
+          <div style="position:absolute;inset:0;background:linear-gradient(to right,#171A22 0 1px,transparent 1px) 0 0/12.5% 100%,linear-gradient(to bottom,#171A22 0 1px,transparent 1px) 0 0/100% 25%"></div>
+          <sc-for list="{{ dots }}" as="d" hint-placeholder-count="18">
+            <button onClick="{{ d.onPick }}" style="position:absolute;left:{{ d.x }};bottom:{{ d.y }};width:{{ d.size }};height:{{ d.size }};margin:{{ d.offset }};border-radius:50%;border:1px solid {{ d.ring }};background:{{ d.fill }};cursor:pointer;padding:0"></button>
+          </sc-for>
+          <div style="position:absolute;inset:auto 0 0;display:flex;justify-content:space-between;padding:6px 10px;font:500 9.5px 'JetBrains Mono',monospace;color:#7B839A">
+            <span>2000</span><span>2008</span><span>2014</span><span>2019</span><span>2024</span>
+          </div>
+        </div>
+
+        <div style="width:250px;flex:none;display:flex;flex-direction:column;gap:14px">
+          <div style="border:1px solid #262B3A;border-radius:12px;background:#14161D;padding:14px">
+            <div style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;color:#9AA1B2">SELECTED</div>
+            <div style="display:flex;gap:11px;margin-top:11px">
+              <div style="width:56px;height:56px;flex:none;border-radius:8px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1F242F 0 7px,#181C26 7px 14px)"></div>
+              <div style="min-width:0">
+                <div style="font-size:14px;font-weight:600;line-height:1.3">{{ card.artist }}</div>
+                <div style="font-size:12px;color:#8A91A3;margin-top:3px">{{ card.meta }}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:13px">
+              <button onClick="{{ onPlayCard }}" style="width:40px;height:40px;border:none;border-radius:50%;background:#FFB020;color:#0A0B0F;font-size:13px;cursor:pointer">{{ cardPlayIcon }}</button>
+              <button onClick="{{ onLoveCard }}" style="width:40px;height:40px;border:1px solid rgba(255,107,74,.45);background:rgba(255,107,74,.12);color:#FF6B4A;border-radius:12px;font-size:15px;cursor:pointer">♥</button>
+              <div style="flex:1;text-align:right"><div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:24px;line-height:1;color:{{ card.color }}">{{ card.score }}</div><div style="font:500 9px 'JetBrains Mono',monospace;color:#9AA1B2">LOUDNESS</div></div>
+            </div>
+          </div>
+          <div style="border:1px solid #1E2230;border-radius:12px;padding:14px">
+            <div style="font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;color:#9AA1B2;margin-bottom:10px">SHORTLIST · 4</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ queue }}" as="q" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:{{ q.color }};flex:none"></span>
+                  <span style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">{{ q.artist }}</span>
+                  <span style="font:500 11.5px 'JetBrains Mono',monospace;color:#8A91A3">{{ q.score }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:auto;padding:20px 26px;display:flex;gap:10px;flex-wrap:wrap">
+        <span style="font-size:12.5px;padding:7px 12px;border-radius:20px;background:#252A38;font-weight:500">Verified same work</span>
+        <span style="font-size:12.5px;padding:7px 12px;border-radius:20px;border:1px solid #232838;color:#8A91A3">Orchestral</span>
+        <span style="font-size:12.5px;padding:7px 12px;border-radius:20px;border:1px solid #232838;color:#8A91A3">Fast action</span>
+        <span style="font-size:12.5px;padding:7px 12px;border-radius:20px;border:1px solid #232838;color:#8A91A3">Under 3:00</span>
+        <span style="font-size:12.5px;padding:7px 12px;border-radius:20px;border:1px solid #232838;color:#8A91A3">Unheard only</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:390px;color:#ECEEF3;font-family:'Instrument Sans',sans-serif">
+    <div style="min-height:700px;display:flex;flex-direction:column">
+      <div style="padding:16px;display:flex;align-items:center;gap:9px">
+        <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:12.5px;letter-spacing:.16em">COVER LOVER</span>
+        <div style="flex:1"></div>
+        <span style="font:500 11px 'JetBrains Mono',monospace;color:#8A91A3">63 covers</span>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Yellow <span style="color:#8A91A3;font-weight:400;font-size:14px">Coldplay</span></div>
+        <div style="position:relative;height:190px;margin-top:14px;border:1px solid #1E2230;border-radius:12px;background:#0E1016;overflow:hidden">
+          <div style="position:absolute;inset:0 0 auto;height:34%;background:rgba(255,176,32,.055);border-bottom:1px dashed rgba(255,176,32,.22)"></div>
+          <sc-for list="{{ dots }}" as="d" hint-placeholder-count="18">
+            <button onClick="{{ d.onPick }}" style="position:absolute;left:{{ d.x }};bottom:{{ d.y }};width:{{ d.size }};height:{{ d.size }};margin:{{ d.offset }};border-radius:50%;border:1px solid {{ d.ring }};background:{{ d.fill }};padding:0;cursor:pointer"></button>
+          </sc-for>
+          <span style="position:absolute;top:8px;left:10px;font:500 9px 'JetBrains Mono',monospace;letter-spacing:.1em;color:rgba(255,176,32,.75)">TRAILER TERRITORY</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font:500 9.5px 'JetBrains Mono',monospace;color:#7B839A;margin-top:5px"><span>2000</span><span>loudness ↑ · year →</span><span>2024</span></div>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:8px">
+        <div style="border:1px solid #262B3A;border-radius:14px;background:#14161D;padding:14px;display:flex;gap:12px;align-items:center">
+          <div style="width:58px;height:58px;flex:none;border-radius:9px;border:1px solid #232838;background:repeating-linear-gradient(135deg,#1F242F 0 7px,#181C26 7px 14px)"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ card.artist }}</div>
+            <div style="font-size:12px;color:#8A91A3;margin-top:3px">{{ card.meta }}</div>
+          </div>
+          <button onClick="{{ onPlayCard }}" style="width:48px;height:48px;flex:none;border:none;border-radius:50%;background:#FFB020;color:#0A0B0F;font-size:14px;cursor:pointer">{{ cardPlayIcon }}</button>
+        </div>
+        <sc-for list="{{ queue }}" as="q" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:12px;border:1px solid #1E2230">
+            <span style="width:9px;height:9px;border-radius:50%;background:{{ q.color }};flex:none"></span>
+            <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ q.artist }}</div><div style="font-size:11.5px;color:#8A91A3">{{ q.meta }}</div></div>
+            <span style="font:500 12px 'JetBrains Mono',monospace;color:{{ q.color }}">{{ q.score }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "take <a class="dv-oid" href="#1a">1a</a> and expand it to every screen — playlist, charts, filters, onboarding" · "keep <a class="dv-oid" href="#1b">1b</a>'s player inside <a class="dv-oid" href="#1a">1a</a>'s list" · "more directions, lighter and less cinematic"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:900}}">
+const AMBER = "#FFB020", CORAL = "#FF6B4A", DIM = "#8A91A3";
+
+const ROWS = [
+  {id: "r1", artist: "Tommee Profitt", track: "Yellow (Trailer Mix)", meta: "Soundtrack · 2022 · 2:58", signs: ["EPIC", "TRAILER"], score: 91},
+  {id: "r2", artist: "Bad Wolves String Orchestra", track: "Yellow (Epic Version)", meta: "Soundtrack · 2021 · 3:12", signs: ["EPIC"], score: 87},
+  {id: "r3", artist: "Vitamin String Quartet", track: "Yellow", meta: "Classical Crossover · 2019 · 3:44", signs: ["CINEMATIC"], score: 61},
+  {id: "r4", artist: "Jodi Marie", track: "Yellow (Cover)", meta: "Pop · 2018 · 4:02", signs: [], score: 34},
+  {id: "r5", artist: "Novo Amor", track: "Yellow (Live Session)", meta: "Indie Folk · 2016 · 4:21", signs: [], score: 22}
+];
+
+class Component extends DCLogic {
+  state = {playing: "r1", loved: {r2: true}, cardIndex: 0, selected: 0};
+
+  _tier(score) { return score >= 70 ? AMBER : score >= 40 ? "#C3C8D4" : DIM; }
+
+  renderVals() {
+    const {playing, loved, cardIndex, selected} = this.state;
+    const rows = ROWS.map(r => {
+      const isPlaying = playing === r.id, isLoved = !!loved[r.id];
+      return {
+        ...r,
+        pct: r.score + "%",
+        meterColor: this._tier(r.score),
+        rowBg: isPlaying ? "#161A24" : "transparent",
+        rowBorder: isPlaying ? "#2A3040" : "#14161D",
+        playBg: isPlaying ? AMBER : "#1E2230",
+        playFg: isPlaying ? "#0A0B0F" : "#C3C8D4",
+        playIcon: isPlaying ? "❙❙" : "▶",
+        loveIcon: isLoved ? "♥" : "♡",
+        loveColor: isLoved ? CORAL : "#9AA1B2",
+        loveBorder: isLoved ? "rgba(255,107,74,.5)" : "#232838",
+        onPlay: () => this.setState({playing: isPlaying ? null : r.id}),
+        onLove: () => this.setState(s => ({loved: {...s.loved, [r.id]: !s.loved[r.id]}}))
+      };
+    });
+
+    const card = ROWS[cardIndex % ROWS.length];
+    const sel = ROWS[selected % ROWS.length];
+    const wave = Array.from({length: 44}, (_, i) =>
+      Math.round(24 + 76 * Math.abs(Math.sin(i * 0.55 + cardIndex))) + "%");
+
+    const YEARS = {2016: 4, 2018: 30, 2019: 48, 2021: 74, 2022: 86};
+    const dots = ROWS.map((r, i) => {
+      const x = [86, 74, 48, 30, 4][i] + "%";
+      const size = (r.score >= 70 ? 22 : r.score >= 40 ? 16 : 11);
+      const active = i === selected;
+      return {
+        x, y: (r.score * 0.78 + 6) + "%",
+        size: size + "px",
+        offset: (-size / 2) + "px",
+        fill: active ? AMBER : r.score >= 70 ? "rgba(255,176,32,.55)" : "rgba(195,200,212,.22)",
+        ring: active ? "#FFD489" : r.score >= 70 ? "rgba(255,176,32,.8)" : "rgba(195,200,212,.45)",
+        onPick: () => this.setState({selected: i, playing: r.id})
+      };
+    });
+    // background scatter of the other 58 covers, non-interactive fillers
+    const filler = Array.from({length: 16}, (_, i) => {
+      const s = 12 + ((i * 37) % 62);
+      const size = s >= 70 ? 14 : 9;
+      return {
+        x: (6 + ((i * 53) % 88)) + "%", y: (s * 0.78 + 6) + "%",
+        size: size + "px", offset: (-size / 2) + "px",
+        fill: "rgba(195,200,212,.12)", ring: "rgba(195,200,212,.25)",
+        onPick: () => this.setState({selected: 0})
+      };
+    });
+
+    return {
+      rows,
+      nowArtist: (ROWS.find(r => r.id === playing) || {}).artist || "Nothing playing",
+      card: {...sel, color: this._tier(sel.score)},
+      wave,
+      dots: [...filler, ...dots],
+      cardPlayIcon: playing === sel.id ? "❙❙" : "▶",
+      stackPos: (cardIndex + 1) + " / 63",
+      lovedCount: Object.values(loved).filter(Boolean).length,
+      queue: ROWS.filter((_, i) => i !== selected).slice(0, 4).map((r, i) => ({
+        artist: r.artist, meta: r.meta, score: r.score,
+        color: this._tier(r.score), opacity: String(1 - i * 0.16)
+      })),
+      onSkip: () => this.setState(s => ({cardIndex: (s.cardIndex + 1) % ROWS.length, selected: (s.selected + 1) % ROWS.length})),
+      onLoveCard: () => this.setState(s => ({loved: {...s.loved, [sel.id]: !s.loved[sel.id]}})),
+      onPlayCard: () => this.setState(s => ({playing: s.playing === sel.id ? null : sel.id}))
+    };
+  }
+}
+</script>
+</body>
+</html>

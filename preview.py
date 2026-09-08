@@ -19,19 +19,19 @@ DEFAULT_TYPE = "audio/mpeg"
 def fetch_data_uri(url: str) -> tuple[str, str]:
     """מחזיר (data_uri, error). לא זורק חריגות."""
     if not url:
-        return "", "אין preview"
+        return "", "no preview URL"
     try:
         with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
             response = client.get(url)
             response.raise_for_status()
             data = response.content
     except Exception as exc:
-        return "", f"השרת לא הצליח למשוך את ה-preview: {str(exc)[:80]}"
+        return "", f"the server could not fetch the preview: {str(exc)[:80]}"
 
     if not data:
-        return "", "קובץ ריק"
+        return "", "empty file"
     if len(data) > MAX_BYTES:
-        return "", f"ה-preview גדול מדי ({len(data) // 1024}KB)"
+        return "", f"the preview is too large ({len(data) // 1024}KB)"
 
     media_type = (response.headers.get("content-type") or DEFAULT_TYPE).split(";")[0]
     if not media_type.startswith("audio"):

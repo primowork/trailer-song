@@ -592,12 +592,12 @@ def cap_by_artist(entries: tuple, limit: int = 2) -> tuple:
 _PRE_HOT100 = in_years(ALL_CLASSICS, 1950, 1957)
 
 CATEGORIES: dict[str, tuple] = {
-    "🎤 פופ": cap_by_artist(POP_CLASSICS),
-    "🎸 רוק": cap_by_artist(ROCK_CLASSICS),
-    "🎺 בלוז": cap_by_artist(BLUES_CLASSICS),
-    "🎤 פופ קלאסי": cap_by_artist(in_years(POP_CLASSICS, 1950, 1989)),
-    "🎸 רוק קלאסי": cap_by_artist(in_years(ROCK_CLASSICS, 1965, 1995)),
-    "📻 אולדיס": cap_by_artist(
+    "Pop": cap_by_artist(POP_CLASSICS),
+    "Rock": cap_by_artist(ROCK_CLASSICS),
+    "Blues": cap_by_artist(BLUES_CLASSICS),
+    "Classic pop": cap_by_artist(in_years(POP_CLASSICS, 1950, 1989)),
+    "Classic rock": cap_by_artist(in_years(ROCK_CLASSICS, 1965, 1995)),
+    "Oldies": cap_by_artist(
         _PRE_HOT100 + chart_data.DECADE_HITS["50's"] + chart_data.DECADE_HITS["60's"]),
     "50's": cap_by_artist(_PRE_HOT100 + chart_data.DECADE_HITS["50's"]),
     "60's": chart_data.DECADE_HITS["60's"],

@@ -144,13 +144,13 @@ def trailer_indicators(track: dict) -> list[str]:
     """
     found = []
     if has_epic_title(track):
-        found.append("כותרת אפית")
+        found.append("epic")
     if is_soundtrack(track):
-        found.append("ז'אנר פסקול")
+        found.append("soundtrack")
     if has_production_album(track):
-        found.append("אלבום של סדרה/סרט")
+        found.append("cinematic")
     if is_trailer_artist(track):
-        found.append("אמן טריילרים מוכר")
+        found.append("trailer")
     return found
 
 
@@ -185,10 +185,10 @@ EPIC_SEARCH_MODIFIERS = (
     "trailerized", "trailer version", "ost", "season", "series", "from the",
 )
 
-ALL = "הכל"
-LENGTH_SHORT = "קצר (< 3 דק')"
-LENGTH_MEDIUM = "בינוני (3-4 דק')"
-LENGTH_LONG = "ארוך (> 4 דק')"
+ALL = "Any"
+LENGTH_SHORT = "Short (< 3 min)"
+LENGTH_MEDIUM = "Medium (3-4 min)"
+LENGTH_LONG = "Long (> 4 min)"
 
 
 # ---------- ניקוי שמות ----------
