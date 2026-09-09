@@ -7,5 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# הרצה על הפורט הדינמי של Railway
-CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0.0.0"]
+# ה-entrypoint מייצר את `.streamlit/secrets.toml` ממשתני סביבה לפני
+# שהוא מריץ את Streamlit, ואז מריץ אותו על הפורט הדינמי של Railway.
+# בלי זה `[auth]` לא קיים בקונטיינר וההתחברות לגוגל נשארת כבויה — ראו
+# את ההערה בראש הסקריפט.
+RUN chmod +x docker-entrypoint.sh
+CMD ["./docker-entrypoint.sh"]

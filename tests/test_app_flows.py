@@ -35,10 +35,26 @@ def track(artist, title, uid, **extra):
             "release_date": "", "year": "2020", "score": 50, **extra}
 
 
+class _UserWithoutAuth:
+    """מה ש-Streamlit נותן כשאין בלוק `[auth]`: כל גישה לתכונה זורקת."""
+
+    def __getattr__(self, name):
+        raise AttributeError(f'st.user has no attribute "{name}".')
+
+
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    """מבודד כל טסט מהדיסק המשותף — בלי זה טסטים חולקים קאש/רשימה שחורה בין ריצות."""
+    """מבודד כל טסט מהדיסק המשותף — בלי זה טסטים חולקים קאש/רשימה שחורה בין ריצות.
+
+    ומבודד גם מ**הגדרת ההתחברות של המכונה**. `accounts.login_available()`
+    מסתכל על `st.user`, שנשען על `.streamlit/secrets.toml` — כלומר מפתח
+    שיוצר קובץ כזה כדי לבדוק התחברות מקומית היה מדליק את חומת השמירה
+    בכל הטסטים בבת אחת, והם היו נופלים מסיבה סביבתית. ברירת המחדל כאן
+    היא "אין auth", ומי שבודק את מסלול ההתחברות מחליף את זה במפורש.
+    """
+    import accounts
     monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(accounts.st, "user", _UserWithoutAuth())
 
 
 @pytest.fixture
@@ -704,6 +720,60 @@ def test_only_unseen_applies_to_the_cover_search_too(app):
     assert [t["uid"] for t in app_module.drop_seen(tracks, None)] == \
         ["itunes-a", "itunes-b"], "בלי הסימון שום דבר לא יורד"
     assert [t["uid"] for t in app_module.drop_seen(tracks, seen)] == ["itunes-b"]
+
+
+class _AnonymousVisitor:
+    """auth מוגדר, אבל אף אחד לא מחובר."""
+    is_logged_in = False
+
+
+class _SignedInVisitor:
+    is_logged_in = True
+    email = "owner@example.com"
+
+
+def test_the_page_renders_with_sign_in_enabled(app, monkeypatch):
+    """מסלול ההתחברות **כולו** לא היה מכוסה, ולכן באג בו יכול היה
+    להתגלות רק בפרודקשן ברגע שמגדירים auth — וזה בדיוק מה שקרה:
+    `_remember_anon` ביקש iframe בגובה 0, ש-Streamlit 1.62 פוסל, כך
+    שכל טעינת עמוד הייתה קורסת ברגע שההתחברות נדלקת. הטסט הזה מריץ את
+    העמוד עם auth דלוק כדי שזה לא יוכל לקרות שוב בשקט.
+    """
+    import accounts
+    monkeypatch.setattr(accounts.st, "user", _AnonymousVisitor())
+    app.run()
+
+    assert not app.exception
+    assert [b for b in app.button if b.key == "btn_login"], "אין כפתור התחברות"
+
+
+def test_saving_needs_an_account_once_sign_in_is_enabled(app, monkeypatch):
+    """החומה עצמה: אנונימי יכול לחפש ולהאזין, אבל לא לשמור."""
+    import accounts
+    monkeypatch.setattr(accounts.st, "user", _AnonymousVisitor())
+    app.session_state["candidates"] = [track("Some Band", "Yellow", "y1")]
+    app.run()
+
+    app.button(key="btn_favorite_itunes-y1").click().run()
+
+    assert not app.exception
+    assert app.session_state["favorites"] == {}, "אנונימי הצליח לשמור"
+
+
+def test_a_signed_in_visitor_can_save_and_sees_their_account(app, monkeypatch):
+    """הצד השני של אותה חומה."""
+    import accounts
+    monkeypatch.setattr(accounts.st, "user", _SignedInVisitor())
+    app.session_state["candidates"] = [track("Some Band", "Yellow", "y1")]
+    app.run()
+
+    assert not app.exception
+    assert [b for b in app.button if b.key == "btn_logout"], "אין כפתור התנתקות"
+
+    app.button(key="btn_favorite_itunes-y1").click().run()
+
+    assert not app.exception
+    assert app.session_state["favorites"], "משתמש מחובר לא הצליח לשמור"
 
 
 def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):

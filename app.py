@@ -1556,7 +1556,7 @@ def _remember_anon():
             }}
         }})();
         </script>
-        """, height=0)
+        """, height=1)
 
 
 def _rail_taste():
@@ -1706,10 +1706,33 @@ def _loved_screen():
                 _render_saved_versions(versions, favorites)
 
 
+def _legacy_playlist_size() -> int:
+    """כמה גרסאות תקועות במרחב המשותף מלפני ההתחברות.
+
+    `subject=None` ולא `SUBJECT`: זו בדיוק הכניסה למרחב המשותף לפי
+    ההגדרה של ה-facade (`storage._personal`), ולכן אין צורך לא בקריאת
+    קובץ ידנית ולא בפונקציה פרטית — כולל טיפול בקובץ פגום, שכבר קיים שם.
+    """
+    if not LOGIN_ENABLED:
+        return 0
+    return len(storage.load_favorites(None))
+
+
 def _settings_screen():
     """הגדרות, ייבוא מצעד, דחיות ורשימה שחורה — גם הוא מסך ולא סרגל."""
     st.html("<div class='ts-resulthead'><h2 class='ts-h2'>Settings</h2></div>")
     st.caption(f"Data folder: `{storage.DATA_DIR or 'unavailable'}`")
+    _stranded = _legacy_playlist_size()
+    if _stranded:
+        # הפתעה שקטה היא הכשל שהקוד הזה כבר נכווה בו כמה פעמים. ברגע
+        # שההתחברות נדלקת, פלייליסט שנצבר לפניה נשאר במרחב המשותף —
+        # כלומר המשתמש המחובר רואה מסך ריק בזמן שכל מבקר אנונימי רואה
+        # את האוסף. עדיף לומר את זה במפורש מאשר לתת לו לגלות לבד.
+        st.warning(f"{_stranded} saved versions are still in the shared space "
+                   "from before sign-in existed — you cannot see them while "
+                   "logged in, but anonymous visitors can. Move them to your "
+                   "account with:\n\n"
+                   "`python tools/adopt_data.py --email you@example.com --commit`")
     if not youtube_module.available():
         # מידע על פיצ'ר כבוי, לא שלב במסלול — ולכן כאן ולא בין התוצאות
         st.caption("Trailer-usage verification is off (set YOUTUBE_API_KEY)")
