@@ -91,11 +91,41 @@ def test_logging_in_does_not_hand_out_a_fresh_allowance(tmp_path, monkeypatch):
     assert accounts.remaining(ALICE) == pytest.approx(1.0, abs=1e-3)
 
 
-def test_a_subject_without_auth_configured_is_anonymous_and_does_not_raise():
+class _UserWithoutAuth:
+    """מה ש-Streamlit נותן כשאין בלוק `[auth]`: כל גישה לתכונה זורקת."""
+
+    def __getattr__(self, name):
+        raise AttributeError(f'st.user has no attribute "{name}".')
+
+
+class _SignedInUser:
+    is_logged_in = True
+    email = "Someone@Example.com"
+
+
+def test_a_subject_without_auth_configured_is_anonymous_and_does_not_raise(monkeypatch):
     """בלי `[auth]`, `st.user.is_logged_in` זורק AttributeError — וזה מה
-    שהיה שובר כל הרצה מקומית וכל טסט בלי ה-try/except."""
+    שהיה שובר כל הרצה מקומית וכל טסט בלי ה-try/except.
+
+    המצב נכפה כאן ולא נלקח מהסביבה. קודם הטסט הסתמך על כך שאין
+    `.streamlit/secrets.toml` במכונה — כלומר מפתח שיוצר קובץ כזה כדי
+    לבדוק התחברות מקומית היה מפיל אותו **מסיבה סביבתית ולא אמיתית**.
+    """
+    monkeypatch.setattr(accounts.st, "user", _UserWithoutAuth())
     assert accounts.login_available() is False
     subject = accounts.current_subject()
     assert subject.kind == "anon"
     assert subject.key.startswith("anon:")
     assert subject.is_logged_in is False
+
+
+def test_a_signed_in_user_gets_a_subject_of_their_own(monkeypatch):
+    """הצד שלא נבדק עד היום: מה קורה כשההתחברות כן מוגדרת ומישהו מחובר."""
+    monkeypatch.setattr(accounts.st, "user", _SignedInUser())
+    assert accounts.login_available() is True
+    subject = accounts.current_subject()
+    assert subject.is_logged_in is True
+    # מנורמל לאותיות קטנות: המפתח הזה קובע את שם התיקייה של המשתמש,
+    # ו-"Someone@" מול "someone@" היו שני פלייליסטים נפרדים לאותו אדם.
+    assert subject.email == "someone@example.com"
+    assert subject.key == "user:someone@example.com"
