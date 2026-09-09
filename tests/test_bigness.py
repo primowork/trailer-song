@@ -56,19 +56,6 @@ def test_describe_shows_raw_numbers_only_when_measured():
     assert audio.describe({"error": "x"}) == ""
 
 
-def test_matches_tempo_uses_measured_onsets():
-    assert audio.matches_tempo(TRAILER, "Fast Action")
-    assert not audio.matches_tempo(BALLAD, "Fast Action")
-    assert audio.matches_tempo(BALLAD, "Slow Build-up")
-    assert not audio.matches_tempo(TRAILER, "Slow Build-up")
-
-
-def test_matches_tempo_passes_everything_without_measurement():
-    assert audio.matches_tempo(None, "Fast Action")
-    assert audio.matches_tempo({"error": "cors_failed"}, "Fast Action")
-    assert audio.matches_tempo(TRAILER, "הכל")
-
-
 # ---------- קלט פגום מהדפדפן ----------
 
 def test_a_non_numeric_measurement_does_not_crash_the_card():
@@ -78,4 +65,4 @@ def test_a_non_numeric_measurement_does_not_crash_the_card():
                 {"onset_rate": "fast"}):
         assert isinstance(audio.describe(bad), str)
         assert isinstance(audio.bigness(bad), int)
-        assert audio.matches_tempo(bad, "Fast Action") in (True, False)
+        assert audio.normalized(bad) is None or isinstance(audio.normalized(bad), dict)
