@@ -97,24 +97,17 @@ st.markdown(
        המערכת. גופן שהוא חלק מהזהות אינו יכול להיות תלוי בכך שרשת
        חיצונית תענה לדפדפן של המשתמש.
 
-       שלושת הקבצים (תת-קבוצת latin, 91KB יחד) יושבים ב-`static/fonts/`
-       ומוגשים על ידי Streamlit עצמו — `enableStaticServing` ב-config.
-       Instrument Sans ו-JetBrains Mono הם גופנים משתנים, ולכן טווח
-       משקלים אחד מכסה את כל המשקלים שבשימוש בקובץ אחד. */
+       הקובץ (תת-קבוצת latin, 38KB) יושב ב-`static/fonts/` ומוגש על ידי
+       Streamlit עצמו — `enableStaticServing` ב-config. Nunito הוא גופן
+       משתנה, ולכן טווח 400–800 מכסה בקובץ אחד את כל המשקלים שבשימוש:
+       גוף ב-400, כותרות שורה ב-600, ומספרים ותגים ב-800.
+
+       קודם ישבו כאן שלוש משפחות (91KB יחד). המשתמש ביקש משפחה עגולה
+       אחת לכל דבר, ולכן זה גם 53KB פחות לרדת. */
     @font-face {
-        font-family: 'Bricolage Grotesque';
-        src: url('app/static/fonts/bricolage-grotesque-800.woff2') format('woff2');
-        font-weight: 800; font-style: normal; font-display: swap;
-    }
-    @font-face {
-        font-family: 'Instrument Sans';
-        src: url('app/static/fonts/instrument-sans.woff2') format('woff2');
-        font-weight: 400 600; font-style: normal; font-display: swap;
-    }
-    @font-face {
-        font-family: 'JetBrains Mono';
-        src: url('app/static/fonts/jetbrains-mono-500.woff2') format('woff2');
-        font-weight: 500; font-style: normal; font-display: swap;
+        font-family: 'Nunito';
+        src: url('app/static/fonts/nunito.woff2') format('woff2');
+        font-weight: 400 800; font-style: normal; font-display: swap;
     }
 
     :root {
@@ -135,8 +128,11 @@ st.markdown(
         --text-5: #7B839A;
         --amber: #FFB020;
         --coral: #FF6B4A;
-        --mono: 'JetBrains Mono', ui-monospace, monospace;
-        --display: 'Bricolage Grotesque', system-ui, sans-serif;
+        /* משפחה אחת, ושתי הרמות שהיא צריכה לכסות. `ui-rounded` לפני
+           `system-ui` נותן ל-macOS ול-iOS את SF Pro Rounded כשהגופן
+           עוד לא נטען, כלומר הנפילה לאחור היא לגופן עגול ולא לגופן
+           אחר לגמרי. */
+        --sans: 'Nunito', ui-rounded, system-ui, sans-serif;
     }
 
     [data-testid="stMainBlockContainer"] {
@@ -198,7 +194,7 @@ st.markdown(
         border-radius: 50%; background: var(--ink);
     }
     .ts-word {
-        font-family: var(--display); font-weight: 800; font-size: 13px;
+        font-family: var(--sans); font-weight: 800; font-size: 13px;
         letter-spacing: .14em; line-height: 1.15; color: var(--text);
     }
 
@@ -217,7 +213,7 @@ st.markdown(
     [class*="st-key-nav_"] .stButton button:hover { color: var(--text); }
     /* המונה הוא המספר היחיד ב-rail, ולכן mono וענבר */
     .ts-navcount {
-        font-family: var(--mono); font-weight: 500; font-size: 11px;
+        font-family: var(--sans); font-weight: 500; font-size: 11px;
         color: var(--amber); white-space: nowrap;
     }
 
@@ -230,7 +226,7 @@ st.markdown(
     /* תוויות micro ב-mono: הן שלטי חלוקה, לא כותרות — ולכן קטנות,
        מרווחות ובאותיות גדולות, ולא עוד שורת טקסט בגודל הגוף */
     .ts-railcap {
-        font-family: var(--mono); font-weight: 500; font-size: 10px;
+        font-family: var(--sans); font-weight: 500; font-size: 10px;
         letter-spacing: .12em; color: var(--text-4);
         margin: 10px 0 8px; text-transform: uppercase;
     }
@@ -312,7 +308,7 @@ st.markdown(
         padding: 1px 3px 1px 7px; gap: 2px; flex: none;
     }
     .ts-chiptext {
-        font-family: var(--mono); font-weight: 500; font-size: 11px;
+        font-family: var(--sans); font-weight: 500; font-size: 11px;
         color: var(--text-4); white-space: nowrap;
     }
     .st-key-clear_artist button { min-height: 22px; padding: 0 2px; }
@@ -361,7 +357,7 @@ st.markdown(
         color: var(--text-3); font-size: 12.5px;
     }
     .ts-filtercount {
-        font-family: var(--mono); font-weight: 500; font-size: 11px;
+        font-family: var(--sans); font-weight: 500; font-size: 11px;
         color: var(--amber); margin-inline-start: -4px;
     }
 
@@ -449,18 +445,21 @@ st.markdown(
         flex-wrap: wrap; margin: 22px 0 8px;
     }
     .ts-h2 {
-        font-family: var(--display); font-weight: 800; font-size: 26px;
-        letter-spacing: -.015em; margin: 0; color: var(--text);
+        font-family: var(--sans); font-weight: 800; font-size: 28px;
+        letter-spacing: -.025em; margin: 0; color: var(--text);
     }
-    .ts-lede { font-size: 12.5px; color: var(--text-3); }
+    .ts-lede { font-size: 13.5px; font-weight: 600; color: var(--text-3); }
 
     /* ---- שורת תוצאה ---- */
+    /* כרטיס ולא שורה צרה: פינה של 18px וריפוד נדיב, מהרפרנס שהמשתמש
+       הביא. הקו הוא `inset box-shadow` ולא `border`, כדי שלא יוסיף
+       פיקסל לגובה השורה ולא יזיז את הפריסה שנמדדה בדפדפן. */
     [class*="st-key-trow_"] {
-        background: var(--surface); border: 1px solid var(--line);
-        border-radius: 10px; padding: 11px 12px; margin-bottom: 6px;
+        background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+        border-radius: 18px; padding: 13px 16px; margin-bottom: 10px;
     }
     [class*="st-key-trow_"]:has(.ts-play.is-playing) {
-        background: var(--raised); border-color: var(--line-row);
+        background: var(--raised); box-shadow: inset 0 0 0 2px var(--amber);
     }
     [class*="st-key-trow_"] [data-testid="stVerticalBlock"] { gap: 0; }
     /* בלוק הכותרת הוא היחיד שגדל ומתכווץ; שאר העמודות ברוחב התוכן שלהן.
@@ -494,42 +493,53 @@ st.markdown(
     }
     .ts-rowmeta a { color: var(--text-2); text-decoration: none; }
     .ts-rowmeta a:hover { color: var(--amber); }
-    /* תגי הסימנים: mono, מתאר ענבר, בלי מילוי. הם הסיבה לדירוג ולא
-       קישוט — ומילוי ענבר על כל שורה היה מבטל את המשמעות של הענבר. */
-    .ts-tags { display: flex; gap: 5px; flex-wrap: nowrap; }
+    /* תגי הסימנים: מילוי רך במקום מתאר, מהרפרנס. המילוי הוא ענבר
+       בעשירית האטימות ולא ענבר מלא — הם הסיבה לדירוג ולא קישוט, וריבוע
+       ענבר מלא על כל שורה היה מבטל את המשמעות של הענבר. */
+    .ts-tags { display: flex; gap: 6px; flex-wrap: nowrap; }
     .ts-tag {
-        font-family: var(--mono); font-weight: 500; font-size: 10px;
-        letter-spacing: .06em; color: var(--amber);
-        border: 1px solid rgba(255,176,32,.35); border-radius: 5px;
-        padding: 3px 6px; white-space: nowrap;
+        font-family: var(--sans); font-weight: 800; font-size: 11px;
+        letter-spacing: .05em; color: var(--amber);
+        background: rgba(255,176,32,.13); border-radius: 8px;
+        padding: 5px 9px; white-space: nowrap;
     }
     /* התג הנמדד: אותה צורה בדיוק, בלי הענבר. ההבדל בין "מה שהוכרז" לבין
        "מה שנשמע" הוא הבדל במקור ולא בחשיבות, ולכן הוא נקרא בצבע ולא
        בגודל או במיקום. */
     .ts-tag-heard {
-        color: var(--text-3);
-        border-color: var(--line-row);
+        color: #A8AEBE;
+        background: var(--chip);
     }
 
     /* מד העוצמה: אורך קבוע, ולכן אפשר להשוות שורה לשורה במבט אחד.
        `max-width` ורצפה על הרצועה: ברוחב צר הוא מתכווץ עד 70px ואז
        עוצר, במקום להיעלם או לדחוס את שם האמן. */
+    /* המספר מעל הרצועה ובגודל שקוראים אותו מיד, מהרפרנס. הרצועה
+       נשארת מתחתיו כי היא מה שמאפשר להשוות שורה לשורה במבט אחד —
+       המספר עונה על "כמה", הרצועה על "לעומת מי". */
     .ts-meter {
-        display: flex; align-items: center; gap: 9px;
-        width: 150px; max-width: 100%;
+        display: flex; flex-direction: column; align-items: flex-end;
+        gap: 5px; width: 92px; max-width: 100%;
     }
     .ts-metertrack {
-        flex: 1 1 auto; min-width: 40px; height: 6px; border-radius: 3px;
+        width: 100%; height: 6px; border-radius: 3px;
         background: var(--chip); overflow: hidden;
     }
     .ts-meterfill { height: 100%; border-radius: 3px; }
+    /* גובה קבוע לשתי המצבים: שורה שנמדדה מציגה מספר של 27px ושורה שלא
+       מציגה תווית של 11px, ובלי הגובה הזה הרשימה הייתה קופצת בכל פעם
+       שמדידה מסתיימת. */
     .ts-meterval {
-        font-family: var(--mono); font-weight: 500; font-size: 12.5px;
-        width: 30px; text-align: end; flex: none;
+        font-family: var(--sans); font-weight: 800; font-size: 27px;
+        line-height: 28px; height: 28px; letter-spacing: -.02em;
+        text-align: end; flex: none;
     }
-    .ts-meteridle { color: var(--text-5); font-size: 10px; letter-spacing: .06em; }
+    .ts-meteridle {
+        color: var(--text-5); font-size: 11px; font-weight: 700;
+        letter-spacing: .06em; line-height: 28px; height: 28px;
+    }
     .ts-fit {
-        font-family: var(--mono); font-size: 10px; color: var(--text-5);
+        font-family: var(--sans); font-size: 10px; color: var(--text-5);
         margin-top: 5px; text-align: end;
     }
 
@@ -554,11 +564,11 @@ st.markdown(
 
     /* עטיפה חסרה: גרדיאנט וגליף במקום ריבוע אפור שטוח שמושך את העין */
     .ts-art-blank {
-        border-radius: 7px; border: 1px solid var(--line-strong);
+        border-radius: 13px; border: 1px solid var(--line-strong);
         background: repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px);
         flex: none;
     }
-    [class*="st-key-trow_"] [data-testid="stImage"] img { border-radius: 7px; }
+    [class*="st-key-trow_"] [data-testid="stImage"] img { border-radius: 13px; }
 
     /* ---- נגן ---- */
     /* נגן ה-<audio controls> של הדפדפן יושב ב-shadow DOM שלא ניתן לעיצוב,
@@ -575,7 +585,7 @@ st.markdown(
     }
     /* המשולש והמקפים מצוירים ב-CSS ולא ב-SVG: ראו הערת הזכוכית המגדלת */
     .ts-play {
-        width: 34px; height: 34px; flex: none; border: none; cursor: pointer;
+        width: 44px; height: 44px; flex: none; border: none; cursor: pointer;
         border-radius: 50%; background: var(--chip);
         display: flex; align-items: center; justify-content: center; padding: 0;
     }
@@ -631,7 +641,7 @@ st.markdown(
     .ts-bar-sub a { color: var(--text-3); }
     .ts-bar-sub a:hover { color: var(--amber); }
     .ts-bar-keys {
-        font-family: var(--mono); font-weight: 500; font-size: 11px;
+        font-family: var(--sans); font-weight: 500; font-size: 11px;
         color: var(--text-4); white-space: nowrap; flex: none;
     }
     /* האקווילייזר. `is-live` נדלק רק כששמע באמת מתנגן (ראו `paint`) —
@@ -767,7 +777,7 @@ st.markdown(
         .stElementContainer:has(> .stHtml .ts-player) {
             flex: 0 0 44px; width: 44px;
         }
-        .ts-art-blank { border-radius: 8px; }
+        .ts-art-blank { border-radius: 13px; }
 
         /* רמזי המקלדת אינם רלוונטיים בלי מקלדת, והם גזלו את הרוחב מהשם */
         .ts-bar-keys { display: none; }
@@ -2095,22 +2105,24 @@ SCORE_TIERS = (
     (audio.MID_VERSION_THRESHOLD, "#C3C8D4", "mid"),
     (0, "#8A91A3", "calm"),
 )
-ARTWORK_SIZE = 48
+ARTWORK_SIZE = 52
 # צבע ותווית לשורה שעוד לא נמדדה. רצועה ריקה ולא תג: המד הוא העמודה
 # שקוראים לאורכה, ותג בגובה אחר באמצע היה שובר את הקו.
 METER_IDLE = "#1E2230"
 
 
 def _loudness_meter(features: dict | None):
-    """העוצמה כמד שקוראים לרוחב, ולא כתג שמפענחים.
+    """העוצמה כמספר גדול שקוראים מיד, מעל רצועה שמשווה בין השורות.
 
-    זה הנתון שהאפליקציה קיימת בשבילו, וההנדאוף מנמק את הצורה במפורש:
-    "a meter you read across rows instead of a badge you decode". רצועה
-    באורך קבוע פירושה שאפשר להשוות שורה לשורה במבט אחד במקום לקרוא מספר
-    בכל שורה בנפרד — והמספר עדיין שם, ב-mono, כי הוא גם התשובה המדויקת.
+    זה הנתון שהאפליקציה קיימת בשבילו. ההנדאוף נימק את הצורה כ-"a meter
+    you read across rows instead of a badge you decode", והרצועה עדיין
+    עושה בדיוק את זה — היא עונה על "לעומת מי". מה שהשתנה הוא שהמספר עלה
+    מעליה ולגודל שקוראים מיד, לפי רפרנס שהמשתמש הביא: הוא התשובה המדויקת
+    ל"כמה", והיא לא צריכה להיות הדבר הקטן בשורה.
 
-    רוחב קבוע לספרות (`ts-meterval`) הוא מה שמיישר את המספרים בין השורות:
-    בלעדיו "9" ו-"87" מתחילים במקומות שונים והעין קופצת.
+    יישור הספרות בין השורות בא מ-`font-variant-numeric: tabular-nums`
+    שיושב על כל אזור התוכן, ולא מגופן מונו כפי שהיה קודם: בלעדיו "9"
+    ו-"87" מתחילים במקומות שונים והעין קופצת.
     """
     if audio.measured(features):
         score = audio.bigness(features)
@@ -2118,9 +2130,9 @@ def _loudness_meter(features: dict | None):
         pct = max(0, min(100, int(score)))
         st.html(
             "<div class='ts-meter'>"
+            f"<span class='ts-meterval' style='color:{color}'>{score}</span>"
             f"<div class='ts-metertrack'><div class='ts-meterfill'"
             f" style='width:{pct}%;background:{color}'></div></div>"
-            f"<span class='ts-meterval' style='color:{color}'>{score}</span>"
             "</div>")
         return
 
@@ -2131,8 +2143,8 @@ def _loudness_meter(features: dict | None):
              else "\u2013")
     st.html(
         "<div class='ts-meter'>"
-        f"<div class='ts-metertrack'></div>"
         f"<span class='ts-meterval ts-meteridle'>{label}</span>"
+        f"<div class='ts-metertrack'></div>"
         "</div>")
 
 
