@@ -1588,7 +1588,7 @@ def _rail_recent():
 # זה בדיוק אותו כשל שכבר תפס את שדה האמן כשהוחלף ב-chip.
 SCREEN_SAFE_KEYS = (
     "cover_title", "cover_artist", "search_mode", "sort_by",
-    "filter_style", "filter_tempo", "filter_length", "filter_recency",
+    "filter_style", "filter_length", "filter_recency",
     "filter_prefer_new", "filter_fresh_only", "filter_same_work",
     "filter_sound",
 )
@@ -2493,9 +2493,6 @@ with mode_row:
         # (ראו `SCREEN_SAFE_KEYS`)
         style_filter = st.selectbox("Style / genre", [ALL, *STYLES],
                                     key="filter_style")
-        tempo_filter = st.selectbox(
-            "Tempo", [ALL, audio.TEMPO_FAST, audio.TEMPO_SLOW],
-            key="filter_tempo")
         length_filter = st.selectbox(
             "Track length", [ALL, LENGTH_SHORT, LENGTH_MEDIUM, LENGTH_LONG],
             key="filter_length")
@@ -2525,14 +2522,13 @@ with mode_row:
                  "catalogue, and they disappear.")
 
         if st.session_state.get("search_mode") == MODE_SONG:
-            st.caption("Style and tempo only affect the part that comes from "
+            st.caption("Style only affects the part that comes from "
                        "the store search. The official catalogue "
                        "(SecondHandSongs/MusicBrainz) does not support "
                        "filtering like that, so its versions always appear.")
 
     _active_filters = sum([
-        style_filter != ALL, tempo_filter != ALL, length_filter != ALL,
-        sound_filter != ALL,
+        style_filter != ALL, length_filter != ALL, sound_filter != ALL,
         RECENCY_OPTIONS[recency] != 0, fresh_only, same_work_only,
     ])
     if _active_filters:
@@ -2540,7 +2536,7 @@ with mode_row:
         # נראה זהה בין "בלי סינון" ל"שני פילטרים פעילים"
         st.html(f"<span class='ts-filtercount'>{_active_filters}</span>")
 
-filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
+filters = {"style": style_filter, "length": length_filter}
 
 
 ARTIST_PREVIEW_COUNT = 20

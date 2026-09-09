@@ -335,10 +335,12 @@ def build_queries(query: str, filters: dict | None = None,
         queries.append(f"{base} {origin_artist} cover")
 
     if filters:
-        for key in ("style", "tempo"):
-            value = filters.get(key)
-            if value and value != ALL:
-                queries.append(f"{base} {value}")
+        # סגנון בלבד. "Tempo" ישב כאן פעם לצידו, אבל הוא מעולם לא סינן
+        # לפי קצב: הוא רק הוסיף את הטקסט "Fast Action" לשאילתת החנות.
+        # הקצב הנמדד נקרא היום מהמדידה שבדפדפן, דרך `tags.py`.
+        value = filters.get("style")
+        if value and value != ALL:
+            queries.append(f"{base} {value}")
 
     # שמירה על סדר ללא כפילויות
     seen, unique = set(), []
