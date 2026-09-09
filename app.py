@@ -2163,15 +2163,39 @@ def render_track(track: dict, index: int, learned: dict | None = None):
     # בטלפון אלא **עורם** אותן לרוחב מלא, כך שכל תוצאה הפכה לשמונה בלוקים
     # נפרדים — עשרים תוצאות היו 160 בלוקים, ומכאן "לא עובד בפלאפון".
     # מכולה אופקית נשענת על flex ולכן היא נשארת שורה בשני הרוחבים.
-    row = st.container(key=f"trow_{uid}", horizontal=True, wrap=False,
+    # מפתח המכולה נושא את דור התוצאות ולא רק את ה-uid.
+    #
+    # מכולה עם `key` מקבלת זהות יציבה, ולכן חיפוש חדש שיצר מפתחות אחרים
+    # לא הפיל את השורות של החיפוש הקודם: הן נשארו תלויות **מעל** התוצאות
+    # החדשות, על הכפתורים שלהן. בצילום מסך אחד נראו חמש-עשרה שורות של
+    # "The Sound of Silence" מעל עשרים שורות תקינות של "When I Need You",
+    # כלומר יותר שורות ממה שהכותרת עצמה הצהירה עליהן.
+    #
+    # הדור כבר קיים ב-session state בשביל שומר הגלילה, והוא עולה בכל
+    # החלפת תוצאות. הוספתו כאן מבטיחה שאף מפתח מהחיפוש הקודם אינו קיים
+    # בעץ החדש, ולכן אין לשריד במה להיאחז.
+    #
+    # אין על זה בדיקה, ולא במקרה: `AppTest` בונה את העץ של הריצה הנוכחית
+    # בלבד ואינו חושף כלל מפתחות של מכולות (נבדק), ולכן כל בדיקה שנכתבה
+    # כאן עברה גם בלי התיקון. אימות אמיתי הוא שני חיפושים רצופים בדפדפן.
+    #
+    # הוא נכנס **אחרי** התחילית ולא לפניה: כללי ה-CSS מתאימים לפי
+    # `[class*="st-key-trow_"]`, ולכן התחילית חייבת להישאר בהתחלה.
+    #
+    # רק המכולות, לא הכפתורים: `btn_favorite_<uid>` הוא הזהות של הפעולה
+    # על הטראק הזה, ו-`bigness[uid]` הוא המדידה שלו. שניהם חייבים לשרוד
+    # חיפוש חדש, בעוד שהמכולה היא בדיוק מה שצריך להיעלם איתו.
+    row_key = f"{st.session_state.get('result_generation', 0)}_{uid}"
+
+    row = st.container(key=f"trow_{row_key}", horizontal=True, wrap=False,
                        vertical_alignment="center", gap="medium")
     with row:
         col_art = st.container(width=ARTWORK_SIZE)
-        col_play = st.container(key=f"tplay_{uid}", width="content")
-        col_main = st.container(key=f"tmain_{uid}", width="stretch")
-        col_tags = st.container(key=f"ttags_{uid}", width="content")
-        col_meter = st.container(key=f"tmeter_{uid}", width="content")
-        col_acts = st.container(key=f"tacts_{uid}", width="content",
+        col_play = st.container(key=f"tplay_{row_key}", width="content")
+        col_main = st.container(key=f"tmain_{row_key}", width="stretch")
+        col_tags = st.container(key=f"ttags_{row_key}", width="content")
+        col_meter = st.container(key=f"tmeter_{row_key}", width="content")
+        col_acts = st.container(key=f"tacts_{row_key}", width="content",
                                 horizontal=True, vertical_alignment="center")
 
     with col_art:
