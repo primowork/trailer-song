@@ -42,6 +42,15 @@ Amber and coral are the only accents. Amber is reserved for primary action and t
 Loudness tier → color: `score >= 70 → #FFB020`, `40–69 → #C3C8D4`, `< 40 → #8A91A3`.
 
 ### Typography
+
+> **Superseded.** The three-family split below is the original direction and is
+> kept here as the record of it. The app now runs **one** rounded family,
+> Nunito 400–800, for headings, body and numbers alike, after the user brought a
+> reference whose typography is a single rounded sans. The sizes, weights and
+> letter-spacings below still describe the intent; only the families changed.
+> Digit alignment, which the mono family used to provide, now comes from
+> `font-variant-numeric: tabular-nums` on the whole content area.
+
 - Display: **Bricolage Grotesque** 800, letter-spacing `-.015em` — page titles (26–34px), the loudness number (24–34px), the wordmark (12–13px, letter-spacing `.16em`, uppercase).
 - UI: **Instrument Sans** 400/500/600 — body 12–15px, row title 14–14.5px/600, metadata 11.5–13px.
 - Mono: **JetBrains Mono** 500 — micro-labels 9–11px, letter-spacing `.10–.14em`, uppercase; all numeric scores (tabular).
