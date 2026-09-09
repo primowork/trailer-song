@@ -633,6 +633,15 @@ st.markdown(
     .ts-copy::before { top: 7px; left: 8px; opacity: .55; }
     .ts-copy::after { top: 11px; left: 12px; background: var(--surface); }
     .ts-copy:hover { color: var(--text); background: var(--chip); }
+    /* המכולה של `st.html` מקבלת מ-Streamlit `flex: 1 1 fit-content` ובולעת
+       את המקום שנשאר בשורה — נמדד בדפדפן 371px למכולה של כפתור 32px, ולכן
+       האייקון צף באמצע השורה ומשנה מקום לפי אורך שם האמן במקום להתיישר
+       בעמודה. הכלל חייב לתפוס את **העוטף** דרך `:has()`, כי `st-key-`
+       יושב על המכולה הפנימית ולא על פריט ה-flex. */
+    .stElementContainer:has(> .stHtml > .ts-copy) {
+        flex: 0 0 32px;
+        width: 32px;
+    }
     /* משוב שהעתקה קרתה בפועל. אין כאן rerun ולכן אין דרך אחרת לדעת. */
     .ts-copy.is-copied { color: var(--amber); }
 
@@ -729,6 +738,27 @@ st.markdown(
         }
         .st-key-moderow [data-testid="stButtonGroup"]::-webkit-scrollbar {
             display: none;
+        }
+
+        /* שורת הקטגוריות מקבלת בדיוק את אותו טיפול, ומאותה סיבה: נמדד
+           ב-390px שהיא נערמת ל-**שלוש שורות ו-104px**, שנדחפות מעל
+           התוצאות — כלומר בדיוק מה שהעיצוב ביקש למנוע במצבי החיפוש. */
+        .st-key-kindrow [data-testid="stButtonGroup"],
+        .st-key-kindrow [data-testid="stButtonGroup"] > div {
+            flex-wrap: nowrap !important; overflow-x: auto; max-width: 100%;
+            scrollbar-width: none;
+        }
+        .st-key-kindrow [data-testid="stElementContainer"]:has([data-testid="stButtonGroup"]) {
+            max-width: 100%; overflow: hidden;
+        }
+        .st-key-kindrow [data-testid="stButtonGroup"]::-webkit-scrollbar {
+            display: none;
+        }
+        /* בלי אלה הגלולות **מתכווצות** במקום להיגלל: נמדד ב-390px שהן
+           ירדו ל-34-50px כל אחת, כלומר תווית כמו "Trance / electronic"
+           נדחסת עד שאי אפשר לקרוא אותה. */
+        .st-key-kindrow [data-testid="stButtonGroup"] button {
+            white-space: nowrap; flex: none;
         }
         /* גלולות עגולות **נפרדות**, ולא קופסה אחת עם מסגרת: זה מה
            שהעיצוב מגדיר לטלפון. */
