@@ -24,7 +24,7 @@ import youtube as youtube_module
 import preview as preview_module
 import storage
 import search as search_module
-import suggest as suggest_module
+import tags as tags_module
 import taste
 from search import (ALL, LENGTH_LONG, LENGTH_MEDIUM, LENGTH_SHORT, STYLES,
                     clean_artist_name, search_covers, track_key)
@@ -377,13 +377,6 @@ st.markdown(
     .st-key-resortrow { margin: -2px 0 10px; }
     .st-key-btn_which { margin-top: 2px; }
 
-    /* ---- הצעות השלמה ---- */
-    .ts-suggestcap {
-        font-family: var(--mono); font-weight: 500; font-size: 10px;
-        letter-spacing: .12em; color: var(--text-4);
-        text-transform: uppercase; margin: 10px 0 2px;
-    }
-
     /* ---- מסך הפתיחה ---- */
     .ts-startcap { margin: 18px 0 10px; }
     /* נקודות ההתחלה נראות כמו שורות תוצאה ולא ככפתורים גנריים: זו אותה
@@ -509,6 +502,13 @@ st.markdown(
         letter-spacing: .06em; color: var(--amber);
         border: 1px solid rgba(255,176,32,.35); border-radius: 5px;
         padding: 3px 6px; white-space: nowrap;
+    }
+    /* התג הנמדד: אותה צורה בדיוק, בלי הענבר. ההבדל בין "מה שהוכרז" לבין
+       "מה שנשמע" הוא הבדל במקור ולא בחשיבות, ולכן הוא נקרא בצבע ולא
+       בגודל או במיקום. */
+    .ts-tag-heard {
+        color: var(--text-3);
+        border-color: var(--line-row);
     }
 
     /* מד העוצמה: אורך קבוע, ולכן אפשר להשוות שורה לשורה במבט אחד.
@@ -1170,8 +1170,6 @@ def _init_state():
         "evidence": {},
         "original": None,
         "all_inputs": [],
-        "suggest_query": "",
-        "suggestions": [],
         "artist_preview_query": "",
         "artist_preview_titles": [],
         "cors_retried": set(),
@@ -1592,6 +1590,7 @@ SCREEN_SAFE_KEYS = (
     "cover_title", "cover_artist", "search_mode", "sort_by",
     "filter_style", "filter_tempo", "filter_length", "filter_recency",
     "filter_prefer_new", "filter_fresh_only", "filter_same_work",
+    "filter_sound",
 )
 
 
@@ -2200,10 +2199,21 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         # שניים לכל היותר. נמדד ברוחב 1080: שלושה תגים (SOUNDTRACK,
         # CINEMATIC) תפסו 260px ודחסו את שם האמן ל-16px. השאר נשארים
         # ב-⋯ דרך פירוק הדירוג, שם ממילא מפורטת הסיבה המלאה.
-        if indicators:
-            st.html("<div class='ts-tags'>" + "".join(
-                f"<span class='ts-tag'>{html.escape(sign.upper())}</span>"
-                for sign in indicators[:2]) + "</div>")
+        # תג מוצהר אחד (ענבר, מהכותרת) ותג נמדד אחד (אפור, מהמדידה).
+        # אפור בכוונה: מערכת העיצוב שומרת את הענבר לפעולה הראשית ולדרגת
+        # ה"ענק", ואקסנט על כל שורה מפסיק לסמן משהו.
+        # תקציב שני התגים נשמר: כשיש תג נמדד הוא לוקח את המקום השני,
+        # וכשאין — שני המוצהרים חוזרים כפי שהיו. פירוק הדירוג המלא יושב
+        # ממילא ב-⋯, ולכן מה שיורד מכאן לא הולך לאיבוד.
+        _measured_tag = tags_module.primary_tag(features)
+        _declared = indicators[:1] if _measured_tag else indicators[:2]
+        _chips = [f"<span class='ts-tag'>{html.escape(sign.upper())}</span>"
+                  for sign in _declared]
+        if _measured_tag:
+            _chips.append("<span class='ts-tag ts-tag-heard'>"
+                          f"{html.escape(_measured_tag.upper())}</span>")
+        if _chips:
+            st.html("<div class='ts-tags'>" + "".join(_chips) + "</div>")
 
     with col_meter:
         _loudness_meter(features)
@@ -2311,16 +2321,6 @@ if _pending:
         st.session_state["search_mode"] = _mode
     if _auto_run:
         st.session_state["auto_run"] = True
-    # שדה שמולא בלחיצה אינו שגיאת כתיב, ולכן אין מה להשלים לו.
-    #
-    # זה מה שנשאר "מחפש אוטומטית" אחרי שההגרלה עצמה כבר הופרדה מהחיפוש:
-    # `suggestion_row` רץ בכל ריצת סקריפט, ולכן ברגע שהקובייה מילאה את
-    # השדה הוא יצא ל-iTunes, הציג ספינר, והוריד שורת בלוקים — כלומר בדיוק
-    # מה שנראה כמו חיפוש שאיש לא ביקש. סימון השאילתה כמטופלת עוצר את
-    # הקריאה בלי לגעת בהשלמות עצמן: ברגע שהמשתמש יקליד משהו אחר, השאילתה
-    # תשתנה וההשלמות יחזרו לעבוד כרגיל.
-    st.session_state["suggest_query"] = (_title or "").strip()
-    st.session_state["suggestions"] = []
 
 RECENT_ROLLS = 5
 
@@ -2454,6 +2454,13 @@ with mode_row:
             key="filter_length")
         recency = st.selectbox("Released", list(RECENCY_OPTIONS),
                                key="filter_recency")
+        # המסנן היחיד שפועל כאן ולא בחנות: לחנות אין מושג איך טראק נשמע.
+        # הוא מסנן את מה שכבר הוצג, ולכן הוא עובד רק על שורות שהדפדפן
+        # הספיק למדוד — שורה שטרם נמדדה עוברת, ולא נעלמת בשקט.
+        sound_filter = st.selectbox(
+            "Sounds like", [ALL, *tags_module.TAGS], key="filter_sound",
+            help="From the measurement that runs in your browser, not from "
+                 "the title. Rows that have not been measured yet stay.")
         prefer_new = st.checkbox(
             "Prefer newer with a high score", value=True, key="filter_prefer_new",
             help="A freshness bonus that fades from 25 to zero over five years.")
@@ -2478,6 +2485,7 @@ with mode_row:
 
     _active_filters = sum([
         style_filter != ALL, tempo_filter != ALL, length_filter != ALL,
+        sound_filter != ALL,
         RECENCY_OPTIONS[recency] != 0, fresh_only, same_work_only,
     ])
     if _active_filters:
@@ -2487,46 +2495,6 @@ with mode_row:
 
 filters = {"style": style_filter, "tempo": tempo_filter, "length": length_filter}
 
-
-def suggestion_row(query: str):
-    """השלמת שם השיר ותיקון שגיאת כתיב, מול שמות אמיתיים מהקטלוג.
-
-    שם חלקי או משובש מחזיר מעט מאוד תוצאות, והמשתמש לא יודע אם השיר לא קיים או
-    שהוא פשוט טעה. ההצעות כאן הן שירים שקיימים במאגר שבו נחפש בפועל, ולכן לחיצה
-    עליהן מבטיחה שאילתה שתחזיר משהו.
-    """
-    query = (query or "").strip()
-    if len(query) < suggest_module.MIN_QUERY_LEN:
-        return
-    # ההצעות נשמרות לפי הטקסט: בלי זה כל rerun (סימון checkbox, מדידה) פונה שוב
-    # ל-iTunes על אותו שם בדיוק
-    if st.session_state["suggest_query"] != query:
-        st.session_state["suggest_query"] = query
-        with st.spinner("Looking for similar names..."):
-            st.session_state["suggestions"] = suggest_module.suggest(query)
-
-    items = st.session_state["suggestions"]
-    if not items:
-        return
-
-    correction = suggest_module.did_you_mean(query, items)
-    if correction:
-        st.warning(f"Did you mean: **{correction['label']}**")
-    else:
-        st.html("<div class='ts-suggestcap'>Completions from the catalogue</div>")
-
-    # מכולה אופקית, לא st.columns: Streamlit לא מכווץ עמודות בטלפון אלא
-    # עורם אותן לרוחב מלא (התיעוד המקורי לזה יושב ב-render_track) — ארבע
-    # עמודות הפכו לארבעה בלוקים מלאי-רוחב שנראו כמו כפילות שמציפה את הדף.
-    row = st.container(horizontal=True, wrap=True, vertical_alignment="top")
-    for index, item in enumerate(items[:4]):
-        if row.button(item["label"][:38], key=f"sug_{index}",
-                      help=item["label"]):
-            st.session_state["suggest_query"] = ""
-            queue_fields(item["track"], item["artist"])
-
-
-suggestion_row(cover_title)
 
 ARTIST_PREVIEW_COUNT = 20
 
@@ -2963,6 +2931,25 @@ if candidates:
             st.caption(f"Catalogue verification only exists in the "
                        f"'{MODE_SONG}' search. These results came through a "
                        "different path, so they are shown as they are.")
+
+    if sound_filter != ALL:
+        # לפני `taste_profile`: הפרופיל נבנה מול הפול המוצג, ומדידה של
+        # פול שכבר סונן היא מה שהופך את הלמידה לרלוונטית למה שרואים.
+        _measurements = st.session_state.get("bigness", {})
+        _before = len(display)
+        display = [track for track in display
+                   if tags_module.matches(_measurements.get(track["uid"]),
+                                          sound_filter)]
+        _unmeasured = sum(1 for track in display
+                          if not audio.measured(_measurements.get(track["uid"])))
+        if _unmeasured:
+            # בלי המשפט הזה נראה שהמסנן לא עובד: השורות שטרם נמדדו
+            # נשארות, והמשתמש רואה תוצאות שלכאורה לא תואמות למה שביקש.
+            st.caption(f"{_unmeasured} of these have not been measured yet, "
+                       f"so they are still shown. They will drop out of "
+                       f"'{sound_filter}' once the browser measures them.")
+        elif not display and _before:
+            st.caption(f"Nothing measured here sounds like {sound_filter}.")
 
     # הפרופיל נבנה מול פול התוצאות המוצג — כך "אהבתי Soundtrack" נמדד מול
     # כמה Soundtrack יש כאן ממילא, ולא כספירה גולמית

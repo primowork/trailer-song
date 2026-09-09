@@ -15,8 +15,17 @@ import covers
 import storage
 import search as search_module
 import suggest as suggest_module
+# מדידה אחת לכל תגית, שנבנתה מהטווחים המתועדים ב-`audio.py`. מיובאת ולא
+# משוכפלת: מספרים גולמיים שנכתבים כאן שוב היו מפסיקים לתאר את התגית
+# ברגע שהכיול הבא ישנה טווח.
+from test_tags import SATISFYING as _SATISFYING
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
+
+
+def tags_measurement(name):
+    """מדידה גולמית שמדליקה את התגית הזו ואותה בלבד מבין ההפכים שלה."""
+    return dict(_SATISFYING[name])
 
 
 def track(artist, title, uid, **extra):
@@ -232,13 +241,14 @@ def test_the_dice_fills_both_fields_but_does_not_search(app, monkeypatch):
     assert not app.session_state["candidates"]
 
 
-def test_the_dice_does_not_go_to_the_catalogue_for_completions(app, monkeypatch):
-    """מה שנשאר "מחפש אוטומטית" אחרי שההגרלה הופרדה מהחיפוש.
+def test_no_completion_block_goes_to_the_catalogue(app, monkeypatch):
+    """שורת ההשלמות הוסרה כולה, ואיתה הקריאה שהיא הריצה.
 
-    `suggestion_row` רץ בכל ריצת סקריפט, ולכן ברגע שהקובייה מילאה את
-    השדה הוא יצא ל-iTunes, הציג ספינר והוריד שורת בלוקים. מבחינת המשתמש
-    זה חיפוש שהוא לא ביקש, גם אם הוא לא `find_all_covers`. הטסט הקודם
-    ספר רק את חיפוש הקאברים — ולכן הקריאה הזו עברה בשקט.
+    היא רצה בכל ריצת סקריפט ופנתה לרשת בכל שינוי בטקסט — בטלפון היא
+    דחפה את התוצאות מתחת לקפל, וזו אותה קריאה שגרמה לקובייה להיראות
+    כאילו היא מחפשת מיד. ההשתקה שנוספה קודם רק סתמה אותה אחרי גלגול;
+    כאן הסיבה עצמה איננה, ולכן הבדיקה היא שגם הקלדה חופשית לא פונה
+    לשום מקום.
     """
     called = {"suggest": 0, "covers": 0}
 
@@ -254,23 +264,14 @@ def test_the_dice_does_not_go_to_the_catalogue_for_completions(app, monkeypatch)
     monkeypatch.setattr(covers, "find_all_covers", _covers)
 
     _dice(app).click().run()
-
     assert not app.exception
     assert app.session_state["cover_title"], "הקובייה לא מילאה את השדה"
-    assert called == {"suggest": 0, "covers": 0}
-
-
-def test_typing_still_gets_completions(app, monkeypatch):
-    """הצד השני: השתקת ההשלמות היא לשדה שמולא בלחיצה, לא לשדה שהוקלד."""
-    catalog = [track("The Verve", "Bitter Sweet Symphony", "v1")]
-    monkeypatch.setattr(search_module, "itunes_search",
-                        lambda *a, **k: [dict(c) for c in catalog])
 
     app.session_state["cover_title"] = "bitter sweet symphany"
     app.run()
 
     assert not app.exception
-    assert app.session_state["suggestions"], "ההשלמות נעלמו גם למי שהקליד"
+    assert called == {"suggest": 0, "covers": 0}
 
 
 def test_the_search_button_runs_what_the_dice_rolled(app, monkeypatch):
@@ -363,17 +364,57 @@ def test_artist_preview_song_click_runs_a_focused_song_search(app, monkeypatch):
     assert app.session_state["candidates"][0]["uid"] == "itunes-c1"
 
 
-def test_suggestion_click_fills_both_fields(app, monkeypatch):
-    catalog = [track("The Verve", "Bitter Sweet Symphony", "v1")]
-    monkeypatch.setattr(search_module, "itunes_search", lambda *a, **k: [dict(c) for c in catalog])
+def test_sounds_like_filters_on_the_measurement_not_the_title(app):
+    """המסנן היחיד שפועל על התוצאות המוצגות ולא בחנות.
 
-    app.session_state["cover_title"] = "bitter sweet symphany"
+    לחנות אין מושג איך טראק נשמע, ולכן "Sounds like" עובד על המדידה
+    שכבר נשמרה. שתי השורות כאן נבדלות רק במספרים: הכותרות שלהן זהות
+    כמעט לגמרי, וזה בדיוק העניין.
+    """
+    import tags
+
+    loud = tags_measurement(tags.ACTION)
+    quiet = tags_measurement(tags.INTIMATE)
+    app.session_state["candidates"] = [track("A", "Yellow (One)", "a1"),
+                                       track("B", "Yellow (Two)", "b1")]
+    app.session_state["bigness"] = {"itunes-a1": loud, "itunes-b1": quiet}
+    app.session_state["filter_sound"] = tags.ACTION
     app.run()
-    app.button(key="sug_0").click().run()
 
     assert not app.exception
-    assert app.session_state["cover_title"] == "Bitter Sweet Symphony"
-    assert app.session_state["cover_artist"] == "The Verve"
+    shown = " ".join(str(e.proto) for e in app.get("html"))
+    assert "Yellow (One)" in shown
+    assert "Yellow (Two)" not in shown, "המסנן לא הוריד את השורה השקטה"
+
+
+def test_a_row_that_was_not_measured_survives_the_sound_filter(app):
+    """אחרת המסנן היה מרוקן את הרשימה בכל חיפוש חדש, לפני שהדפדפן הספיק
+    למדוד ולו שורה אחת."""
+    import tags
+
+    app.session_state["candidates"] = [track("A", "Yellow (One)", "a1")]
+    app.session_state["bigness"] = {}
+    app.session_state["filter_sound"] = tags.ACTION
+    app.run()
+
+    assert not app.exception
+    shown = " ".join(str(e.proto) for e in app.get("html"))
+    assert "Yellow (One)" in shown
+
+
+def test_a_measured_row_shows_a_measured_tag_that_is_not_amber(app):
+    """תג נמדד אחד בשורה, ובאפור: מערכת העיצוב שומרת את הענבר לפעולה
+    הראשית ולדרגת ה"ענק", ואקסנט על כל שורה מפסיק לסמן משהו."""
+    import tags
+
+    app.session_state["candidates"] = [track("A", "Yellow (One)", "a1")]
+    app.session_state["bigness"] = {"itunes-a1": tags_measurement(tags.ACTION)}
+    app.run()
+
+    assert not app.exception
+    shown = " ".join(str(e.proto) for e in app.get("html"))
+    assert "ts-tag-heard" in shown, "אין תג נמדד על שורה שנמדדה"
+    assert tags.ACTION.upper() in shown
 
 
 def test_more_like_this_replaces_the_list(app, monkeypatch):
