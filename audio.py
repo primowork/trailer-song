@@ -119,22 +119,8 @@ def describe(features: "dict | None") -> str:
             f"dynamic span \u00d7{_number(features, 'dynamic_span'):.1f}")
 
 
-# שני ערכי הסינון שיש להם משמעות כאן. כל ערך אחר — כולל התווית "בלי
-# סינון" — פירושו שהמסנן כבוי.
-#
-# קודם השורה השוותה מפורשות לתווית "הכל" שהוקלדה כאן ביד, בעוד שהתווית
-# עצמה מוגדרת ב-`search.py`. תרגום התווית שם היה משתיק את המסנן בשקט,
-# בלי שום סימן. בדיקה חיובית ("האם זה אחד משני הערכים שאני יודע לסנן")
-# לא יכולה להישבר ככה, והיא גם שומרת על הקובץ הזה בלי תלויות.
-TEMPO_FAST = "Fast Action"
-TEMPO_SLOW = "Slow Build-up"
-
-
-def matches_tempo(features: "dict | None", tempo_filter: str) -> bool:
-    """סינון קצב לפי צפיפות המכות שנמדדה. בלי מדידה — הכל עובר."""
-    if tempo_filter not in (TEMPO_FAST, TEMPO_SLOW) or not measured(features):
-        return True
-    rate = _number(features, "onset_rate")
-    if not rate:
-        return True
-    return rate >= 2.0 if tempo_filter == TEMPO_FAST else rate < 2.0
+# סינון הקצב חי היום ב-`tags.py`, כתגיות ACTION ו-SLOW BURN שנגזרות
+# מאותה `onset_rate` שנמדדת כאן. `matches_tempo` שישב כאן לא נקרא מאף
+# מקום בקוד המוצר: בררת ה-"Tempo" שבממשק רק הוסיפה את הטקסט שנבחר
+# לשאילתת החנות, כלומר היא שינתה את החיפוש ולא סיננה לפי מה שנשמע.
+# שני מנגנונים לאותה שאלה הם הדרך הבטוחה לכך שהם יסתרו זה את זה.

@@ -29,7 +29,7 @@ def test_track_key_ignores_album_and_punctuation():
 
 
 def test_build_queries_includes_raw_and_variants():
-    queries = search.build_queries("victory", {"style": "Epic Orchestral", "tempo": search.ALL})
+    queries = search.build_queries("victory", {"style": "Epic Orchestral"})
     assert queries[0] == "victory"          # השאילתה הגולמית נשמרת
     assert "victory trailer cover" in queries
     assert "victory Epic Orchestral" in queries
