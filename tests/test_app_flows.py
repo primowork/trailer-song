@@ -134,6 +134,16 @@ def _rendered(app) -> str:
         + [str(e.proto) for e in app.get("html")])
 
 
+def _html_bodies(app) -> str:
+    """ה-HTML הגולמי של `st.html`, בלי לעבור דרך ה-proto.
+
+    `_rendered` ממיר את ה-proto למחרוזת, וה-repr שלו **מברח תווים
+    שאינם ASCII**: מקף em (—) מופיע שם כ-`\342\200\224`. בדיקה של
+    טקסט שמכיל תו כזה מול `_rendered` נכשלת גם כשהעמוד תקין לגמרי.
+    """
+    return " ".join(str(getattr(e, "body", "")) for e in app.get("html"))
+
+
 def _nav(app, item):
     """בוחר פריט ניווט ב-rail ומריץ מחדש.
 
@@ -663,6 +673,28 @@ def test_an_entry_saved_before_the_field_existed_still_groups(app):
              "features": None, "added_at": 2.0}
 
     assert app_module.origin_key(legacy) == app_module.origin_key(fresh)
+
+
+def test_a_saved_version_offers_its_artist_and_title_for_copying(app):
+    """מה שמודבק לתוכנת העריכה או לחיפוש הוא "אמן — שיר", ובפלייליסט
+    שם השיר אפילו לא מופיע בשורה (הוא כותרת הקבוצה), ולכן אי אפשר
+    פשוט לסמן אותו עם העכבר."""
+    _save(app, "Caroline Pennell", "Yellow", "cp")
+
+    assert not app.exception
+    shown = _html_bodies(app)
+    assert "ts-copy" in shown, "אין כפתור העתקה בשורה"
+    assert "data-copy='Caroline Pennell — Yellow'" in shown
+
+
+def test_the_copy_text_survives_a_quote_in_the_name(app):
+    """שם עם גרש או מרכאות סוגר את המאפיין ושובר את ה-HTML של השורה."""
+    _save(app, 'Ricardo "RikRok" Ducent', "It Wasn't Me", "rr")
+
+    assert not app.exception
+    shown = _html_bodies(app)
+    assert "&quot;RikRok&quot;" in shown
+    assert "data-copy='Ricardo &quot;RikRok&quot; Ducent — It Wasn&#x27;t Me'" in shown
 
 
 def test_the_sidebar_group_header_is_the_song_and_the_artist_only(app):

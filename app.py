@@ -615,6 +615,27 @@ st.markdown(
         border: 1px dashed var(--line-strong);
     }
 
+    /* כפתור ההעתקה בשורות הפלייליסט. האייקון מצויר ב-CSS ולא באימוג'י
+       ולא ב-Material: שתי הדרכים האלה כבר נכשלו כאן ברינדור (כפתור
+       הקובייה יצא נקודה כתומה בשני סבבים), ושני ריבועים חופפים הם בדיוק
+       מה שאפשר לצייר בלי תלות בגופן כלשהו. */
+    .ts-copy {
+        position: relative; flex: none;
+        height: 32px; width: 32px; padding: 0;
+        background: transparent; border: none; cursor: pointer;
+        border-radius: 8px; color: var(--text-3);
+    }
+    .ts-copy::before, .ts-copy::after {
+        content: ""; position: absolute; border: 1.4px solid currentColor;
+        border-radius: 3px; width: 11px; height: 13px;
+    }
+    /* הגיליון האחורי מוסט למעלה-שמאלה, הקדמי למטה-ימינה */
+    .ts-copy::before { top: 7px; left: 8px; opacity: .55; }
+    .ts-copy::after { top: 11px; left: 12px; background: var(--surface); }
+    .ts-copy:hover { color: var(--text); background: var(--chip); }
+    /* משוב שהעתקה קרתה בפועל. אין כאן rerun ולכן אין דרך אחרת לדעת. */
+    .ts-copy.is-copied { color: var(--amber); }
+
     /* ---- סרגל הנגן התחתון ---- */
     .ts-bar {
         position: fixed; inset-inline: 0; bottom: 0; z-index: 90;
@@ -912,6 +933,45 @@ def _audio_behaviour():
                     audio.src = button.dataset.src;
                     audio.play();
                     fill(button);
+                }, true);
+
+                // העתקה. `navigator.clipboard` דורש הקשר מאובטח (https,
+                // וגם localhost) — ולכן יש נפילה לאחור: כישלון שקט כאן
+                // הוא כפתור שנראה עובד ואינו מעתיק דבר.
+                const flash = function (button) {
+                    button.classList.add("is-copied");
+                    setTimeout(function () {
+                        button.classList.remove("is-copied");
+                    }, 1200);
+                };
+
+                const legacyCopy = function (text) {
+                    const pad = document.createElement("textarea");
+                    pad.value = text;
+                    pad.setAttribute("readonly", "");
+                    pad.style.position = "fixed";
+                    pad.style.opacity = "0";
+                    document.body.appendChild(pad);
+                    pad.select();
+                    let ok = false;
+                    try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+                    document.body.removeChild(pad);
+                    return ok;
+                };
+
+                document.addEventListener("click", function (event) {
+                    const button = event.target.closest(".ts-copy");
+                    if (!button) return;
+                    const text = button.dataset.copy || "";
+                    if (!text) return;
+                    event.preventDefault();
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(
+                            function () { flash(button); },
+                            function () { if (legacyCopy(text)) flash(button); });
+                        return;
+                    }
+                    if (legacyCopy(text)) flash(button);
                 }, true);
 
                 // מקלדת. SPACE ו-↑↓ נשארים בדפדפן בלבד; L לוחץ על כפתור
@@ -1470,6 +1530,18 @@ def _render_saved_versions(versions: list, favorites: dict):
                 st.session_state["rail_nav"] = NAV_DISCOVER
                 queue_fields(entry.get("track", ""), entry.get("artist", ""),
                              mode=MODE_SONG, auto_run=True)
+            # העתקה מהירה של "אמן — שיר": זה מה שמודבק לתוכנת העריכה,
+            # לחוזה רישוי או לחיפוש. `st.html` ולא `st.button`, כי לחיצה
+            # שמעתיקה לא צריכה סיבוב לפייתון — היא נגמרת בדפדפן, באותו
+            # frame, בלי rerun שיעצור את מה שמתנגן. הטיפול עצמו יושב
+            # ב-`_audio_behaviour`, באותה האזנה מוסמכת כמו כפתורי הנגינה.
+            _copy = " — ".join(part for part in (entry.get("artist", ""),
+                                                 entry.get("track", "")) if part)
+            if _copy:
+                _safe = html.escape(_copy, quote=True)
+                st.html(f"<button class='ts-copy' type='button' data-copy='{_safe}'"
+                        f" title='Copy &quot;{_safe}&quot;'"
+                        " aria-label='Copy artist and title'></button>")
             if st.button("", key=f"unfav_{key}", icon=":material/close:",
                          type="tertiary", help="Remove from Loved"):
                 favorites.pop(key)
