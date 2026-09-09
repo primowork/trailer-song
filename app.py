@@ -18,6 +18,7 @@ import accounts
 import artists as artists_module
 import audio
 import billboard as billboard_module
+import buckets
 import classics as classics_module
 import covers as covers_module
 import youtube as youtube_module
@@ -378,6 +379,14 @@ st.markdown(
     .st-key-btn_which { margin-top: 2px; }
 
     /* ---- מסך הפתיחה ---- */
+    /* כותרת קטגוריה בין קבוצות התוצאות. מרווח עליון גדול מהתחתון:
+       הכותרת שייכת למה שמתחתיה, וריווח סימטרי היה גורם לה להיראות
+       כשייכת לשורה שמעליה. */
+    .ts-groupcap {
+        display: flex; align-items: center; gap: 8px;
+        margin: 22px 0 8px;
+    }
+    .ts-groupcap:first-child { margin-top: 6px; }
     .ts-startcap { margin: 18px 0 10px; }
     /* נקודות ההתחלה נראות כמו שורות תוצאה ולא ככפתורים גנריים: זו אותה
        פעולה (לחיצה מריצה חיפוש), ולכן אותה שפה */
@@ -1588,7 +1597,7 @@ def _rail_recent():
 # זה בדיוק אותו כשל שכבר תפס את שדה האמן כשהוחלף ב-chip.
 SCREEN_SAFE_KEYS = (
     "cover_title", "cover_artist", "search_mode", "sort_by",
-    "filter_style", "filter_tempo", "filter_length", "filter_recency",
+    "bucket_filter", "filter_style", "filter_tempo", "filter_length", "filter_recency",
     "filter_prefer_new", "filter_fresh_only", "filter_same_work",
     "filter_sound",
 )
@@ -3003,6 +3012,34 @@ if candidates:
     # הדבר הראשון שנקרא מעל רשימת התוצאות
     with st.container(key="resortrow"):
         resort_button(display, sort_by, learned)
+
+    # שורת הקטגוריות: **מסננת, לא מפצלת.**
+    #
+    # פיצול למדפים נוסה ונמדד, ושבר שני דברים בבת אחת. הראשון: חברות
+    # בקטגוריה "רגוע" נגזרת מהמדידה, שמגיעה מהדפדפן שניות אחרי שהתוצאות
+    # כבר על המסך — ולכן שורות קפצו בין מדפים בדיוק כמו בתלונה שמקובעת
+    # ב-`test_arriving_measurements_do_not_move_the_rows`. השני: מדף
+    # קבוע הוציא את הקאבר החזק ביותר מראש הדף, בניגוד להבטחה של המסך
+    # עצמו ("the loud ones rise to the top").
+    #
+    # כמסנן, הדירוג הגלובלי נשאר שלם — גרסאות הטריילר עדיין בראש דרך
+    # `RANK_TRAILER` — והלחיצה רק מצמצמת את אותה רשימה מדורגת.
+    _measurements = st.session_state.get("bigness", {})
+    _counts = buckets.counts(display, _measurements)
+    _present = [name for name in buckets.ORDER if _counts.get(name)]
+    if len(_present) > 1:
+        with st.container(key="kindrow"):
+            _kind = st.pills(
+                "Kind", [buckets.ALL, *_present], key="bucket_filter",
+                format_func=lambda name: (f"All ({len(display)})" if name == buckets.ALL
+                                          else f"{name} ({_counts[name]})"),
+                label_visibility="collapsed")
+        # None כשמבטלים את הבחירה בלחיצה חוזרת — אותה נפילה חזרה שכבר
+        # נדרשה ב-`search_mode`, אחרת הלחיצה הזו מרוקנת את המסך
+        if _kind and _kind != buckets.ALL:
+            display = [track for track in display
+                       if buckets.bucket_of(
+                           track, _measurements.get(track["uid"])) == _kind]
 
     visible = display[: st.session_state["visible_count"]]
 

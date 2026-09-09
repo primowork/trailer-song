@@ -776,6 +776,61 @@ def test_a_signed_in_visitor_can_save_and_sees_their_account(app, monkeypatch):
     assert app.session_state["favorites"], "משתמש מחובר לא הצליח לשמור"
 
 
+def test_a_category_row_narrows_the_results(app):
+    """שורת הקטגוריות מסננת את הרשימה המדורגת, ולא מפצלת אותה למדפים."""
+    import buckets
+
+    app.session_state["candidates"] = [
+        track("Band A", "Yellow (Epic Trailer Version)", "a"),
+        track("Band B", "Yellow (Metal Cover)", "b"),
+        track("Band C", "Yellow (A Cappella)", "c"),
+    ]
+    app.run()
+
+    assert not app.exception
+    # בלי בחירה — הכל מוצג
+    shown = _rendered(app)
+    for artist in ("Band A", "Band B", "Band C"):
+        assert artist in shown
+
+    app.pills[0].set_value(buckets.ROCK).run()
+
+    assert not app.exception
+    shown = _rendered(app)
+    assert "Band B" in shown
+    assert "Band A" not in shown and "Band C" not in shown
+
+
+def test_the_category_row_is_hidden_when_there_is_nothing_to_narrow(app):
+    """שורת כפתורים עם קטגוריה אחת היא רעש: היא לא מציעה שום בחירה."""
+    app.session_state["candidates"] = [
+        track("Band A", "Yellow (Metal Cover)", "a"),
+        track("Band B", "Yellow (Rock Cover)", "b"),
+    ]
+    app.run()
+
+    assert not app.exception
+    assert not [p for p in app.pills if p.key == "bucket_filter"]
+
+
+def test_the_strongest_cover_stays_at_the_top_of_the_list(app):
+    """ההבטחה שהמסך עצמו נותן. פיצול לקטגוריות שבר אותה, ולכן הקטגוריות
+    הן מסנן: גרסת טריילר מדורגת ראשונה גם כשקאבר אחר נמדד רועש יותר."""
+    app.session_state["candidates"] = [
+        track("Plain Band", "Yellow", "plain"),
+        track("Epic Band", "Yellow (Epic Trailer Version)", "epic"),
+    ]
+    app.session_state["bigness"] = {
+        "itunes-plain": {"loudness": 0.30, "low_end": 3.0,
+                         "onset_rate": 3.5, "dynamic_span": 6.0},
+    }
+    app.run()
+
+    assert not app.exception
+    order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert order.index("btn_favorite_itunes-epic") < order.index("btn_favorite_itunes-plain")
+
+
 def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):
     """"Brenda Lee - I'm Sorry" החזיר גם שירים אחרים באותו שם, כי החיפוש
     בחנויות מתאים לפי שם בלבד."""
