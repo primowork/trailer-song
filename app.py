@@ -655,6 +655,23 @@ st.markdown(
     /* משוב שהעתקה קרתה בפועל. אין כאן rerun ולכן אין דרך אחרת לדעת. */
     .ts-copy.is-copied { color: var(--amber); }
 
+    /* חמישה אלמנטים בגובה 0-1px יושבים לפני התוכן בעמודה הראשית: בלוק
+       ה-CSS, אלמנט האודיו המשותף, סרגל הנגן (שהוא ממילא `fixed`), ושני
+       ה-iframes שמזריקים את הסקריפטים. כל אחד מהם עדיין גובה `gap: 16px`
+       מהמכולה האנכית — **נמדד בדפדפן: 82px של ריק מעל הכותרת**, ומכאן
+       התחושה שהראש של המסך ריק.
+
+       הוצאה מהזרימה ולא `display: none`: הכלל ההוא כבר הרג כאן את סרגל
+       הנגן פעם אחת (הוא יצא 0x0), ואת אלמנט האודיו אסור להוציא מעץ
+       הרינדור בכלל — Safari בנייד מאבד את ההרשאה לנגן. */
+    [data-testid="stMainBlockContainer"] .stElementContainer:has(> [data-testid="stIFrame"]),
+    [data-testid="stMainBlockContainer"] .stElementContainer:has(> [data-testid="stMarkdown"] style),
+    [data-testid="stMainBlockContainer"] .stElementContainer:has(> [data-testid="stHtml"] > audio),
+    [data-testid="stMainBlockContainer"] .stElementContainer:has(> [data-testid="stHtml"] > .ts-bar) {
+        position: absolute;
+        height: 0;
+    }
+
     /* ---- סרגל הנגן התחתון ---- */
     .ts-bar {
         position: fixed; inset-inline: 0; bottom: 0; z-index: 90;
@@ -985,18 +1002,45 @@ def _audio_behaviour():
                     }, 1200);
                 };
 
+                // הנפילה לאחור. הגרסה הקודמת כאן הייתה textarea עם
+                // `readonly` ו-`opacity: 0`, וזו תבנית **שידוע שנכשלת
+                // ב-Safari של iOS**: הוא מסרב לבחור טקסט באלמנט קריאה-בלבד
+                // ומתעלם מהבחירה באלמנט שקוף. `contentEditable` יחד עם
+                // Range מפורש הוא מה שעובד שם, ו-16px מונע את הזום
+                // האוטומטי שמזיז את העמוד תוך כדי.
                 const legacyCopy = function (text) {
                     const pad = document.createElement("textarea");
                     pad.value = text;
-                    pad.setAttribute("readonly", "");
+                    pad.contentEditable = "true";
+                    pad.readOnly = false;
                     pad.style.position = "fixed";
-                    pad.style.opacity = "0";
+                    pad.style.top = "0";
+                    pad.style.left = "0";
+                    pad.style.width = "1px";
+                    pad.style.height = "1px";
+                    pad.style.fontSize = "16px";
                     document.body.appendChild(pad);
-                    pad.select();
                     let ok = false;
-                    try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+                    try {
+                        const range = document.createRange();
+                        range.selectNodeContents(pad);
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        pad.setSelectionRange(0, text.length);
+                        ok = document.execCommand("copy");
+                    } catch (err) {
+                        ok = false;
+                    }
                     document.body.removeChild(pad);
                     return ok;
+                };
+
+                // מוצא אחרון. אם שתי הדרכים נכשלו, הטקסט עדיין חייב להיות
+                // בהישג יד — כפתור שנלחץ ולא קרה כלום הוא בדיוק התלונה
+                // שהחזירה אותנו לכאן.
+                const offerManually = function (text) {
+                    try { window.prompt("Copy this:", text); } catch (err) {}
                 };
 
                 document.addEventListener("click", function (event) {
@@ -1005,13 +1049,22 @@ def _audio_behaviour():
                     const text = button.dataset.copy || "";
                     if (!text) return;
                     event.preventDefault();
+                    // הנפילה מנוסה **לפני** ההבטחה נדחית ולא אחריה, כי
+                    // ב-Safari ההרשאה להעתיק תלויה במחווה של המשתמש,
+                    // וברגע שה-Promise חוזר אסינכרונית המחווה כבר פגה.
+                    const fallback = function () {
+                        if (legacyCopy(text)) { flash(button); return; }
+                        offerManually(text);
+                    };
                     if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(text).then(
-                            function () { flash(button); },
-                            function () { if (legacyCopy(text)) flash(button); });
-                        return;
+                        let promise = null;
+                        try { promise = navigator.clipboard.writeText(text); } catch (err) { promise = null; }
+                        if (promise && promise.then) {
+                            promise.then(function () { flash(button); }, fallback);
+                            return;
+                        }
                     }
-                    if (legacyCopy(text)) flash(button);
+                    fallback();
                 }, true);
 
                 // מקלדת. SPACE ו-↑↓ נשארים בדפדפן בלבד; L לוחץ על כפתור
@@ -1403,8 +1456,10 @@ def _stale_previews(favorites: dict, now: float | None = None,
     now = now or time.time()
     stale = []
     for key, entry in favorites.items():
-        if not entry.get("preview_url"):
-            continue
+        # רשומה **בלי** כתובת היא מועמדת ולא חריגה. קודם היא דולגה, ולכן
+        # גרסה שהכתובת שלה מתה נשארה אפורה לנצח ומסך הפלייליסט הודיע על
+        # כך בכל כניסה. היא לא נבדקת בכל ריצה מחדש: כישלון גם הוא כותב
+        # `preview_checked_at`, ולכן אותו TTL שולט גם בה.
         ttl = (PREVIEW_TTL_SHORT if (entry.get("source") or "").lower() == "deezer"
                else PREVIEW_TTL_LONG)
         checked = entry.get("preview_checked_at")
@@ -1794,18 +1849,20 @@ def _loved_screen():
                            data=buffer.getvalue().encode("utf-8-sig"),
                            file_name="playlist.csv", mime="text/csv")
 
+    # הריענון שקט. הספירה "כך וכך לא נמצאו" ירדה לבקשת המשתמש: היא
+    # הופיעה כמעט בכל כניסה לפלייליסט (עם 159 גרסאות תמיד יש כמה שנמחקו
+    # מהחנות), והיא דיווח מצב ולא משהו שאפשר לעשות איתו דבר — הכפתור
+    # האפור כבר אומר את זה בשורה עצמה.
+    #
+    # האזהרה על כשל **מוחלט** נשארה: כשאף אחת מהבדיקות לא הצליחה זו כמעט
+    # תמיד תקלת רשת ולא גרסאות שנמחקו, ובליעה שלה בשקט הייתה מסתירה
+    # אפליקציה שבורה.
     _note = st.session_state.pop(REFRESH_NOTE, None)
-    if _note and _note["missing"]:
-        if _note["missing"] == _note["total"]:
-            # כולן נכשלו. גרסאות שנמחקו מהחנות אינן נכשלות יחד, ולכן
-            # זו כמעט תמיד תקלת רשת או שינוי בצד החנות
-            st.warning(f"Could not get a fresh playback link for any of the "
-                       f"{_note['total']} versions checked. Most likely a "
-                       f"network problem — the old links were kept, try again "
-                       f"in a moment.")
-        else:
-            st.caption(f"{_note['missing']} of {_note['total']} had no live "
-                       f"link — their play button stays greyed out.")
+    if _note and _note["missing"] and _note["missing"] == _note["total"]:
+        st.warning(f"Could not get a fresh playback link for any of the "
+                   f"{_note['total']} versions checked. Most likely a "
+                   f"network problem — the old links were kept, try again "
+                   f"in a moment.")
 
     def newest(items) -> float:
         return max(entry.get("added_at", 0) for _, entry in items)
