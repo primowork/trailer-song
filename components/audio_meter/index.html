@@ -218,6 +218,31 @@ function dynamicSpan(frames) {
   return quiet ? loud / quiet : 0;
 }
 
+// כמה פסים בתצוגת "איפה הגרסה מתפוצצת" (שורת תוצאה, סרגל הנגן, Compare).
+// 24 מכפיל בקלות לרוחב הפס הצר בשורה (2-3 מסגרות RMS לפס) ומחלק בקלות
+// לרוחב הרחב יותר בסרגל הנגן (פס-קל: הצרכן דוגם-מעלה בעצמו לפי הצורך).
+const ENVELOPE_BUCKETS = 24;
+
+function downsample(frames, buckets) {
+  // ממוצע חלונות RMS לכל דלי, ולא דגימה כל-N: דגימה הייתה יכולה לפספס
+  // בדיוק את המכה שבין שתי נקודות הדגימה, בעוד שממוצע לא מאבד אנרגיה.
+  if (!frames.length) return [];
+  const out = new Array(buckets).fill(0);
+  const perBucket = frames.length / buckets;
+  for (let b = 0; b < buckets; b++) {
+    const start = Math.floor(b * perBucket);
+    const end = Math.max(start + 1, Math.floor((b + 1) * perBucket));
+    let sum = 0, count = 0;
+    for (let i = start; i < end && i < frames.length; i++) { sum += frames[i]; count++; }
+    out[b] = count ? sum / count : 0;
+  }
+  // מנורמל לשיא **של הטראק הזה עצמו**, לא לקבוע גלובלי: המעטפת מראה
+  // *צורה* (איפה זה מתפוצץ ביחס לשאר הקליפ), לא עוצמה מוחלטת — זו כבר
+  // תפקידה של `loudness`.
+  const peak = Math.max.apply(null, out.concat([1e-9]));
+  return out.map((v) => Math.round((v / peak) * 1000) / 1000);
+}
+
 async function measure(url) {
   const response = await fetch(url, { mode: "cors" });
   if (!response.ok) throw new Error("http " + response.status);
@@ -234,6 +259,7 @@ async function measure(url) {
     low_end: Math.round((await lowEndRatio(buffer)) * 100) / 100,
     dynamic_span: Math.round(dynamicSpan(frames) * 100) / 100,
     onset_rate: Math.round(onsetRate(frames, seconds) * 100) / 100,
+    envelope: downsample(frames, ENVELOPE_BUCKETS),
     ...timbre(mono, buffer.sampleRate),
   };
 }

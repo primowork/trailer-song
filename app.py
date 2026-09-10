@@ -87,30 +87,27 @@ st.set_page_config(page_title="COVER LOVER", page_icon="\U0001F3B5", layout="wid
 # לא קיים ב-LTR; אין כאן טלאי שהוסר בלי תחליף.
 st.markdown(
     """
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-    /* הגופנים נטענים כאן ולא ב-config.toml: ה-theme מקבל שם משפחה, לא
-       כתובת. שלוש משפחות, כל אחת בתפקיד אחד — ראו את ההערה ב-config.
+    /* v2 richer-shell handoff: Sora (headings, numbers, micro-caps) + Manrope
+       (body), loaded from Google Fonts CDN — same as the mockup.
 
-       **מהפרויקט עצמו ולא מ-Google Fonts.** הגרסה הראשונה עשתה
-       `@import` מ-fonts.googleapis.com, ובפריסה בפועל זה נכשל: הבקשה
-       לגיליון הסגנונות יצאה, אבל **אף קובץ גופן לא ירד** (אפס בקשות
-       ל-fonts.gstatic.com) — וכל הממשק נפל לגופן ברירת המחדל של
-       המערכת. גופן שהוא חלק מהזהות אינו יכול להיות תלוי בכך שרשת
-       חיצונית תענה לדפדפן של המשתמש.
+       **זו נסיגה מודעת ולא שכחה.** הגרסה הקודמת עברה במפורש לגופן יחיד
+       (Nunito) שמוגש עצמאית מ-`static/fonts/`, בדיוק בגלל שגרסה שעוד יותר
+       קודמת מזה טענה גופן מ-Google Fonts ב-`@import` ונכשלה בפרודקשן —
+       גיליון הסגנונות ירד, אבל אף קובץ גופן לא ירד אחריו (אפס בקשות
+       ל-fonts.gstatic.com), והממשק כולו נפל בשקט לגופן ברירת המחדל של
+       המערכת. המעבר כאן ל-Sora+Manrope דרך ה-CDN הוא בקשה מפורשת של
+       המשתמש שסקר את הסיכון הזה ובחר בו במודע על פני האפשרות השמרנית
+       (אירוח עצמי של Sora/Manrope, באותו דפוס בדיוק כמו Nunito). קובץ
+       Nunito עצמו נשאר ב-`static/fonts/` בלי שימוש, למקרה שצריך לחזור.
 
-       הקובץ (תת-קבוצת latin, 38KB) יושב ב-`static/fonts/` ומוגש על ידי
-       Streamlit עצמו — `enableStaticServing` ב-config. Nunito הוא גופן
-       משתנה, ולכן טווח 400–800 מכסה בקובץ אחד את כל המשקלים שבשימוש:
-       גוף ב-400, כותרות שורה ב-600, ומספרים ותגים ב-800.
-
-       קודם ישבו כאן שלוש משפחות (91KB יחד). המשתמש ביקש משפחה עגולה
-       אחת לכל דבר, ולכן זה גם 53KB פחות לרדת. */
-    @font-face {
-        font-family: 'Nunito';
-        src: url('app/static/fonts/nunito.woff2') format('woff2');
-        font-weight: 400 800; font-style: normal; font-display: swap;
-    }
-
+       שתי משפחות ולא אחת: Sora למה שצריך להיקרא כזהות — כותרות, ציונים,
+       תוויות micro-cap — ו-Manrope לטקסט הרץ. `ui-rounded`/`system-ui`
+       בנפילה לאחור של שתיהן, כדי שעד שה-CDN עונה המראה עדיין עגול ולא
+       זר. */
     :root {
         --ink: #0A0B0F;
         --rail: #101219;
@@ -129,11 +126,12 @@ st.markdown(
         --text-5: #7B839A;
         --amber: #FFB020;
         --coral: #FF6B4A;
-        /* משפחה אחת, ושתי הרמות שהיא צריכה לכסות. `ui-rounded` לפני
-           `system-ui` נותן ל-macOS ול-iOS את SF Pro Rounded כשהגופן
-           עוד לא נטען, כלומר הנפילה לאחור היא לגופן עגול ולא לגופן
-           אחר לגמרי. */
-        --sans: 'Nunito', ui-rounded, system-ui, sans-serif;
+        /* השלישי במשולש האקסנטים, מה-handoff: לא פעולה (ענבר) ולא לב
+           (אלמוג) אלא "מה שנמדד" — מד ברמה בינונית, תג ה-heard, פס
+           ה-BRIGHT ב-Compare, האמצע של היסטוגרמת העוצמה. */
+        --teal: #7FD1C8;
+        --sans-head: 'Sora', ui-rounded, system-ui, sans-serif;
+        --sans: 'Manrope', ui-rounded, system-ui, sans-serif;
     }
 
     [data-testid="stMainBlockContainer"] {
@@ -195,7 +193,7 @@ st.markdown(
         border-radius: 50%; background: var(--ink);
     }
     .ts-word {
-        font-family: var(--sans); font-weight: 800; font-size: 13px;
+        font-family: var(--sans-head); font-weight: 800; font-size: 13px;
         letter-spacing: .14em; line-height: 1.15; color: var(--text);
     }
 
@@ -227,8 +225,8 @@ st.markdown(
     /* תוויות micro ב-mono: הן שלטי חלוקה, לא כותרות — ולכן קטנות,
        מרווחות ובאותיות גדולות, ולא עוד שורת טקסט בגודל הגוף */
     .ts-railcap {
-        font-family: var(--sans); font-weight: 500; font-size: 10px;
-        letter-spacing: .12em; color: var(--text-4);
+        font-family: var(--sans-head); font-weight: 700; font-size: 9.5px;
+        letter-spacing: .14em; color: var(--text-4);
         margin: 10px 0 8px; text-transform: uppercase;
     }
     .ts-railtaste {
@@ -238,6 +236,43 @@ st.markdown(
         font-size: 12.5px; color: var(--text-2); padding: 2px 0;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+
+    /* THIS SESSION: ארבע אריחים באותו רוחב, לא ארבע שורות טקסט —
+       כך שהם נסרקים כמכשיר מדידה אחד ולא נקראים אחד-אחד. */
+    .ts-sessionrow { display: flex; gap: 6px; margin-bottom: 13px; }
+    .ts-sessiontile {
+        flex: 1; min-width: 0; border: 1px solid var(--line);
+        border-radius: 10px; padding: 7px 5px; background: var(--surface);
+        text-align: center;
+    }
+    .ts-sessionval {
+        font-family: var(--sans-head); font-weight: 800; font-size: 14px;
+        line-height: 1;
+    }
+    .ts-sessionlbl {
+        font-family: var(--sans-head); font-weight: 700; font-size: 8.5px;
+        letter-spacing: .08em; color: var(--text-5); margin-top: 4px;
+    }
+
+    /* כרטיס המכסה, בתחתית ה-rail: אותה שפה כמו אריחי הסשן, אבל רחב
+       ועם רצועת התקדמות — הוא הדבר שהמשתמש נשאר איתו אחרי שגלל למטה. */
+    .ts-quotacard {
+        border: 1px solid var(--line-strong); border-radius: 12px;
+        padding: 11px 12px; background: var(--surface); margin-top: 2px;
+    }
+    .ts-quotahead {
+        display: flex; justify-content: space-between; align-items: baseline;
+    }
+    .ts-quotaval {
+        font-family: var(--sans-head); font-weight: 800; font-size: 15px;
+        color: var(--amber);
+    }
+    .ts-quotatrack {
+        height: 3px; border-radius: 2px; background: var(--chip);
+        margin: 8px 0 9px; overflow: hidden;
+    }
+    .ts-quotafill { height: 100%; background: var(--amber); border-radius: 2px; }
+    .ts-quotasub { font-size: 11.5px; color: var(--text-3); }
 
     /* הפלייליסט ב-rail: שורות טקסט, לא תשעה מלבנים. המסגרת היחידה
        שנשארת היא של כפתור הנגינה. */
@@ -384,9 +419,18 @@ st.markdown(
     }
     .ts-groupcap:first-child { margin-top: 6px; }
     .ts-startcap { margin: 18px 0 10px; }
-    /* נקודות ההתחלה נראות כמו שורות תוצאה ולא ככפתורים גנריים: זו אותה
-       פעולה (לחיצה מריצה חיפוש), ולכן אותה שפה */
-    [class*="st-key-start_"] button {
+    /* נקודות ההתחלה, שורות המצעדים (Classics/Billboard/מיובא) ותצוגת
+       השירים המקדימה של אמן נראים כמו שורות תוצאה ולא ככפתורים גנריים:
+       אותה פעולה בכל מקום (לחיצה מריצה חיפוש), ולכן אותה שפה — כרטיס
+       אחד, לא כפתור ברירת המחדל של Streamlit. ה-key prefixes האלה
+       נבדקים במפורש ב-`tests/test_app_flows.py` (`start_`, `classic_`,
+       `goat_0`) ולכן לא ניתן לאחד אותם לתחילית אחת; ה-selector כאן
+       פשוט מפרט את כולם. `imp_` מכסה כל מצעד מיובא, כי ה-slug שלו דינמי. */
+    [class*="st-key-start_"] button,
+    [class*="st-key-classic_"] button,
+    [class*="st-key-goat_"] button,
+    [class*="st-key-imp_"] button,
+    [class*="st-key-artist_preview_"] button {
         background: var(--surface); border: 1px solid var(--line);
         border-radius: 10px; min-height: 52px; padding: 0 14px;
         color: var(--text-2);
@@ -394,14 +438,30 @@ st.markdown(
     /* גם ה-div הפנימי, לא רק הכפתור: בלעדיו התווית יושבת במרכז השורה
        ולא בתחילתה (אותו כלל בדיוק נדרש בשורות הפלייליסט) */
     [class*="st-key-start_"] button,
-    [class*="st-key-start_"] button > div {
+    [class*="st-key-start_"] button > div,
+    [class*="st-key-classic_"] button,
+    [class*="st-key-classic_"] button > div,
+    [class*="st-key-goat_"] button,
+    [class*="st-key-goat_"] button > div,
+    [class*="st-key-imp_"] button,
+    [class*="st-key-imp_"] button > div,
+    [class*="st-key-artist_preview_"] button,
+    [class*="st-key-artist_preview_"] button > div {
         justify-content: flex-start; text-align: start; width: 100%;
     }
-    [class*="st-key-start_"] button:hover {
+    [class*="st-key-start_"] button:hover,
+    [class*="st-key-classic_"] button:hover,
+    [class*="st-key-goat_"] button:hover,
+    [class*="st-key-imp_"] button:hover,
+    [class*="st-key-artist_preview_"] button:hover {
         background: var(--raised); border-color: var(--line-row);
         color: var(--text);
     }
-    [class*="st-key-start_"] button p {
+    [class*="st-key-start_"] button p,
+    [class*="st-key-classic_"] button p,
+    [class*="st-key-goat_"] button p,
+    [class*="st-key-imp_"] button p,
+    [class*="st-key-artist_preview_"] button p {
         font-size: 13.5px; overflow: hidden;
         text-overflow: ellipsis; white-space: nowrap;
     }
@@ -454,10 +514,39 @@ st.markdown(
         flex-wrap: wrap; margin: 22px 0 8px;
     }
     .ts-h2 {
-        font-family: var(--sans); font-weight: 800; font-size: 28px;
+        font-family: var(--sans-head); font-weight: 800; font-size: 28px;
         letter-spacing: -.025em; margin: 0; color: var(--text);
     }
     .ts-lede { font-size: 13.5px; font-weight: 600; color: var(--text-3); }
+
+    /* המכולה ששמה את הכותרת ואת ההיסטוגרמה זה לצד זה. `align-items` לא
+       `baseline` (כמו `.ts-resulthead` עצמה) כי הכרטיס גבוה מהטקסט. */
+    .st-key-discoverhead { align-items: flex-end !important; margin: 22px 0 14px; gap: 18px; }
+    .st-key-discoverhead .ts-resulthead { margin: 0; }
+    /* שביל חזרה מעל הכותרת: טקסט קישור עדין, לא עוד כפתור עם מסגרת —
+       הוא ניווט משני, לא פעולה */
+    .st-key-btn_breadcrumb { margin: 18px 0 -10px; }
+    .st-key-btn_breadcrumb button {
+        border: none; background: transparent; color: var(--text-3);
+        min-height: 22px; padding: 0; font-size: 12.5px;
+    }
+    .st-key-btn_breadcrumb button:hover { color: var(--amber); }
+    /* כרטיס "LOUDNESS SPREAD": כמה מהתוצאות נמדדו שקטות מול ענקיות,
+       על אותם דליים ואותם צבעים כמו `SCORE_TIERS` — ראו `_loudness_histogram` */
+    .ts-histocard {
+        border: 1px solid var(--line); background: var(--surface);
+        border-radius: 12px; padding: 10px 12px 8px; flex: none;
+    }
+    .ts-histocard-empty {
+        font-size: 12px; color: var(--text-3); padding: 14px 16px;
+        display: flex; align-items: center;
+    }
+    .ts-histobars { display: flex; align-items: flex-end; gap: 2px; height: 40px; }
+    .ts-histolabels {
+        display: flex; justify-content: space-between;
+        font-family: var(--sans-head); font-weight: 700; font-size: 9.5px;
+        letter-spacing: .1em; color: var(--text-5); margin-top: 7px;
+    }
 
     /* ---- שורת תוצאה ---- */
     /* כרטיס ולא שורה צרה: פינה של 18px וריפוד נדיב, מהרפרנס שהמשתמש
@@ -486,6 +575,10 @@ st.markdown(
     [class*="st-key-trow_"] > div:has(> [class*="st-key-ttags_"]) {
         flex: 0 0 auto !important;
     }
+    /* הגל: אותו כלל בדיוק כמו התגים, ומאותה סיבה — רוחב קבוע, לא נכווץ */
+    [class*="st-key-trow_"] > div:has(> [class*="st-key-twave_"]) {
+        flex: 0 0 auto !important;
+    }
     [class*="st-key-trow_"] > div:has(> [class*="st-key-tmeter_"]) {
         flex: 0 1 auto !important; min-width: 0 !important;
     }
@@ -507,7 +600,7 @@ st.markdown(
        ענבר מלא על כל שורה היה מבטל את המשמעות של הענבר. */
     .ts-tags { display: flex; gap: 6px; flex-wrap: nowrap; }
     .ts-tag {
-        font-family: var(--sans); font-weight: 800; font-size: 11px;
+        font-family: var(--sans-head); font-weight: 800; font-size: 11px;
         letter-spacing: .05em; color: var(--amber);
         background: rgba(255,176,32,.13); border-radius: 8px;
         padding: 5px 9px; white-space: nowrap;
@@ -516,8 +609,16 @@ st.markdown(
        "מה שנשמע" הוא הבדל במקור ולא בחשיבות, ולכן הוא נקרא בצבע ולא
        בגודל או במיקום. */
     .ts-tag-heard {
-        color: #A8AEBE;
-        background: var(--chip);
+        color: var(--teal);
+        background: rgba(127,209,200,.12);
+    }
+
+    /* מד-הגל: איפה הגרסה מתפוצצת, לא רק כמה. 22 פסים דקים ברוחב קבוע —
+       ראו `_wave_bars`. גובה קבוע ל-30px בין מדוד ללא-מדוד (בדיוק כמו
+       `.ts-meterval`/`.ts-meteridle`), אחרת השורה קופצת כשמדידה נוחתת. */
+    .ts-wave {
+        display: flex; align-items: flex-end; gap: 1px;
+        width: 80px; height: 30px;
     }
 
     /* מד העוצמה: אורך קבוע, ולכן אפשר להשוות שורה לשורה במבט אחד.
@@ -539,7 +640,7 @@ st.markdown(
        מציגה תווית של 11px, ובלי הגובה הזה הרשימה הייתה קופצת בכל פעם
        שמדידה מסתיימת. */
     .ts-meterval {
-        font-family: var(--sans); font-weight: 800; font-size: 27px;
+        font-family: var(--sans-head); font-weight: 800; font-size: 27px;
         line-height: 28px; height: 28px; letter-spacing: -.02em;
         text-align: end; flex: none;
     }
@@ -565,10 +666,18 @@ st.markdown(
        אותו ולא הצלחתי בלי להסתיר גם את ה-⋯ עצמו (שני האייקונים אינם
        אחים באותה רמה), ולכן הוא נשאר — הוא גם לא שקר: הכפתור באמת פותח
        תפריט. אין כאן כלל CSS מת שמתיימר לטפל בזה. */
-    /* לב אהוב: אלמוג. זה האקסנט השני והיחיד, והוא שמור לפעולה הזו בלבד */
+    /* לב אהוב ו"לא זה" פעיל: אלמוג. ברירת המחדל של פעולה מסומנת בשורה. */
     [class*="st-key-tacts_"] .stButton button[kind="primary"] {
         background: rgba(255,107,74,.12); border-color: rgba(255,107,74,.45);
         color: var(--coral);
+    }
+    /* נעיצה ל-Compare פעילה: ענבר, כי היא נספרת עם פעולת ה-CTA הראשית
+       (Find covers) ולא עם התיוג — נעיצה היא "שים את זה בהשוואה עכשיו",
+       לא שיפוט על הטראק. הכלל הזה ספציפי יותר מהכללי שמעליו ולכן גובר
+       עליו בלי `!important`. */
+    [class*="st-key-tacts_"] [class*="st-key-btn_pin_"] button[kind="primary"] {
+        background: rgba(255,176,32,.12); border-color: rgba(255,176,32,.4);
+        color: var(--amber);
     }
 
     /* עטיפה חסרה: גרדיאנט וגליף במקום ריבוע אפור שטוח שמושך את העין */
@@ -700,6 +809,23 @@ st.markdown(
         font-family: var(--sans); font-weight: 500; font-size: 11px;
         color: var(--text-4); white-space: nowrap; flex: none;
     }
+    /* תנועה בין שורות ונעיצה, מהסרגל עצמו ולא רק מהמקלדת — ראו
+       `pinCurrent`/`step` ב-`_audio_behaviour`. דסקטופ בלבד: Compare
+       (יעד הנעיצה) הוא מסך רחב, ראו ה-media query שלו. */
+    .ts-bar-transport { display: none; align-items: center; gap: 8px; flex: none; }
+    @media (min-width: 768px) { .ts-bar-transport { display: flex; } }
+    .ts-bar-prev, .ts-bar-next {
+        width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-strong);
+        background: transparent; color: var(--text-2); cursor: pointer; font-size: 12px;
+    }
+    .ts-bar-prev:hover, .ts-bar-next:hover { color: var(--text); border-color: #2E3547; }
+    .ts-bar-pin {
+        height: 34px; border-radius: 10px; border: 1px solid rgba(255,176,32,.4);
+        background: rgba(255,176,32,.1); color: var(--amber); cursor: pointer;
+        font-size: 12px; font-weight: 700; padding: 0 11px; font-family: var(--sans);
+        white-space: nowrap;
+    }
+    .ts-bar-pin:hover { background: rgba(255,176,32,.18); }
     /* האקווילייזר. `is-live` נדלק רק כששמע באמת מתנגן (ראו `paint`) —
        פסים שרוקדים על שמע עצור הם תנועה בלי מקור. */
     .ts-eq {
@@ -721,6 +847,101 @@ st.markdown(
         .ts-bar.is-live .ts-eq i { animation: none; transform: scaleY(.7); }
     }
 
+    /* ---- Compare ---- */
+    /* אותו טריק בדיוק כמו `.ts-bar`: מכולה עם `key` שמקבלת `position:
+       fixed` דרך המחלקה שהיא מפיקה. דסקטופ בלבד — ראו ה-media query
+       למטה, שגם מפנה לה מקום בעמודה הראשית ומקצר לפיה את סרגל הנגן. */
+    .st-key-comparepanel {
+        display: none;
+    }
+    @media (min-width: 768px) {
+        .st-key-comparepanel {
+            display: block; position: fixed; top: 0; right: 0; bottom: 0;
+            width: 280px; overflow-y: auto; z-index: 80;
+            background: var(--rail); border-inline-start: 1px solid var(--line);
+            padding: 20px 16px 96px;
+        }
+        [data-testid="stMainBlockContainer"] { padding-inline-end: 304px; }
+        .ts-bar { inset-inline-end: 280px; }
+    }
+    .ts-comparehead {
+        display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px;
+    }
+    .ts-comparehint { font-size: 11px; color: var(--text-5); margin-inline-start: auto; }
+    .ts-comparehint-empty {
+        border: 1px dashed var(--line-strong); border-radius: 14px;
+        padding: 16px 12px; text-align: center; font-size: 11.5px;
+        color: var(--text-5); line-height: 1.5; margin-top: 12px;
+    }
+    .ts-comparecount {
+        font-size: 11.5px; font-weight: 600; color: var(--text-2);
+        margin: 2px 0 14px;
+    }
+    .ts-comparesub { color: var(--text-5); font-weight: 500; }
+    .ts-comparegroup-head {
+        display: flex; align-items: center; gap: 8px;
+        padding: 9px 11px; background: #191D26; border: 1px solid var(--line-strong);
+        border-bottom: none; border-radius: 14px 14px 0 0;
+    }
+    .ts-comparedot {
+        width: 4px; height: 4px; border-radius: 50%; background: var(--amber); flex: none;
+    }
+    .ts-comparesong {
+        font-family: var(--sans-head); font-weight: 800; font-size: 11.5px;
+        color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .ts-comparerule { flex: 1 1 auto; height: 1px; background: var(--line); }
+    .ts-comparen {
+        font-family: var(--sans-head); font-weight: 700; font-size: 10px;
+        letter-spacing: .1em; color: var(--text-5); flex: none;
+    }
+    [class*="st-key-comparegroup_"] {
+        border: 1px solid var(--line-strong); border-top: none;
+        border-radius: 0 0 14px 14px; overflow: hidden; margin-bottom: 12px;
+        background: #0D0F15;
+    }
+    [class*="st-key-comparecard_"] {
+        padding: 12px; border-bottom: 1px solid #171B23;
+    }
+    [class*="st-key-comparecard_"]:last-child { border-bottom: none; }
+    [class*="st-key-compcardhead_"] { gap: 10px; }
+    .ts-comparecard-art {
+        width: 34px; height: 34px; border-radius: 9px; flex: none;
+        background: repeating-linear-gradient(135deg,#1F242F 0 6px,#181C26 6px 12px);
+        border: 1px solid var(--line-strong); display: inline-block;
+    }
+    .ts-comparecard-text {
+        display: inline-flex; flex-direction: column; min-width: 0; flex: 1 1 auto;
+    }
+    .ts-comparecard-artist {
+        font-size: 13px; font-weight: 700; color: var(--text);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ts-comparecard-meta { font-size: 11px; color: var(--text-3); }
+    .ts-comparecard-score {
+        font-family: var(--sans-head); font-weight: 800; font-size: 17px;
+        flex: none;
+    }
+    [class*="st-key-compcardhead_"] [class*="st-key-unpin_"] button {
+        width: 24px; min-width: 24px; height: 24px; min-height: 24px;
+        padding: 0; color: var(--text-5);
+    }
+    .ts-comparecard-unmeasured {
+        font-size: 11px; color: var(--text-5); margin-top: 9px;
+    }
+    .ts-comparebars { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .ts-comparebar { display: flex; align-items: center; gap: 8px; }
+    .ts-comparebar-lbl {
+        font-family: var(--sans-head); font-weight: 700; font-size: 9px;
+        letter-spacing: .08em; color: var(--text-5); width: 42px; flex: none;
+    }
+    .ts-comparebar-track {
+        flex: 1 1 auto; height: 5px; border-radius: 3px; background: var(--chip);
+        overflow: hidden; display: block;
+    }
+    .ts-comparebar-fill { display: block; height: 100%; border-radius: 3px; }
+
     /* ---- טלפון ---- */
     @media (max-width: 767px) {
         [data-testid="stMainBlockContainer"] {
@@ -729,6 +950,10 @@ st.markdown(
         .st-key-appbar { display: flex; }
         .ts-h2 { font-size: 20px; }
         .ts-resulthead { margin: 16px 0 6px; gap: 6px; }
+        .st-key-discoverhead { margin: 16px 0 6px; }
+        /* הכרטיס עצמו, לא רק תוכנו: ברוחב טלפון אין לו 148px לשבת בהם
+           ליד הכותרת בלי לדחוק את "63 covers" לשורה משלה */
+        .ts-histocard { display: none; }
 
         /* שורת החיפוש: הזכוכית והשדה בשורה אחת, והכפתורים יורדים מתחת.
            `flex-basis: 100%` על השדה דחף את הזכוכית לשורה משלה (נמדד). */
@@ -834,16 +1059,28 @@ st.markdown(
         [class*="st-key-trow_"] > div:has(> [class*="st-key-ttags_"]) {
             display: none !important;
         }
+        /* אותה סיבה בדיוק בשביל הגל: 22 פסים ברוחב 80px הם הראשונים
+           שנעלמים כשהשורה מצטמצמת לרוחב טלפון — המד לבדו כבר עונה שם
+           על "כמה". Compare עצמו הוא מסך דסקטופ (ראו `.ts-compare`),
+           ולכן הנעיצה יורדת יחד עם הגל: אין טעם בכפתור שאין לו יעד. */
+        [class*="st-key-trow_"] > div:has(> [class*="st-key-twave_"]) {
+            display: none !important;
+        }
         [class*="st-key-trow_"] > div:has(> [class*="st-key-tplay_"]) {
             grid-column: 3; grid-row: 1;
         }
         [class*="st-key-trow_"] > div:has(> [class*="st-key-tacts_"]),
         [class*="st-key-tacts_"] { display: contents !important; }
+        [class*="st-key-tacts_"] [class*="st-key-btn_pin_"] {
+            display: none !important;
+        }
         /* לב ליד הנגינה, ומתחתיהם "לא זה" ו-⋯: ארבעה יעדי 44px בבלוק
-           אחד, במקום שורה שנייה שמתחרה עם המד על הרוחב */
+           אחד, במקום שורה שנייה שמתחרה עם המד על הרוחב. הנעיצה (הילד
+           השלישי) מוסתרת למעלה, ולכן ⋯ — הרביעי — הוא זה שתופס את
+           היעד האחרון, לא השלישי. */
         [class*="st-key-tacts_"] > div:nth-child(1) { grid-column: 4; grid-row: 1; }
         [class*="st-key-tacts_"] > div:nth-child(2) { grid-column: 3; grid-row: 2; }
-        [class*="st-key-tacts_"] > div:nth-child(3) { grid-column: 4; grid-row: 2; }
+        [class*="st-key-tacts_"] > div:nth-child(4) { grid-column: 4; grid-row: 2; }
         [class*="st-key-tacts_"] .stButton button,
         [class*="st-key-tacts_"] [data-testid="stPopover"] button {
             width: 44px; min-width: 44px; height: 44px; min-height: 44px;
@@ -884,6 +1121,11 @@ st.html("""
     <div class='ts-bar-sub'>30-second preview ·
       <a class='ts-bar-link' target='_blank' rel='noopener'>full version on
       YouTube Music &#8599;</a></div>
+  </div>
+  <div class='ts-bar-transport'>
+    <button type='button' class='ts-bar-prev' title='Previous result — Arrow Up' aria-label='Previous result'>&#8593;</button>
+    <button type='button' class='ts-bar-next' title='Next result — Arrow Down' aria-label='Next result'>&#8595;</button>
+    <button type='button' class='ts-bar-pin' title='Pin what is playing to Compare' aria-label='Pin to Compare'>&#8862; Pin</button>
   </div>
   <div class='ts-bar-keys'>SPACE play · &#8593;&#8595; move · L love</div>
 </div>
@@ -1075,6 +1317,42 @@ def _audio_behaviour():
                         document.querySelectorAll(".ts-play[data-src]"));
                 };
 
+                // צעד בין שורות, ↑↓ במקלדת ו-↑↓ בסרגל הנגן קוראים לאותה
+                // פונקציה: שני ה-affordance-ים לאותה פעולה בדיוק, לא שני
+                // מימושים שיכולים להתפצל.
+                const step = function (delta) {
+                    const all = rows();
+                    if (!all.length) return;
+                    const active = current();
+                    const at = active ? all.indexOf(active) : -1;
+                    const next = all[Math.min(Math.max(at + delta, 0), all.length - 1)]
+                        || all[0];
+                    next.click();
+                    next.scrollIntoView({block: "center", behavior: "smooth"});
+                };
+
+                // כפתור הנעיצה של השורה שמנגנת עכשיו — אותו דפוס בדיוק
+                // כמו 'L' למטה, רק על `btn_pin_<uid>` במקום `btn_favorite_`
+                const pinCurrent = function () {
+                    const all = rows();
+                    if (!all.length) return;
+                    const active = current() || all[0];
+                    const row = active.closest('[class*="st-key-trow_"]');
+                    const pin = row && row.querySelector(
+                        '[class*="st-key-btn_pin_"] button');
+                    if (pin) pin.click();
+                };
+
+                const bar = document.getElementById("ts-bar");
+                if (bar) {
+                    const prevBtn = bar.querySelector(".ts-bar-prev");
+                    const nextBtn = bar.querySelector(".ts-bar-next");
+                    const pinBtn = bar.querySelector(".ts-bar-pin");
+                    if (prevBtn) prevBtn.addEventListener("click", function () { step(-1); });
+                    if (nextBtn) nextBtn.addEventListener("click", function () { step(1); });
+                    if (pinBtn) pinBtn.addEventListener("click", pinCurrent);
+                }
+
                 document.addEventListener("keydown", function (event) {
                     // הקלדה בשדה חיפוש היא לא קיצור מקלדת
                     const tag = (event.target.tagName || "").toLowerCase();
@@ -1085,7 +1363,6 @@ def _audio_behaviour():
                     const all = rows();
                     if (!all.length) return;
                     const active = current();
-                    const at = active ? all.indexOf(active) : -1;
 
                     if (event.key === " " || event.code === "Space") {
                         event.preventDefault();
@@ -1094,11 +1371,7 @@ def _audio_behaviour():
                     }
                     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                         event.preventDefault();
-                        const step = event.key === "ArrowDown" ? 1 : -1;
-                        const next = all[Math.min(Math.max(at + step, 0), all.length - 1)]
-                            || all[0];
-                        next.click();
-                        next.scrollIntoView({block: "center", behavior: "smooth"});
+                        step(event.key === "ArrowDown" ? 1 : -1);
                         return;
                     }
                     if (event.key === "l" || event.key === "L") {
@@ -1329,6 +1602,9 @@ def _init_state():
         # ו-`work_id` של יצירה אחרת נשלח לחיפוש הבא
         "work_query": "",
         "bigness": {},
+        # Compare: uid -> תמונת מצב, ראו `toggle_pin`. במפורש לא ב-`storage.*`
+        # (בניגוד ל-favorites/rejections) — זו השוואה של הסשן, לא פלייליסט.
+        "pinned": {},
         "evidence": {},
         "original": None,
         "all_inputs": [],
@@ -1337,6 +1613,9 @@ def _init_state():
         "cors_retried": set(),
         "similar_of": None,
         "pending_fields": None,
+        # שביל חזרה ל-Charts — ראו `_entry_grid`/`_store_results`.
+        # `generation` הוא מה שמתקף אותו: תקף רק לדור התוצאות שיצר אותו.
+        "breadcrumb": None,
         "index_source": SOURCE_CLASSICS,
         "search_mode": MODE_SONG,
     }
@@ -1419,6 +1698,19 @@ def origin_key(entry: dict) -> str:
              or search_module.clean_track_title(entry.get("track", ""))
              or entry.get("track", ""))
     return track_key(origin.get("artist", ""), title)
+
+
+def _origin_label(entry: dict) -> str:
+    """כותרת השיר המקורי לקבוצה, לתצוגה — "Yellow · Coldplay" או "Yellow"
+    בלי אמן ידוע. אותו שדה בדיוק שמפתח `origin_key`, כאן בשביל קריאה
+    ולא בשביל קיבוץ. משותף ל-Loved ול-Compare כדי ששני המסכים יקראו
+    לאותו שיר מקור באותו שם."""
+    origin = entry.get("origin") or {}
+    song = (origin.get("track")
+            or search_module.clean_track_title(entry.get("track", ""))
+            or entry.get("track", ""))
+    by = origin.get("artist")
+    return song + (f" · {by}" if by else "")
 
 
 def _snapshot(track: dict) -> dict:
@@ -1575,6 +1867,38 @@ def toggle_rejection(track: dict):
     storage.save_rejections(rejections, SUBJECT)
 
 
+PIN_LIMIT = 4  # "Pin up to four versions" — ראו .ts-comparehint ב-CSS
+
+
+def is_pinned(track: dict) -> bool:
+    return track["uid"] in st.session_state["pinned"]
+
+
+def toggle_pin(track: dict):
+    """נעיצה ל-Compare. **לא נשמר לדיסק** ולא כפוף ל-`_may_save`: זו השוואה
+    בתוך הסשן הנוכחי ("שמעתי לפני חמש שורות"), לא פלייליסט. בכוונה גם לא
+    נמחק בחיפוש חדש (בניגוד לשורות התוצאה, שכן נמחקות — ראו
+    `result_generation`) — זה מה שמאפשר להעמיד גרסה של שיר אחד מול גרסה
+    של שיר אחר.
+
+    מפתח ה-uid ולא `track_key`: נעיצה היא של **גרסה** ספציפית (הקלטה
+    אחת, ממקור אחד), לא של "כל מה שנקרא ככה". ה-uid יציב בין חיפושים
+    לאותה גרסה בדיוק (`itunes-<id>` / `deezer-<id>`, ראו `search.py`),
+    ולכן פינוי שנעשה בחיפוש אחד עדיין מזוהה נכון כשהוא צף מחדש בחיפוש הבא.
+
+    מקבל גם snapshot (יש לו `uid` בזכות `FAVORITE_FIELDS`) וגם track מלא —
+    ולכן גם כפתור ה-✕ בפאנל עצמו יכול לקרוא לה ישירות עם הרשומה שכבר בידו.
+    """
+    pinned = st.session_state["pinned"]
+    uid = track["uid"]
+    if uid in pinned:
+        pinned.pop(uid)
+    elif len(pinned) >= PIN_LIMIT:
+        st.toast(f"Compare holds {PIN_LIMIT} versions — unpin one first")
+    else:
+        pinned[uid] = _snapshot(track)
+
+
 def taste_profile(background: list[dict] | None = None) -> dict:
     """הפרופיל הנלמד. הרקע הוא פול התוצאות המוצג, ובלעדיו זה מונה שכיחות."""
     return taste.profile(list(st.session_state["favorites"].values()), background,
@@ -1683,7 +2007,7 @@ def _rail_nav():
 
 
 def _rail_account():
-    """התחברות והמכסה שנשארה. מוצג רק כשהתחברות בכלל מוגדרת."""
+    """התחברות עצמה. המכסה ירדה ל-`_rail_quota`, בתחתית ה-rail — ראו שם למה."""
     if not LOGIN_ENABLED:
         return
     st.html("<div class='ts-railrule'></div>")
@@ -1699,9 +2023,32 @@ def _rail_account():
         if st.button("Log in with Google", key="btn_login", type="tertiary",
                      width="stretch"):
             st.login()
-    left = int(accounts.remaining(SUBJECT))
-    st.html("<div class='ts-railcap'>SEARCHES LEFT "
-            f"<span class='ts-navcount'>{left}</span></div>")
+
+
+def _rail_quota():
+    """כרטיס המכסה, בתחתית ה-rail ממש — נקודת עוגן ולא עוד שורה בשטף.
+
+    מוצג גם כשהתחברות כבויה: `accounts.remaining`/`QUOTA_CAPACITY` תקפים
+    בכל מצב (ראו `accounts.py`), ומשתמש יחיד בפיתוח מקומי עדיין נהנה
+    לראות שיש לו מכסה. הרצועה היא אחוז אמיתי מתוך `QUOTA_CAPACITY` —
+    אותו קבוע שכבר קובע מתי `spend` נכשל, לא מספר מומצא לתצוגה.
+    """
+    left = accounts.remaining(SUBJECT)
+    pct = max(0, min(100, round(100 * left / accounts.QUOTA_CAPACITY)))
+    if LOGIN_ENABLED:
+        identity = (html.escape(SUBJECT.email) if SUBJECT.is_logged_in and SUBJECT.email
+                    else "Guest · not saved")
+    else:
+        identity = "Local · single user"
+    st.html(
+        "<div class='ts-quotacard'>"
+        "<div class='ts-quotahead'><span class='ts-railcap' "
+        "style='margin:0'>SEARCHES LEFT</span>"
+        f"<span class='ts-quotaval'>{int(left)}</span></div>"
+        f"<div class='ts-quotatrack'><div class='ts-quotafill' "
+        f"style='width:{pct}%'></div></div>"
+        f"<div class='ts-quotasub'>{identity}</div>"
+        "</div>")
 
 
 def _remember_anon():
@@ -1755,6 +2102,37 @@ def _rail_recent():
     for artist, track in recent[:4]:
         st.html("<div class='ts-railrecent'>"
                 f"{html.escape(track)} · {html.escape(artist)}</div>")
+
+
+def _rail_session():
+    """THIS SESSION: ארבעה מונים אמיתיים, לא תחליף לתחושת התקדמות מזויפת.
+
+    כל ארבעת המספרים כבר קיימים ב-`session_state` בלי חישוב חדש —
+    `seen_keys` (כל מה שהוצג אי פעם בסשן, לא רק העמוד הנוכחי), `bigness`
+    (סוננת ל'נמדד בפועל' ולא 'יש רשומה', כי שגיאת מדידה גם היא רשומה),
+    `favorites` ו-`rejections`. הרייל היה נגמר במונה מכסה בלבד; זה נותן
+    למשתמש עוגן במה שהוא כבר עשה בסשן הזה, לא רק במה שנשאר לו.
+    """
+    scanned = len(st.session_state["seen_keys"])
+    if not scanned:
+        return
+    measured = sum(1 for f in st.session_state["bigness"].values()
+                  if audio.measured(f))
+    stats = [
+        ("Scanned", "SCAN", scanned, "var(--text)"),
+        ("Measured", "MEAS", measured, "var(--text)"),
+        ("Loved", "LOVE", len(st.session_state["favorites"]), "var(--coral)"),
+        ("Skipped", "SKIP", len(st.session_state["rejections"]), "var(--text)"),
+    ]
+    st.html(
+        "<div class='ts-railcap'>THIS SESSION</div>"
+        "<div class='ts-sessionrow'>"
+        + "".join(
+            f"<div class='ts-sessiontile'><div class='ts-sessionval' "
+            f"style='color:{color}'>{value}</div>"
+            f"<div class='ts-sessionlbl'>{short}</div></div>"
+            for _, short, value, color in stats)
+        + "</div>")
 
 
 # מפתחות ה-widget שחייבים לשרוד מעבר בין מסכים. Streamlit מוחק
@@ -1869,19 +2247,115 @@ def _loved_screen():
 
     for versions in sorted(groups.values(), key=newest, reverse=True):
         versions.sort(key=lambda item: item[1].get("added_at", 0), reverse=True)
-        origin = versions[0][1].get("origin") or {}
-        song = (origin.get("track")
-                or search_module.clean_track_title(versions[0][1].get("track", ""))
-                or versions[0][1].get("track", ""))
-        by = origin.get("artist")
         # בלי מונה גרסאות: הן ממילא נספרות במבט אחד ברגע שפותחים את
         # הקבוצה, והמילה בכל שורה הייתה טקסט שממלא מסך.
-        label = song + (f" · {by}" if by else "")
+        label = _origin_label(versions[0][1])
         # מכווץ כברירת מחדל: מאה וארבעים גרסאות פרושות הן מסך שאי
         # אפשר לגלול בו אל שום דבר
         with st.container(key=f"lovedgroup_{origin_key(versions[0][1])}"):
             with st.expander(label, expanded=False):
                 _render_saved_versions(versions, favorites)
+
+
+def _compare_bars(features: dict | None) -> "list[tuple[str, float | None]]":
+    """שלושת המדים של Compare, מנורמלים 0..1 — או `None` למה שלא נמדד.
+
+    לא ממציאים: LOUD ו-PACE הם מימדים בודדים מ-`audio.normalized`, כמו
+    שהם. BRIGHT הוא ממוצע `centroid`+`air` — שני מדדי הגוון שיחד מגדירים
+    "בהיר" ב-`tags.py` (ראו `BRIGHT` שם) — ולא ערך שהומצא כאן. מדידה בלי
+    מדדי גוון (נשמרה לפני שהם נוספו) מחזירה `None` ל-BRIGHT בלבד, לא
+    מפילה את שני האחרים.
+    """
+    norm = audio.normalized(features) or {}
+    tones = [norm[d] for d in ("centroid", "air") if norm.get(d) is not None]
+    bright = sum(tones) / len(tones) if tones else None
+    return [("LOUD", norm.get("loudness")), ("BRIGHT", bright),
+            ("PACE", norm.get("onset_rate"))]
+
+
+def _compare_panel():
+    """Compare: עד ארבע גרסאות נעוצות, זו לצד זו — ראו `toggle_pin`.
+
+    פאנל קבוע בצד ימין (`.ts-compare` ב-CSS, אותו טריק בדיוק כמו סרגל
+    הנגן התחתון: `position: fixed` על מכולה עם `key`), ולא עמודה שלישית
+    ב-layout: העמודה הראשית כבר בנויה כזרימה שטוחה, וקיפול הכל תחת
+    `st.columns` כאן היה דורש לגעת בכל מכולה עם `key` בקובץ. דסקטופ
+    בלבד (ראו ה-media query): ברוחב טלפון גם כפתור הנעיצה בשורה מוסתר.
+
+    מקובץ לפי שיר מקור, לא רשימה שטוחה: זו בדיוק התלונה שתיעדנו בהנדאוף
+    — בלי הפרדה, נעיצה של Yellow ליד נעיצה של Zombie נראית כמו טעות.
+    """
+    pinned = st.session_state["pinned"]
+    panel = st.container(key="comparepanel")
+    with panel:
+        st.html(
+            "<div class='ts-comparehead'><span class='ts-railcap' "
+            "style='margin:0'>COMPARE</span><span class='ts-comparehint'>"
+            "⊞ to pin</span></div>")
+
+        if not pinned:
+            st.html(
+                "<div class='ts-comparehint-empty'>Pin up to four versions."
+                "<br>Loudness, brightness and pace line up so the choice is "
+                "a look, not a memory.</div>")
+            return
+
+        groups: dict[str, list[tuple[str, dict]]] = {}
+        for uid, entry in pinned.items():
+            groups.setdefault(origin_key(entry), []).append((uid, entry))
+        songs = len(groups)
+        st.html(
+            f"<div class='ts-comparecount'>{len(pinned)} pinned · {songs} "
+            f"song{'' if songs == 1 else 's'} <span class='ts-comparesub'>"
+            "· pins survive a new search</span></div>")
+
+        # סדר יציב: השיר שנעץ בו לאחרונה למעלה, כמו RECENT ברייל
+        for key, items in sorted(
+                groups.items(),
+                key=lambda kv: max(e.get("added_at", 0) for _, e in kv[1]),
+                reverse=True):
+            items.sort(key=lambda item: item[1].get("added_at", 0), reverse=True)
+            st.html(
+                "<div class='ts-comparegroup-head'>"
+                f"<span class='ts-comparedot'></span>"
+                f"<span class='ts-comparesong'>{html.escape(_origin_label(items[0][1]))}</span>"
+                f"<span class='ts-comparerule'></span>"
+                f"<span class='ts-comparen'>{len(items)} pinned</span></div>")
+            with st.container(key=f"comparegroup_{key}"):
+                for uid, entry in items:
+                    features = entry.get("features")
+                    color = _tier_color(features)
+                    score = str(audio.bigness(features)) if audio.measured(features) else "–"
+                    with st.container(key=f"comparecard_{uid}"):
+                        head = st.container(key=f"compcardhead_{uid}", horizontal=True,
+                                            vertical_alignment="center")
+                        with head:
+                            st.html(
+                                "<span class='ts-comparecard-art'></span>"
+                                "<span class='ts-comparecard-text'>"
+                                f"<span class='ts-comparecard-artist'>{html.escape(entry.get('artist', ''))}</span>"
+                                f"<span class='ts-comparecard-meta'>{html.escape(entry.get('genre') or '')}"
+                                + (f" · {entry['duration_sec'] // 60}:{entry['duration_sec'] % 60:02d}"
+                                   if entry.get("duration_sec") else "") + "</span></span>"
+                                f"<span class='ts-comparecard-score' style='color:{color}'>{score}</span>")
+                            if st.button("", key=f"unpin_{uid}", type="tertiary",
+                                        icon=":material/close:", help="Unpin"):
+                                toggle_pin(entry)
+                                st.rerun()
+                        bars = _compare_bars(features)
+                        if all(value is None for _, value in bars):
+                            st.html("<div class='ts-comparecard-unmeasured'>"
+                                    "Not measured yet</div>")
+                        else:
+                            st.html("<div class='ts-comparebars'>" + "".join(
+                                "<div class='ts-comparebar'>"
+                                f"<span class='ts-comparebar-lbl'>{label}</span>"
+                                "<span class='ts-comparebar-track'><span "
+                                "class='ts-comparebar-fill' style='width:"
+                                f"{round((value or 0) * 100)}%;background:"
+                                f"{color if label == 'LOUD' else 'var(--teal)'}'>"
+                                "</span></span></div>"
+                                for label, value in bars) + "</div>")
 
 
 def _legacy_playlist_size() -> int:
@@ -1995,6 +2469,8 @@ with st.sidebar:
     _rail_taste()
     st.html("<div class='ts-railfill'></div>")
     _rail_recent()
+    _rail_session()
+    _rail_quota()
 
     for warning in storage.warnings:
         st.warning(warning)
@@ -2277,19 +2753,105 @@ def resort_button(display: list, sort_by: str, learned: dict):
 
 # ---------- הצגת שיר בודד ----------
 
-# מדרגות העוצמה, וכל אחת עם צבע המד שלה. הערכים מגיעים מטבלת הטוקנים
-# בהנדאוף (`score >= 70 -> #FFB020`, `40-69 -> #C3C8D4`, `< 40 -> #8A91A3`),
-# והספים עצמם הם אלה של `audio.py` ולא מספרים חדשים. ענבר שמור ל"גדול"
-# בלבד — אקסנט שמופיע על כל שורה מפסיק לסמן משהו.
+# מדרגות העוצמה, וכל אחת עם צבע המד שלה. הענבר שמור ל"גדול" בלבד — אקסנט
+# שמופיע על כל שורה מפסיק לסמן משהו. הבינוני עבר מאפור-טקסט לתכלת: זה
+# הצבע השלישי מה-v2 handoff, ותפקידו הקבוע בכל האפליקציה הוא "מה שנמדד" —
+# ולכן הוא גם צבע המד הבינוני, גם תג ה-heard וגם עמודת ה-BRIGHT ב-Compare.
+# הספים עצמם הם אלה של `audio.py` ולא מספרים חדשים.
 SCORE_TIERS = (
     (audio.BIG_VERSION_THRESHOLD, "#FFB020", "big"),
-    (audio.MID_VERSION_THRESHOLD, "#C3C8D4", "mid"),
+    (audio.MID_VERSION_THRESHOLD, "#7FD1C8", "mid"),
     (0, "#8A91A3", "calm"),
 )
 ARTWORK_SIZE = 52
 # צבע ותווית לשורה שעוד לא נמדדה. רצועה ריקה ולא תג: המד הוא העמודה
 # שקוראים לאורכה, ותג בגובה אחר באמצע היה שובר את הקו.
 METER_IDLE = "#1E2230"
+
+
+def _tier_color(features: dict | None) -> str:
+    """אותה מדרגת צבע בדיוק בכל מקום שמצייר משהו לפי הציון — המד, הגל,
+    ה-Compare. לא נמדד מקבל את גוון ה-'רגוע': מוצג עמום, לא נעדר."""
+    if not audio.measured(features):
+        return SCORE_TIERS[-1][1]
+    score = audio.bigness(features)
+    return next(c for threshold, c, _ in SCORE_TIERS if score >= threshold)
+
+
+WAVE_PEAK_THRESHOLD = 0.78  # מעל זה פס נחשב "שיא" ומקבל את צבע המדרגה
+
+
+def _resample(values: list, bars: int) -> list:
+    """דוגם `values` (24 מ-`audio.envelope`) ל-`bars` נקודות, שכנה קרובה.
+
+    לא אינטרפולציה: המעטפת היא כבר ממוצע חלונות, ושכנה קרובה שומרת על
+    השיאים שלה במקום להשטיח אותם עוד פעם.
+    """
+    if not values or bars <= 0:
+        return []
+    return [values[min(len(values) - 1, (i * len(values)) // bars)]
+            for i in range(bars)]
+
+
+def _wave_bars(features: dict | None, color: str, bars: int = 22,
+              title: str = "Where the version peaks across the preview") -> str:
+    """HTML של מד-גל זעיר: `bars` פסים שגובהם המעטפת המדודה בדפדפן.
+
+    ריק (בלי מדידה, או מדידה ישנה בלי שדה `envelope`): אותם `bars` פסים
+    נמוכים ואחידים בצבע עמום, כמו מצב הסרק של `_loudness_meter` — לא
+    צורה בדויה, ולא שורה שקופצת בגובה כשהמדידה הבאה מגיעה.
+    """
+    values = _resample(audio.envelope(features), bars)
+    if not values:
+        cells = "".join(
+            "<span style='flex:1;min-width:0;border-radius:1px;height:14%;"
+            "background:var(--chip)'></span>" for _ in range(bars))
+        return f"<div class='ts-wave' title='Not measured yet'>{cells}</div>"
+    cells = "".join(
+        f"<span style='flex:1;min-width:0;border-radius:1px;"
+        f"height:{max(8, round(v * 100))}%;background:"
+        f"{color if v > WAVE_PEAK_THRESHOLD else 'var(--chip)'}'></span>"
+        for v in values)
+    return f"<div class='ts-wave' title='{html.escape(title)}'>{cells}</div>"
+
+
+HISTOGRAM_BINS = 20
+
+
+def _loudness_histogram(tracks: list, measurements: dict) -> str:
+    """כרטיס "LOUDNESS SPREAD": כמה מהתוצאות נמדדו שקטות לעומת ענקיות.
+
+    עשרים דליים על ציר 0..100 — אותו ציר בדיוק כמו `SCORE_TIERS`, ולכן
+    הצבעים שלהם זהים: דלי בטווח 'רגוע' אפור, 'בינוני' תכלת, 'גדול' ענבר.
+    נספרים רק טראקים שכבר נמדדו (`audio.measured`); מה שטרם נמדד פשוט
+    לא תורם דלי, ולא מתחזה לציון.
+
+    גובה כל פס יחסי לדלי הגבוה ביותר, לא למספר התוצאות הכולל — אחרת
+    חיפוש עם 63 תוצאות פרושות על עשרים דליים היה נראה שטוח תמיד.
+    """
+    scores = [audio.bigness(measurements.get(t["uid"])) for t in tracks
+              if audio.measured(measurements.get(t["uid"]))]
+    if not scores:
+        return ("<div class='ts-histocard ts-histocard-empty'>Measuring "
+                "loudness in your browser…</div>")
+    tally = [0] * HISTOGRAM_BINS
+    for score in scores:
+        tally[min(HISTOGRAM_BINS - 1, max(0, score) * HISTOGRAM_BINS // 100)] += 1
+    peak = max(tally) or 1
+    bars = "".join(
+        f"<span style='width:6px;border-radius:2px 2px 0 0;height:"
+        f"{max(6, round(count / peak * 100))}%;background:"
+        + (METER_IDLE if not count
+           else next(c for threshold, c, _ in SCORE_TIERS
+                     if index * (100 // HISTOGRAM_BINS) >= threshold))
+        + "'></span>"
+        for index, count in enumerate(tally))
+    return (
+        "<div class='ts-histocard'>"
+        f"<div class='ts-histobars'>{bars}</div>"
+        "<div class='ts-histolabels'><span>QUIET</span>"
+        "<span>LOUDNESS SPREAD</span><span>BIG</span></div>"
+        "</div>")
 
 
 def _loudness_meter(features: dict | None):
@@ -2307,7 +2869,7 @@ def _loudness_meter(features: dict | None):
     """
     if audio.measured(features):
         score = audio.bigness(features)
-        color = next(c for threshold, c, _ in SCORE_TIERS if score >= threshold)
+        color = _tier_color(features)
         pct = max(0, min(100, int(score)))
         st.html(
             "<div class='ts-meter'>"
@@ -2387,6 +2949,7 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         col_play = st.container(key=f"tplay_{row_key}", width="content")
         col_main = st.container(key=f"tmain_{row_key}", width="stretch")
         col_tags = st.container(key=f"ttags_{row_key}", width="content")
+        col_wave = st.container(key=f"twave_{row_key}", width="content")
         col_meter = st.container(key=f"tmeter_{row_key}", width="content")
         col_acts = st.container(key=f"tacts_{row_key}", width="content",
                                 horizontal=True, vertical_alignment="center")
@@ -2455,6 +3018,9 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         if _chips:
             st.html("<div class='ts-tags'>" + "".join(_chips) + "</div>")
 
+    with col_wave:
+        st.html(_wave_bars(features, _tier_color(features)))
+
     with col_meter:
         _loudness_meter(features)
         if learned and learned.get("count"):
@@ -2479,6 +3045,17 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                      help="Undo" if rejected else
                           "Not this — the ranking learns to move away from this style"):
             toggle_rejection(track)
+            st.rerun()
+
+        # נעיצה ל-Compare. כפתור רביעי ולא הרחבה של ה-⋯: זו פעולה שקורית
+        # בזמן ההאזנה כדי להשוות, לא הגדרה נדירה שמחפשים בתפריט.
+        pinned = is_pinned(track)
+        if st.button("", key=f"btn_pin_{uid}",
+                     icon=":material/select_all:",
+                     type="primary" if pinned else "secondary",
+                     help="Unpin from Compare" if pinned else
+                          "Pin to Compare — up to four, across songs"):
+            toggle_pin(track)
             st.rerun()
 
         # תפריט אחד לכל מה שנדיר: קודם כל פעולה תפסה כפתור משלה בכל שורה,
@@ -2552,6 +3129,7 @@ if _nav in (NAV_LOVED, NAV_SETTINGS):
     st.stop()
 
 _restore_screen_state()
+_compare_panel()
 
 _pending = st.session_state.pop("pending_fields", None)
 if _pending:
@@ -2753,7 +3331,7 @@ def _artist_preview_titles(artist: str) -> list[str]:
     return st.session_state["artist_preview_titles"]
 
 
-def _entry_grid(entries: list[dict], key_prefix: str):
+def _entry_grid(entries: list[dict], key_prefix: str, source_label: str | None = None):
     """רשת כפתורים משותפת לאמנים ולשירים, מכל אחד משלושת מקורות האינדקס.
 
     לחיצה על אמן ממלאת את שדה האמן וקובעת מצב "קאברים לאמן" — תצוגה מקדימה
@@ -2762,6 +3340,12 @@ def _entry_grid(entries: list[dict], key_prefix: str):
     "קאברים לשיר" ומריצה אוטומטית. שלושת המקורות (קלאסיקות סטטיות, רשימת
     בילבורד, מצעד מיובא) שונים בנתונים אבל זהים בהתנהגות — לכן רכיב רינדור
     אחד במקום שלושה כמעט-זהים.
+
+    `source_label`: כשקיים, לחיצה על **שיר** משאירה שביל חזרה ("← Charts ·
+    Rock · #5") מעל תוצאות החיפוש שהיא הפעילה — ראו `pending_breadcrumb`
+    בהמשך הסקריפט. במפורש לא מועבר מ-GOAT/תצוגה מקדימה של אמן: שם אותה
+    רשת בדיוק מוצגת גם כשהמשתמש הקליד אמן ביד, בלי שום קשר למצעדים, ותווית
+    "חזרה למצעדים" שם הייתה שקר.
     """
     is_song = any(entry["kind"] == "song" for entry in entries)
     per_row = 2 if is_song else 4
@@ -2794,6 +3378,16 @@ def _entry_grid(entries: list[dict], key_prefix: str):
                     # המלא יקר ולא צריך לרוץ לפני שהמשתמש בחר מה לחפש בפועל
                     queue_fields(artist=entry["artist"], mode=MODE_ARTIST)
                 else:
+                    # **לפני** `queue_fields`, לא אחריה: `queue_fields` מסיימת
+                    # ב-`st.rerun()`, שעוצר את הריצה הזו במקום — כל שורה
+                    # שהייתה יושבת אחריה כאן פשוט לא הייתה מגיעה לעולם.
+                    # מזוהה מול `last_query` בזמן התצוגה (ראו למטה) ולא דרך
+                    # דור-תוצאות: השחזור בפועל קורה בריצה הבאה, לא בזו.
+                    if source_label:
+                        st.session_state["breadcrumb"] = {
+                            "label": source_label + (f" · #{rank}" if rank else ""),
+                            "for_query": entry["track"],
+                        }
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
 
 
@@ -2845,13 +3439,14 @@ def _charts_panel():
     source = st.radio("Source", sources, horizontal=True, key="index_source",
                       label_visibility="collapsed")
 
-    entries, key_prefix = [], ""
+    entries, key_prefix, source_label = [], "", None
     if source.startswith(SOURCE_CLASSICS):
         # selectbox ולא radio: שלוש-עשרה קטגוריות בשורה אחת אינן קריאות
         category = st.selectbox("Category", list(classics_module.CATEGORIES),
                                 key="classics_category")
         entries = _classics_entries(category)
         key_prefix = "classic"
+        source_label = f"Charts · {category}"
         st.caption(f"{len(entries)} songs · decades are ranked by actual "
                    "performance on the historical Billboard Hot 100, genres by "
                    "curated lists. At most two songs per artist in each "
@@ -2873,9 +3468,10 @@ def _charts_panel():
         else:
             entries = _imported_entries(chart)
             key_prefix = f"imp_{chart['slug']}"
+            source_label = f"Charts · {chart['title']}"
 
     if entries:
-        _entry_grid(entries, key_prefix)
+        _entry_grid(entries, key_prefix, source_label=source_label)
 
 
 def _lookup_failed() -> str:
@@ -3193,6 +3789,13 @@ if candidates:
 
     display = ordered_display(display, sort_by, same_work_only, learned)
 
+    # ההידרציה מהקאש **לפני** הכותרת: גם היסטוגרמת העוצמה שלצידה וגם
+    # שורת הקטגוריות שמתחתיה צריכות את מה שכבר בקאש, לא סשן ריק —
+    # ראו את ההערה המקורית על `test_arriving_measurements_do_not_move_the_rows`
+    # למטה, ליד שורת הקטגוריות עצמה.
+    hydrate_measurements(display)
+    _measurements = st.session_state.get("bigness", {})
+
     # הכותרת אומרת **מה** נמצא ולא כמה שורות מצוירות: "63 covers of
     # Yellow" הוא המשפט שהמשתמש חיפש, ואילו "מוצגים 20 מתוך 63" הוא פרט
     # תפעולי שיורד לשורת ההסבר שלצידו.
@@ -3200,17 +3803,34 @@ if candidates:
     _declared = sum(1 for t in display if t.get("trailer_indicator"))
     _shown = min(st.session_state["visible_count"], len(display))
     _lede = [f"{_declared} declare a trailer version"] if _declared else []
-    _lede.append("measured in your browser")
+    _measured_n = sum(1 for t in display if audio.measured(_measurements.get(t["uid"])))
+    _lede.append(f"{_measured_n} measured in your browser")
     if _shown < len(display):
         _lede.insert(0, f"showing {_shown}")
-    st.html(
-        "<div class='ts-resulthead'>"
-        f"<h2 class='ts-h2'>{len(display)} cover"
-        f"{'' if len(display) == 1 else 's'}"
-        + (f" of {html.escape(_subject)}" if _subject else "")
-        + "</h2>"
-        f"<span class='ts-lede'>{html.escape(' · '.join(_lede))}</span>"
-        "</div>")
+
+    # שביל חזרה: רק כשהתוצאות המוצגות **הן** מה שהלחיצה על המצעד ביקשה
+    # (`for_query` מול `last_query` — ראו `_entry_grid`). התאמה על השאילתה
+    # ולא על דור-תוצאות: `queue_fields` מיישמת את עצמה במחזור ריצה שאינו
+    # בשליטת `_entry_grid`, ולכן חותמת שנקבעת מראש בזמן הלחיצה עצמה
+    # יכולה בקלות לפספס את הדור שבו התוצאות בפועל נוחתות. שאילתה שחוזרת
+    # להתאים לעצמה בעתיד (אותו שיר שוב) פשוט מציגה את השביל שוב — תקין.
+    _bc = st.session_state.get("breadcrumb")
+    if _bc and _bc.get("for_query") == _subject:
+        if st.button(f"← {_bc['label']}", key="btn_breadcrumb", type="tertiary"):
+            st.session_state["rail_nav"] = NAV_CHARTS
+            st.rerun()
+
+    with st.container(key="discoverhead", horizontal=True, vertical_alignment="center"):
+        st.html(
+            "<div class='ts-resulthead' style='margin:0'>"
+            f"<h2 class='ts-h2'>{len(display)} cover"
+            f"{'' if len(display) == 1 else 's'}"
+            + (f" of {html.escape(_subject)}" if _subject else "")
+            + "</h2>"
+            f"<span class='ts-lede'>{html.escape(' · '.join(_lede))}</span>"
+            "</div>")
+        st.container(width="stretch")
+        st.html(_loudness_histogram(display, _measurements))
 
     # מתחת לכותרת ולא מעליה: זהו פקד תחזוקה של הסדר, והוא לא אמור להיות
     # הדבר הראשון שנקרא מעל רשימת התוצאות
@@ -3228,9 +3848,6 @@ if candidates:
     #
     # כמסנן, הדירוג הגלובלי נשאר שלם — גרסאות הטריילר עדיין בראש דרך
     # `RANK_TRAILER` — והלחיצה רק מצמצמת את אותה רשימה מדורגת.
-    # ההידרציה מהקאש לפני הספירה, אחרת השורה הזו מחליטה על סמך סשן ריק
-    hydrate_measurements(display)
-    _measurements = st.session_state.get("bigness", {})
     _counts = buckets.counts(display, _measurements)
     _present = [name for name in buckets.ORDER if _counts.get(name)]
     if len(_present) > 1:
