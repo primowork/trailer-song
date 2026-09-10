@@ -134,6 +134,16 @@ def _rendered(app) -> str:
         + [str(e.proto) for e in app.get("html")])
 
 
+def _html_bodies(app) -> str:
+    """ה-HTML הגולמי של `st.html`, בלי לעבור דרך ה-proto.
+
+    `_rendered` ממיר את ה-proto למחרוזת, וה-repr שלו **מברח תווים
+    שאינם ASCII**: מקף em (—) מופיע שם כ-`\342\200\224`. בדיקה של
+    טקסט שמכיל תו כזה מול `_rendered` נכשלת גם כשהעמוד תקין לגמרי.
+    """
+    return " ".join(str(getattr(e, "body", "")) for e in app.get("html"))
+
+
 def _nav(app, item):
     """בוחר פריט ניווט ב-rail ומריץ מחדש.
 
@@ -665,6 +675,28 @@ def test_an_entry_saved_before_the_field_existed_still_groups(app):
     assert app_module.origin_key(legacy) == app_module.origin_key(fresh)
 
 
+def test_a_saved_version_offers_its_artist_and_title_for_copying(app):
+    """מה שמודבק לתוכנת העריכה או לחיפוש הוא "אמן — שיר", ובפלייליסט
+    שם השיר אפילו לא מופיע בשורה (הוא כותרת הקבוצה), ולכן אי אפשר
+    פשוט לסמן אותו עם העכבר."""
+    _save(app, "Caroline Pennell", "Yellow", "cp")
+
+    assert not app.exception
+    shown = _html_bodies(app)
+    assert "ts-copy" in shown, "אין כפתור העתקה בשורה"
+    assert "data-copy='Caroline Pennell — Yellow'" in shown
+
+
+def test_the_copy_text_survives_a_quote_in_the_name(app):
+    """שם עם גרש או מרכאות סוגר את המאפיין ושובר את ה-HTML של השורה."""
+    _save(app, 'Ricardo "RikRok" Ducent', "It Wasn't Me", "rr")
+
+    assert not app.exception
+    shown = _html_bodies(app)
+    assert "&quot;RikRok&quot;" in shown
+    assert "data-copy='Ricardo &quot;RikRok&quot; Ducent — It Wasn&#x27;t Me'" in shown
+
+
 def test_the_sidebar_group_header_is_the_song_and_the_artist_only(app):
     _save(app, "2WEI", "Bitter Sweet Symphony (Epic Trailer Version)", "a")
     _save(app, "Hidden Citizens", "Bittersweet Symphony (Cover)", "b")
@@ -774,6 +806,61 @@ def test_a_signed_in_visitor_can_save_and_sees_their_account(app, monkeypatch):
 
     assert not app.exception
     assert app.session_state["favorites"], "משתמש מחובר לא הצליח לשמור"
+
+
+def test_a_category_row_narrows_the_results(app):
+    """שורת הקטגוריות מסננת את הרשימה המדורגת, ולא מפצלת אותה למדפים."""
+    import buckets
+
+    app.session_state["candidates"] = [
+        track("Band A", "Yellow (Epic Trailer Version)", "a"),
+        track("Band B", "Yellow (Metal Cover)", "b"),
+        track("Band C", "Yellow (A Cappella)", "c"),
+    ]
+    app.run()
+
+    assert not app.exception
+    # בלי בחירה — הכל מוצג
+    shown = _rendered(app)
+    for artist in ("Band A", "Band B", "Band C"):
+        assert artist in shown
+
+    app.pills[0].set_value(buckets.ROCK).run()
+
+    assert not app.exception
+    shown = _rendered(app)
+    assert "Band B" in shown
+    assert "Band A" not in shown and "Band C" not in shown
+
+
+def test_the_category_row_is_hidden_when_there_is_nothing_to_narrow(app):
+    """שורת כפתורים עם קטגוריה אחת היא רעש: היא לא מציעה שום בחירה."""
+    app.session_state["candidates"] = [
+        track("Band A", "Yellow (Metal Cover)", "a"),
+        track("Band B", "Yellow (Rock Cover)", "b"),
+    ]
+    app.run()
+
+    assert not app.exception
+    assert not [p for p in app.pills if p.key == "bucket_filter"]
+
+
+def test_the_strongest_cover_stays_at_the_top_of_the_list(app):
+    """ההבטחה שהמסך עצמו נותן. פיצול לקטגוריות שבר אותה, ולכן הקטגוריות
+    הן מסנן: גרסת טריילר מדורגת ראשונה גם כשקאבר אחר נמדד רועש יותר."""
+    app.session_state["candidates"] = [
+        track("Plain Band", "Yellow", "plain"),
+        track("Epic Band", "Yellow (Epic Trailer Version)", "epic"),
+    ]
+    app.session_state["bigness"] = {
+        "itunes-plain": {"loudness": 0.30, "low_end": 3.0,
+                         "onset_rate": 3.5, "dynamic_span": 6.0},
+    }
+    app.run()
+
+    assert not app.exception
+    order = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
+    assert order.index("btn_favorite_itunes-epic") < order.index("btn_favorite_itunes-plain")
 
 
 def test_the_same_work_filter_keeps_only_catalogue_verified_versions(app):

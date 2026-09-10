@@ -18,6 +18,7 @@ import accounts
 import artists as artists_module
 import audio
 import billboard as billboard_module
+import buckets
 import classics as classics_module
 import covers as covers_module
 import youtube as youtube_module
@@ -374,6 +375,14 @@ st.markdown(
     .st-key-btn_which { margin-top: 2px; }
 
     /* ---- מסך הפתיחה ---- */
+    /* כותרת קטגוריה בין קבוצות התוצאות. מרווח עליון גדול מהתחתון:
+       הכותרת שייכת למה שמתחתיה, וריווח סימטרי היה גורם לה להיראות
+       כשייכת לשורה שמעליה. */
+    .ts-groupcap {
+        display: flex; align-items: center; gap: 8px;
+        margin: 22px 0 8px;
+    }
+    .ts-groupcap:first-child { margin-top: 6px; }
     .ts-startcap { margin: 18px 0 10px; }
     /* נקודות ההתחלה נראות כמו שורות תוצאה ולא ככפתורים גנריים: זו אותה
        פעולה (לחיצה מריצה חיפוש), ולכן אותה שפה */
@@ -616,6 +625,36 @@ st.markdown(
         border: 1px dashed var(--line-strong);
     }
 
+    /* כפתור ההעתקה בשורות הפלייליסט. האייקון מצויר ב-CSS ולא באימוג'י
+       ולא ב-Material: שתי הדרכים האלה כבר נכשלו כאן ברינדור (כפתור
+       הקובייה יצא נקודה כתומה בשני סבבים), ושני ריבועים חופפים הם בדיוק
+       מה שאפשר לצייר בלי תלות בגופן כלשהו. */
+    .ts-copy {
+        position: relative; flex: none;
+        height: 32px; width: 32px; padding: 0;
+        background: transparent; border: none; cursor: pointer;
+        border-radius: 8px; color: var(--text-3);
+    }
+    .ts-copy::before, .ts-copy::after {
+        content: ""; position: absolute; border: 1.4px solid currentColor;
+        border-radius: 3px; width: 11px; height: 13px;
+    }
+    /* הגיליון האחורי מוסט למעלה-שמאלה, הקדמי למטה-ימינה */
+    .ts-copy::before { top: 7px; left: 8px; opacity: .55; }
+    .ts-copy::after { top: 11px; left: 12px; background: var(--surface); }
+    .ts-copy:hover { color: var(--text); background: var(--chip); }
+    /* המכולה של `st.html` מקבלת מ-Streamlit `flex: 1 1 fit-content` ובולעת
+       את המקום שנשאר בשורה — נמדד בדפדפן 371px למכולה של כפתור 32px, ולכן
+       האייקון צף באמצע השורה ומשנה מקום לפי אורך שם האמן במקום להתיישר
+       בעמודה. הכלל חייב לתפוס את **העוטף** דרך `:has()`, כי `st-key-`
+       יושב על המכולה הפנימית ולא על פריט ה-flex. */
+    .stElementContainer:has(> .stHtml > .ts-copy) {
+        flex: 0 0 32px;
+        width: 32px;
+    }
+    /* משוב שהעתקה קרתה בפועל. אין כאן rerun ולכן אין דרך אחרת לדעת. */
+    .ts-copy.is-copied { color: var(--amber); }
+
     /* ---- סרגל הנגן התחתון ---- */
     .ts-bar {
         position: fixed; inset-inline: 0; bottom: 0; z-index: 90;
@@ -709,6 +748,27 @@ st.markdown(
         }
         .st-key-moderow [data-testid="stButtonGroup"]::-webkit-scrollbar {
             display: none;
+        }
+
+        /* שורת הקטגוריות מקבלת בדיוק את אותו טיפול, ומאותה סיבה: נמדד
+           ב-390px שהיא נערמת ל-**שלוש שורות ו-104px**, שנדחפות מעל
+           התוצאות — כלומר בדיוק מה שהעיצוב ביקש למנוע במצבי החיפוש. */
+        .st-key-kindrow [data-testid="stButtonGroup"],
+        .st-key-kindrow [data-testid="stButtonGroup"] > div {
+            flex-wrap: nowrap !important; overflow-x: auto; max-width: 100%;
+            scrollbar-width: none;
+        }
+        .st-key-kindrow [data-testid="stElementContainer"]:has([data-testid="stButtonGroup"]) {
+            max-width: 100%; overflow: hidden;
+        }
+        .st-key-kindrow [data-testid="stButtonGroup"]::-webkit-scrollbar {
+            display: none;
+        }
+        /* בלי אלה הגלולות **מתכווצות** במקום להיגלל: נמדד ב-390px שהן
+           ירדו ל-34-50px כל אחת, כלומר תווית כמו "Trance / electronic"
+           נדחסת עד שאי אפשר לקרוא אותה. */
+        .st-key-kindrow [data-testid="stButtonGroup"] button {
+            white-space: nowrap; flex: none;
         }
         /* גלולות עגולות **נפרדות**, ולא קופסה אחת עם מסגרת: זה מה
            שהעיצוב מגדיר לטלפון. */
@@ -913,6 +973,45 @@ def _audio_behaviour():
                     audio.src = button.dataset.src;
                     audio.play();
                     fill(button);
+                }, true);
+
+                // העתקה. `navigator.clipboard` דורש הקשר מאובטח (https,
+                // וגם localhost) — ולכן יש נפילה לאחור: כישלון שקט כאן
+                // הוא כפתור שנראה עובד ואינו מעתיק דבר.
+                const flash = function (button) {
+                    button.classList.add("is-copied");
+                    setTimeout(function () {
+                        button.classList.remove("is-copied");
+                    }, 1200);
+                };
+
+                const legacyCopy = function (text) {
+                    const pad = document.createElement("textarea");
+                    pad.value = text;
+                    pad.setAttribute("readonly", "");
+                    pad.style.position = "fixed";
+                    pad.style.opacity = "0";
+                    document.body.appendChild(pad);
+                    pad.select();
+                    let ok = false;
+                    try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+                    document.body.removeChild(pad);
+                    return ok;
+                };
+
+                document.addEventListener("click", function (event) {
+                    const button = event.target.closest(".ts-copy");
+                    if (!button) return;
+                    const text = button.dataset.copy || "";
+                    if (!text) return;
+                    event.preventDefault();
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(
+                            function () { flash(button); },
+                            function () { if (legacyCopy(text)) flash(button); });
+                        return;
+                    }
+                    if (legacyCopy(text)) flash(button);
                 }, true);
 
                 // מקלדת. SPACE ו-↑↓ נשארים בדפדפן בלבד; L לוחץ על כפתור
@@ -1471,6 +1570,18 @@ def _render_saved_versions(versions: list, favorites: dict):
                 st.session_state["rail_nav"] = NAV_DISCOVER
                 queue_fields(entry.get("track", ""), entry.get("artist", ""),
                              mode=MODE_SONG, auto_run=True)
+            # העתקה מהירה של "אמן — שיר": זה מה שמודבק לתוכנת העריכה,
+            # לחוזה רישוי או לחיפוש. `st.html` ולא `st.button`, כי לחיצה
+            # שמעתיקה לא צריכה סיבוב לפייתון — היא נגמרת בדפדפן, באותו
+            # frame, בלי rerun שיעצור את מה שמתנגן. הטיפול עצמו יושב
+            # ב-`_audio_behaviour`, באותה האזנה מוסמכת כמו כפתורי הנגינה.
+            _copy = " — ".join(part for part in (entry.get("artist", ""),
+                                                 entry.get("track", "")) if part)
+            if _copy:
+                _safe = html.escape(_copy, quote=True)
+                st.html(f"<button class='ts-copy' type='button' data-copy='{_safe}'"
+                        f" title='Copy &quot;{_safe}&quot;'"
+                        " aria-label='Copy artist and title'></button>")
             if st.button("", key=f"unfav_{key}", icon=":material/close:",
                          type="tertiary", help="Remove from Loved"):
                 favorites.pop(key)
@@ -1598,7 +1709,7 @@ def _rail_recent():
 # זה בדיוק אותו כשל שכבר תפס את שדה האמן כשהוחלף ב-chip.
 SCREEN_SAFE_KEYS = (
     "cover_title", "cover_artist", "search_mode", "sort_by",
-    "filter_style", "filter_length", "filter_recency",
+    "bucket_filter", "filter_style", "filter_length", "filter_recency",
     "filter_prefer_new", "filter_fresh_only", "filter_same_work",
     "filter_sound",
 )
@@ -3035,6 +3146,34 @@ if candidates:
     # הדבר הראשון שנקרא מעל רשימת התוצאות
     with st.container(key="resortrow"):
         resort_button(display, sort_by, learned)
+
+    # שורת הקטגוריות: **מסננת, לא מפצלת.**
+    #
+    # פיצול למדפים נוסה ונמדד, ושבר שני דברים בבת אחת. הראשון: חברות
+    # בקטגוריה "רגוע" נגזרת מהמדידה, שמגיעה מהדפדפן שניות אחרי שהתוצאות
+    # כבר על המסך — ולכן שורות קפצו בין מדפים בדיוק כמו בתלונה שמקובעת
+    # ב-`test_arriving_measurements_do_not_move_the_rows`. השני: מדף
+    # קבוע הוציא את הקאבר החזק ביותר מראש הדף, בניגוד להבטחה של המסך
+    # עצמו ("the loud ones rise to the top").
+    #
+    # כמסנן, הדירוג הגלובלי נשאר שלם — גרסאות הטריילר עדיין בראש דרך
+    # `RANK_TRAILER` — והלחיצה רק מצמצמת את אותה רשימה מדורגת.
+    _measurements = st.session_state.get("bigness", {})
+    _counts = buckets.counts(display, _measurements)
+    _present = [name for name in buckets.ORDER if _counts.get(name)]
+    if len(_present) > 1:
+        with st.container(key="kindrow"):
+            _kind = st.pills(
+                "Kind", [buckets.ALL, *_present], key="bucket_filter",
+                format_func=lambda name: (f"All ({len(display)})" if name == buckets.ALL
+                                          else f"{name} ({_counts[name]})"),
+                label_visibility="collapsed")
+        # None כשמבטלים את הבחירה בלחיצה חוזרת — אותה נפילה חזרה שכבר
+        # נדרשה ב-`search_mode`, אחרת הלחיצה הזו מרוקנת את המסך
+        if _kind and _kind != buckets.ALL:
+            display = [track for track in display
+                       if buckets.bucket_of(
+                           track, _measurements.get(track["uid"])) == _kind]
 
     visible = display[: st.session_state["visible_count"]]
 
