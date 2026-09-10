@@ -908,12 +908,16 @@ def test_the_playlist_offers_to_refresh_dead_preview_links(app):
     assert any("Refresh playback links" in b.label for b in app.button)
 
 
-def test_only_previews_that_are_probably_dead_are_refreshed():
+def test_a_missing_link_is_a_refresh_candidate_like_a_stale_one():
     """הבחירה מופרדת מהרשת בדיוק כדי שתיבדק בלי רשת.
 
     ההבדל בין כתובת חיה למתה הוא המקור ולא הגיל: אצל Deezer היא חתומה
     וקצרת-מועד, אצל iTunes ארוכת-מועד — וזה מסביר למה באותה קבוצה, שנשמרה
     באותו זמן, חלק מנגן וחלק לא.
+
+    **רשומה בלי כתובת כלל היא מועמדת גם היא**, וזה שינוי מכוון: קודם היא
+    דולגה, ולכן גרסה שכתובתה מתה נשארה אפורה לנצח. היא לא נבדקת בכל
+    כניסה — כישלון גם הוא כותב `preview_checked_at`, ואותו TTL שולט בה.
     """
     import app as app_module
 
@@ -935,7 +939,8 @@ def test_only_previews_that_are_probably_dead_are_refreshed():
     }
 
     stale = set(app_module._stale_previews(favorites, now=now))
-    assert stale == {"deezer-stale", "itunes-stale", "never-checked", "corrupt-stamp"}
+    assert stale == {"deezer-stale", "itunes-stale", "never-checked",
+                     "corrupt-stamp", "no-preview"}
 
 
 def test_the_automatic_refresh_is_capped_and_finishes_next_time():
@@ -1031,8 +1036,15 @@ def test_a_refresh_that_found_nothing_says_so(tmp_path, monkeypatch):
     assert all(e["preview_url"].startswith("http://old/") for e in on_disk.values())
 
 
-def test_a_partial_refresh_failure_is_a_caption_not_a_warning(tmp_path, monkeypatch):
-    """כשרק חלק נכשלו זה כנראה גרסאות שנמחקו מהחנות, לא תקלת רשת."""
+def test_a_partial_refresh_failure_says_nothing_at_all(tmp_path, monkeypatch):
+    """כשרק חלק נכשלו זה כנראה גרסאות שנמחקו מהחנות, לא תקלת רשת.
+
+    קודם הוצגה כאן ספירה ("כך וכך לא נמצאו"). היא ירדה לבקשת המשתמש:
+    עם פלייליסט גדול תמיד יש כמה גרסאות שנמחקו, ולכן היא הופיעה כמעט בכל
+    כניסה — דיווח מצב שאי אפשר לעשות איתו דבר, בזמן שהכפתור האפור בשורה
+    כבר אומר בדיוק את זה. כשל **מוחלט** עדיין מדבר; ראו
+    `test_a_refresh_that_found_nothing_says_so`.
+    """
     import json
     import search as search_module
 
@@ -1052,7 +1064,9 @@ def test_a_partial_refresh_failure_is_a_caption_not_a_warning(tmp_path, monkeypa
 
     assert not at.exception
     assert not at.warning, "כישלון חלקי אינו תקלת רשת ואינו מצדיק אזהרה"
-    assert any("stays greyed out" in c.value for c in at.caption)
+    _said = " ".join(str(c.value) for c in at.caption if c.value)
+    assert "live link" not in _said, "הריענון אמור להיות שקט"
+    assert "greyed out" not in _said, "הספירה ירדה — הכפתור האפור אומר את זה בעצמו"
 
 
 def test_a_saved_version_records_when_its_preview_was_checked(app):
