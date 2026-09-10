@@ -821,7 +821,13 @@ st.markdown(
         padding: 12px 26px; background: var(--rail);
         border-top: 1px solid var(--line);
     }
-    @media (min-width: 768px) { .ts-bar { inset-inline-start: 210px; } }
+    /* 769px ולא 768: **נמדד בדפדפן** ש-Streamlit עצמו מקפל את ה-sidebar
+       (translateX שלילי, `aria-expanded="false"`) ב-768px בדיוק ומרחיב
+       אותו רק מ-769 ומעלה — לא סימטרי לספי ה-767/768 שכל שאר האפליקציה
+       בנויה עליהם. שימוש ב-768px כאן היה מותיר פס של 210px ריק בצד
+       הנגן בעוד שהתוכן בפועל לא זז, בדיוק ברוחב הזה. אותו דבר בכל
+       שלושת המופעים האחרים של הסף הזה למטה. */
+    @media (min-width: 769px) { .ts-bar { inset-inline-start: 210px; } }
     .ts-bar-art {
         width: 40px; height: 40px; flex: none; border-radius: 7px;
         border: 1px solid var(--line-strong); background-size: cover;
@@ -846,7 +852,8 @@ st.markdown(
        `pinCurrent`/`step` ב-`_audio_behaviour`. דסקטופ בלבד: Compare
        (יעד הנעיצה) הוא מסך רחב, ראו ה-media query שלו. */
     .ts-bar-transport { display: none; align-items: center; gap: 8px; flex: none; }
-    @media (min-width: 768px) { .ts-bar-transport { display: flex; } }
+    /* 769px — ראו ההערה ליד `.ts-bar { inset-inline-start` למעלה */
+    @media (min-width: 769px) { .ts-bar-transport { display: flex; } }
     .ts-bar-prev, .ts-bar-next {
         width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-strong);
         background: transparent; color: var(--text-2); cursor: pointer; font-size: 12px;
@@ -887,7 +894,8 @@ st.markdown(
     .st-key-comparepanel {
         display: none;
     }
-    @media (min-width: 768px) {
+    /* 769px — ראו ההערה ליד `.ts-bar { inset-inline-start` למעלה */
+    @media (min-width: 769px) {
         .st-key-comparepanel {
             display: block; position: fixed; top: 0; right: 0; bottom: 0;
             width: 280px; overflow-y: auto; z-index: 80;
@@ -976,7 +984,12 @@ st.markdown(
     .ts-comparebar-fill { display: block; height: 100%; border-radius: 3px; }
 
     /* ---- טלפון ---- */
-    @media (max-width: 767px) {
+    /* 768px ולא 767: **נמדד בדפדפן** ש-Streamlit עצמו מקפל את ה-sidebar
+       (`aria-expanded="false"`) ב-768px בדיוק, ומרחיב אותו רק מ-769
+       ומעלה. סף של 767px כאן היה משאיר בדיוק את הרוחב הזה בלי סרגל
+       עליון (`.st-key-appbar` עוד מוסתר) ובלי sidebar (Streamlit כבר
+       קיפל אותו) — כלומר בלי שום ניווט על המסך. */
+    @media (max-width: 768px) {
         [data-testid="stMainBlockContainer"] {
             padding: 0.9rem 0.9rem 5.5rem;
         }
