@@ -1668,6 +1668,8 @@ def _init_state():
         "cors_retried": set(),
         "similar_of": None,
         "pending_fields": None,
+        # דה-דופ להצעה האחרונה שנבחרה בהשלמה האוטומטית — ראו `_typeahead_behaviour`
+        "_last_typeahead_pick": None,
         # שביל חזרה ל-Charts — ראו `_entry_grid`/`_store_results`.
         # `generation` הוא מה שמתקף אותו: תקף רק לדור התוצאות שיצר אותו.
         "breadcrumb": None,
@@ -2574,6 +2576,38 @@ _audio_meter = components.declare_component("audio_meter", path=_MEASURE_DIR)
 # מופע שני לאותו רכיב: המסלול הישיר והמעקף רצים באותו rerun וצריכים key נפרד
 _audio_meter_proxy = components.declare_component("audio_meter_proxy", path=_MEASURE_DIR)
 
+# ---------- השלמה אוטומטית בשדה החיפוש ----------
+
+_TYPEAHEAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "components", "search_typeahead")
+_search_typeahead = components.declare_component("search_typeahead", path=_TYPEAHEAD_DIR)
+
+
+def _typeahead_behaviour():
+    """מריץ את רכיב ההשלמה האוטומטית, וממלא את שדות החיפוש כשנבחרה הצעה.
+
+    הרכיב עצמו קורא ישירות מהדפדפן (iTunes) ולא דרך Python: זה חיפוש
+    שקורה על כל הקשה, ותור בקשות לשרת ה-Streamlit היה מוסיף השהיה בדיוק
+    במקום שאמור להרגיש מיידי. Python נכנס לתמונה רק ברגע שנבחרה הצעה —
+    ואז זה בדיוק `queue_fields`, אותו מנגנון שממלא שדות מכל מקום אחר
+    באפליקציה (הגרלה, מצעדים, פלייליסט).
+
+    בחירת אמן בלבד (למשל הקלידו 'Daft Punk' ולא שם שיר) משאירה את מצב
+    החיפוש כמו שהוא ומרוקנת את שדה השיר בכוונה: המשתמש עומד להקליד שיר
+    אמיתי, וההשלמה על השיר הבא כבר תהיה ממוקדת לאמן שנבחר. בחירת שיר
+    שלם ממלאת את שני השדות ומריצה חיפוש מיד — מי שבחר שורה קונקרטית
+    מתוך רשימה כבר החליט, ואין למה לחכות.
+    """
+    picked = _search_typeahead(key="search_typeahead", default=None)
+    if not picked or picked == st.session_state.get("_last_typeahead_pick"):
+        return
+    st.session_state["_last_typeahead_pick"] = picked
+    track_name, artist_name = picked.get("track", ""), picked.get("artist", "")
+    if track_name:
+        queue_fields(track_name, artist_name, mode=MODE_SONG, auto_run=True)
+    elif artist_name:
+        queue_fields("", artist_name)
+
 # כמה טראקים לעקוף בכל סבב. ה-data URI הוא מגה-בייטים, וכולם עוברים דרך הדף
 CORS_FALLBACK_BATCH = 4
 
@@ -3208,6 +3242,7 @@ def render_track(track: dict, index: int, learned: dict | None = None):
 
 _audio_behaviour()
 _keep_scroll_position()
+_typeahead_behaviour()
 
 # סרגל עליון שמופיע **רק בטלפון** (ראו ה-media query ב-CSS): שם ה-rail
 # מתקפל מאחורי כפתור ההמבורגר של Streamlit, ובלעדיו אין על המסך שום זהות
