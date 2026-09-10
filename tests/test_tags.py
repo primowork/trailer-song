@@ -82,6 +82,23 @@ def test_timbre_tags_need_timbre_numbers():
     assert not ({tags.DARK, tags.BRIGHT, tags.GRITTY} & set(tags.tags_for(old)))
 
 
+def test_flux_catches_a_compressed_master_that_onset_rate_misses():
+    """הבאג שדווח: קאבר דראם אנד בייס אגרסיבי, ממוסטר עד שה-RMS כמעט
+    שטוח, קיבל onset_rate נמוך (כמעט אין קפיצות עוצמה בין פריימים) ונקרא
+    'רגוע'. `flux` בודק תוכן ספקטרלי במקום עוצמה — היי-האטים, בסים
+    מעוותים ו-drop-ים עדיין קופצים שם — והוא זה שאמור לתפוס את זה במקום."""
+    fooled_onset = _raw(onset_rate=0.10, dynamic_span=0.10, loudness=0.70,
+                        flux=0.90)
+    found = tags.tags_for(fooled_onset)
+    assert tags.RELENTLESS in found
+    assert tags.ACTION in found
+
+    # ובלי flux (מדידה ישנה, או טראק שבאמת שקט מכל הכיוונים) העדות
+    # היחידה היא onset_rate לבדו — וזה עדיין צריך לעבוד כמו קודם
+    genuinely_calm = _raw(onset_rate=0.10, dynamic_span=0.10, loudness=0.70)
+    assert tags.RELENTLESS not in tags.tags_for(genuinely_calm)
+
+
 def test_primary_tag_is_one_and_from_the_vocabulary():
     for name, features in SATISFYING.items():
         primary = tags.primary_tag(features)
