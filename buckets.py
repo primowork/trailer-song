@@ -15,13 +15,14 @@
   `search.py` מחזיר `"genre": ""` לכל תוצאה מ-Deezer. לכן לכל
   קטגוריה כזו יש גם סימני כותרת, אחרת חצי מהתוצאות היו נופלות בשקט
   לקטגוריית השארית.
-- **מדידה** (רגוע): מגיעה מהדפדפן שניות אחרי שהתוצאות כבר על המסך, ולכן
+- **מדידה** (עדין, רגוע): מגיעה מהדפדפן שניות אחרי שהתוצאות כבר על המסך, ולכן
   שורה יכולה לעבור מ"כל השאר" ל"רגוע" תוך כדי. ראו את ההערה ב-`group`.
 """
 from __future__ import annotations
 
 import re
 
+import audio
 import search as search_module
 import tags
 
@@ -33,6 +34,7 @@ INSTRUMENTAL = "Instrumental"
 CLASSICAL = "Classical"
 ROCK = "Rock"
 TRANCE = "Trance / electronic"
+INTIMATE = "Intimate"
 CALM = "Calm"
 OTHER = "Everything else"
 
@@ -42,7 +44,8 @@ OTHER = "Everything else"
 # אקפלה ראשונה כי היא הנדירה והמוצהרת ביותר: גרסה שכתוב עליה שהיא
 # אקפלה היא קודם כל אקפלה. אחריה טריילר, כי זה מה שהאפליקציה הזו
 # מחפשת מלכתחילה.
-ORDER = (ACAPPELLA, TRAILER, INSTRUMENTAL, CLASSICAL, ROCK, TRANCE, CALM, OTHER)
+ORDER = (ACAPPELLA, TRAILER, INSTRUMENTAL, CLASSICAL, ROCK, TRANCE, INTIMATE,
+         CALM, OTHER)
 
 _TITLE_MARKERS = {
     ACAPPELLA: ("a cappella", "acappella", "a-cappella", "vocals only",
@@ -94,19 +97,46 @@ def _is_trailer(track: dict) -> bool:
             or search_module.is_trailer_artist(track))
 
 
-def _is_calm(features: "dict | None") -> bool:
-    """רגוע = איטי **או** שקט, ובלבד שאינו קצבי.
-
-    נשען על `tags.py` ולא על ספים חדשים: SLOW_BURN ו-INTIMATE הן שתיים
-    מהתגיות שנשענות על `audio.WEIGHTS`, שטווחיו כוילו מול מדידות אמיתיות
-    (בניגוד למדדי הגוון). סף חדש כאן היה מספר קסם שלישי לאותו דבר.
-    """
+def _too_busy(features: "dict | None") -> bool:
+    """קצבי מדיי כדי להיחשב רגוע או עדין, לפי `tags.py` ולא לפי סף חדש."""
     found = tags.tags_for(features)
-    if not found:
+    return tags.ACTION in found or tags.RELENTLESS in found
+
+
+def _is_intimate(features: "dict | None") -> bool:
+    """עדין = **שקט**, לפי אותו מספר שהמד בשורה כבר מצייר.
+
+    הגרסה הקודמת דרשה את התגית INTIMATE של `tags.py`, שהיא צירוף של שלושה
+    תנאים בו-זמנית (`loudness <= 0.146` וגם `onset_rate <= 1.75/s` וגם
+    `low_end <= 1.68`). כמעט שום קאבר לא קיים את שלושתם, ולכן הכפתור לא
+    הופיע אף פעם — נמדד, לא שוער.
+
+    חמור מזה: הקטגוריה הייתה **חלוקה על המד שכבר מוצג בשורה**. שורה שהמד
+    שלה מראה 28 נקראת שקטה לכל מי שמסתכל, ובכל זאת נפלה ל"כל השאר".
+    `MID_VERSION_THRESHOLD` הוא בדיוק הסף שמתחתיו המד כבר מאפיר את המספר,
+    והתיעוד שלו ב-`audio.py` אומר "ומתחת לזה היא באמת רגועה" — ולכן
+    הקטגוריה מסכימה עכשיו עם המסך, בתנאי יחיד.
+    """
+    if not audio.measured(features) or _too_busy(features):
         return False
-    if tags.ACTION in found or tags.RELENTLESS in found:
+    return audio.bigness(features) < audio.MID_VERSION_THRESHOLD
+
+
+def _is_calm(features: "dict | None") -> bool:
+    """רגוע = **איטי**: קצב נמוך בלבד, בלי צירוף.
+
+    זו תכונה מוזיקלית אחרת משקט, וזה בדיוק ההבדל בין "רגוע" ל"עדין":
+    בלדה מלאה בכלים יכולה להיות איטית ובכל זאת גדולה, וגרסה שקטה יכולה
+    להיות מהירה. לכן שתי קטגוריות ולא אחת, ולכן שני תנאים נפרדים.
+
+    הסף הוא אותו `hits <= 0.35` שכבר משמש ב-`tags.py` ל-SLOW_BURN
+    ול-INTIMATE — על הערכים המנורמלים, כדי ששינוי טווח ב-`audio.py` יזיז
+    גם את זה.
+    """
+    values = audio.normalized(features)
+    if not values or _too_busy(features):
         return False
-    return tags.SLOW_BURN in found or tags.INTIMATE in found
+    return values.get("onset_rate", 1.0) <= 0.35
 
 
 def bucket_of(track: dict, features: "dict | None" = None) -> str:
@@ -123,6 +153,9 @@ def bucket_of(track: dict, features: "dict | None" = None) -> str:
         if name == TRAILER:
             if _is_trailer(track):
                 return TRAILER
+        elif name == INTIMATE:
+            if _is_intimate(features):
+                return INTIMATE
         elif name == CALM:
             if _is_calm(features):
                 return CALM

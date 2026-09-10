@@ -833,6 +833,36 @@ def test_a_category_row_narrows_the_results(app):
     assert "Band A" not in shown and "Band C" not in shown
 
 
+def test_a_cached_measurement_reaches_the_category_row_on_the_same_run(app):
+    """התלונה: הכפתור "עדין" לא הופיע אף פעם.
+
+    חלק מזה היה סדר הקריאות ולא הספים: ההידרציה מהקאש רצה בתוך לולאת
+    השורות, כלומר **אחרי** ששורת הקטגוריות כבר חושבה — ולכן הקטגוריות
+    שנשענות על מדידה חושבו על סשן ריק, בזמן שהמד לצד השורה כבר הראה את
+    אותה מדידה בדיוק.
+    """
+    import audio
+    import buckets
+    import tags
+
+    quiet = tags_measurement(tags.INTIMATE)
+    assert audio.bigness(quiet) < audio.MID_VERSION_THRESHOLD
+    storage.save_bigness({search_module.track_key("Band B", "Yellow"): quiet})
+
+    app.session_state["candidates"] = [
+        track("Band A", "Yellow (Epic Trailer Version)", "a"),
+        track("Band B", "Yellow", "b"),
+    ]
+    app.run()
+
+    assert not app.exception
+    row = [p for p in app.pills if p.key == "bucket_filter"]
+    assert row, "שורת הקטגוריות לא הוצגה"
+    # התוויות עוברות דרך `format_func`, ולכן הן "Intimate (1)" ולא השם לבדו
+    assert any(str(option).startswith(buckets.INTIMATE) for option in row[0].options), \
+        "מדידה שהייתה בקאש לא הגיעה לשורת הקטגוריות באותה ריצה"
+
+
 def test_the_category_row_is_hidden_when_there_is_nothing_to_narrow(app):
     """שורת כפתורים עם קטגוריה אחת היא רעש: היא לא מציעה שום בחירה."""
     app.session_state["candidates"] = [
