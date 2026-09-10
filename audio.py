@@ -109,6 +109,27 @@ def _number(features: dict, name: str) -> float:
         return 0.0
 
 
+def envelope(features: "dict | None") -> "list[float]":
+    """מעטפת העוצמה על פני התצוגה המקדימה, 0..1 לכל דגימה — איפה הגרסה
+    מתפוצצת, לא רק כמה.
+
+    מגיעה ישירות מהרכיב בדפדפן (`components/audio_meter`): ממוצע RMS
+    בחלונות 50ms על פני כל הקליפ, מדוגם-מטה ומנורמל לשיא **של הטראק הזה
+    עצמו** — ולכן זו צורה, לא עוצמה מוחלטת (זה כבר תפקיד `bigness`).
+
+    מדידות שנשמרו לפני שהשדה הזה נוסף פשוט לא נושאות אותו: רשימה ריקה,
+    ולא מעטפת בדויה. הקורא (שורת תוצאה, סרגל הנגן, Compare) מציג במקומה
+    מצב סרק — אותו עיקרון בדיוק כמו ה-– של `_loudness_meter` כשאין ציון.
+    """
+    if not measured(features):
+        return []
+    values = features.get("envelope")
+    if not isinstance(values, list):
+        return []
+    return [max(0.0, min(1.0, float(v))) for v in values
+            if isinstance(v, (int, float))]
+
+
 def describe(features: "dict | None") -> str:
     """המספרים הגולמיים לתצוגה, כדי שהכיול הבא יהיה מבוסס ולא ניחוש."""
     if not measured(features):
