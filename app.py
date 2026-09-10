@@ -2014,11 +2014,14 @@ _audio_meter_proxy = components.declare_component("audio_meter_proxy", path=_MEA
 CORS_FALLBACK_BATCH = 4
 
 
-def measure_visible(tracks: list):
-    """מודד את כל המוצגים אוטומטית, בדפדפן של המשתמש.
+def hydrate_measurements(tracks: list) -> "tuple[dict, list]":
+    """מכניס לסשן כל מדידה **ששמורה כבר בקאש**, ומחזיר (הקאש, מי שחסר).
 
-    המדידה חייבת לרוץ בצד הלקוח: פענוח אודיו בשרת דורש תלות כבדה, והשרת הזה
-    ממילא חסום לחלק מהחנויות. מה שכבר נמדד נשמר לקאש לפי track_key ולא נמדד שוב.
+    מופרד מ-`measure_visible` בכוונה, כי מי שקורא ראשון קובע מה יודעים:
+    שורת הקטגוריות נבנית מעל לולאת השורות, וכשההידרציה רצה רק בתוכה
+    הקטגוריות שנשענות על מדידה (עדין, רגוע) חושבו על סשן ריק ולא הופיעו
+    בריצה הזו בכלל — גם כשהמדידה הייתה בקאש והמד לצד השורה כבר הראה
+    אותה. **נמדד בדפדפן**, לא שוער.
     """
     cache = storage.load_bigness()
     pending = []
@@ -2031,6 +2034,16 @@ def measure_visible(tracks: list):
             st.session_state["bigness"][uid] = cache[key]
         elif track.get("preview_url"):
             pending.append({"uid": uid, "url": track["preview_url"]})
+    return cache, pending
+
+
+def measure_visible(tracks: list):
+    """מודד את כל המוצגים אוטומטית, בדפדפן של המשתמש.
+
+    המדידה חייבת לרוץ בצד הלקוח: פענוח אודיו בשרת דורש תלות כבדה, והשרת הזה
+    ממילא חסום לחלק מהחנויות. מה שכבר נמדד נשמר לקאש לפי track_key ולא נמדד שוב.
+    """
+    cache, pending = hydrate_measurements(tracks)
 
     if not pending:
         return
@@ -3215,6 +3228,8 @@ if candidates:
     #
     # כמסנן, הדירוג הגלובלי נשאר שלם — גרסאות הטריילר עדיין בראש דרך
     # `RANK_TRAILER` — והלחיצה רק מצמצמת את אותה רשימה מדורגת.
+    # ההידרציה מהקאש לפני הספירה, אחרת השורה הזו מחליטה על סמך סשן ריק
+    hydrate_measurements(display)
     _measurements = st.session_state.get("bigness", {})
     _counts = buckets.counts(display, _measurements)
     _present = [name for name in buckets.ORDER if _counts.get(name)]
