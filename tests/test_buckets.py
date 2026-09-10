@@ -97,6 +97,17 @@ def test_a_slow_but_big_cover_is_calm_and_not_intimate():
     assert buckets.bucket_of(_track("Yellow"), slow_and_big) == buckets.CALM
 
 
+def test_a_compressed_dnb_cover_does_not_read_as_calm():
+    """הבאג שדווח: קאבר דראם אנד בייס אגרסיבי במיוחד נפל ל-Calm. המאסטרינג
+    הדחוס שלו משטח את ה-RMS כמעט לקו ישר, ולכן `onset_rate` (שסופר קפיצות
+    עוצמה) כמעט ולא נדלק — למרות שהטראק צפוף ומתקפי ככל שיהיה. `flux`
+    (תוכן ספקטרלי משתנה, לא עוצמה) הוא מה שאמור לתפוס אותו במקום —
+    ראו את ההערה המלאה ב-`tags._rules`."""
+    fooled_onset = _features(onset_rate=0.10, dynamic_span=0.10,
+                             loudness=0.70, flux=0.90)
+    assert buckets.bucket_of(_track("Yellow"), fooled_onset) != buckets.CALM
+
+
 def test_a_loud_fast_cover_is_neither_calm_nor_intimate():
     loud = _features(onset_rate=0.9, loudness=0.9)
     assert buckets.bucket_of(_track("Yellow"), loud) == buckets.OTHER
