@@ -250,6 +250,36 @@ def save_charts(charts: dict) -> bool:
     return _save_json(IMPORTED_CHARTS, charts)
 
 
+# ---------- דיווחי "זה לא השיר הנכון" ----------
+#
+# משותף כמו bigness/evidence/charts, לא לפי `subject`: דיווח שגרסה של
+# "Closer" אינה קאבר של "Loser" הוא עובדה על הקטלוג, לא טעם של מי שדיווח
+# עליה. המפתח הוא זהות השיר המקורי שחיפשו (ראו `app._report_key_for`),
+# הערך רשימת מפתחות הטראקים שדווחו כשגויים תחתיו.
+MISMATCH_FILE = "mismatch_reports.json"
+
+
+def load_mismatch_reports() -> dict:
+    if db.available():
+        return db.load_mismatch_reports()
+    data = _load_json(MISMATCH_FILE, {}) or {}
+    return {key: set(value) for key, value in data.items() if isinstance(value, list)}
+
+
+def add_mismatch_report(query_key: str, wrong_track_key: str) -> bool:
+    """דיווח אחד, נוסף למה שכבר נשמר — ולא כל המילון, בניגוד ל-`save_*`
+    האחרים כאן. שני משתמשים שמדווחים על שירים שונים באותו רגע לא אמורים
+    לדרוס זה את הדיווח של זה, וטעינה-שינוי-שמירה על המילון השלם הייתה
+    בדיוק התנאי מרוץ הזה."""
+    if db.available():
+        return db.add_mismatch_report(query_key, wrong_track_key)
+    data = _load_json(MISMATCH_FILE, {}) or {}
+    reported = set(data.get(query_key, []))
+    reported.add(wrong_track_key)
+    data[query_key] = sorted(reported)
+    return _save_json(MISMATCH_FILE, data)
+
+
 # ---------- מכסת חיפושים ----------
 #
 # מפתח לפי ה-subject המלא ("user:<email>" או "anon:<uuid>"), כי לאנונימי

@@ -1633,6 +1633,9 @@ def _may_save() -> bool:
 def _init_state():
     defaults = {
         "blacklist": storage.load_blacklist(SUBJECT),
+        # לא לפי SUBJECT: זו עובדה על הקטלוג ("זה לא השיר הזה"), לא טעם
+        # אישי — ראו ההערה ב-`storage.load_mismatch_reports`.
+        "mismatch_reports": storage.load_mismatch_reports(),
         "favorites": storage.load_favorites(SUBJECT),
         "rejections": storage.load_rejections(SUBJECT),
         "candidates": [],
@@ -1685,6 +1688,39 @@ def is_blacklisted(artist: str) -> bool:
 
 def apply_blacklist(tracks: list[dict]) -> list[dict]:
     return [t for t in tracks if not is_blacklisted(t.get("artist", ""))]
+
+
+def _report_key_for(track: dict, original: "dict | None" = None) -> str:
+    """זהות השיר המקורי שהגרסה הזו אמורה לכסות — המפתח שתחתיו נשמר דיווח
+    "זה לא השיר הנכון". `origin_track` (קאברים לאמן, "עוד כמו זה") נבנה
+    יחד עם התוצאה עצמה ולכן עדיף; אחרת ה-`original` שנפתר בפועל למסך הזה
+    (חיפוש לפי שיר) — כפרמטר ולא רק מ-`st.session_state`, כי בזמן סינון
+    תוצאות טריות `find_all_covers` כבר החזיר את ה-original *החדש* בערך
+    מקומי, ולפני שהוא נשמר ל-session_state (ב-`_store_results`) השדה שם
+    עדיין מצביע על החיפוש הקודם. בלי אף אחד מהם (חיפוש חופשי) אין שיר
+    יחיד לקשור את הדיווח אליו, ומחרוזת ריקה אומרת לכפתור לא להופיע."""
+    origin = track.get("origin_track") or ""
+    if origin:
+        return search_module.normalize_title(search_module.clean_track_title(origin))
+    original = original if original is not None else st.session_state.get("original")
+    if original:
+        return track_key(original.get("artist", ""), original.get("track", ""))
+    return ""
+
+
+def apply_mismatch_reports(tracks: list[dict], original: "dict | None" = None) -> list[dict]:
+    """מסנן החוצה גרסאות שדווחו כבר כ'לא השיר הנכון' תחת אותה שאילתה —
+    הלמידה בפועל: דיווח אחד מציל את כל מי שיחפש את אותו שיר אחריו."""
+    reports = st.session_state.get("mismatch_reports")
+    if not reports:
+        return tracks
+    out = []
+    for t in tracks:
+        wrong = reports.get(_report_key_for(t, original))
+        if wrong and track_key(t.get("artist", ""), t.get("track", "")) in wrong:
+            continue
+        out.append(t)
+    return out
 
 
 def drop_seen(tracks: list[dict], seen) -> list[dict]:
@@ -3139,6 +3175,25 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             st.caption(_rank_breakdown(track, learned, features))
             if audio.measured(features):
                 st.caption(audio.describe(features))
+            report_key = _report_key_for(track)
+            if report_key:
+                # דיווח על התאמה, לא על טעם: "לא אהבתי" הוא 👎, "זה לא
+                # השיר הזה בכלל" הוא תקלה בקטלוג. הדיווח משותף לכל
+                # המשתמשים ונלמד מיד — ראו `storage.load_mismatch_reports`.
+                if st.button("Report — wrong song", key=f"btn_report_{uid}",
+                             icon=":material/flag:", use_container_width=True,
+                             help="Not a version of the song you searched for. "
+                                  "Removes it now, and future searches for the "
+                                  "same song skip it too."):
+                    wrong_key = track_key(track["artist"], track["track"])
+                    st.session_state["mismatch_reports"].setdefault(report_key, set()).add(wrong_key)
+                    storage.add_mismatch_report(report_key, wrong_key)
+                    st.session_state["candidates"] = apply_mismatch_reports(
+                        st.session_state["candidates"])
+                    st.toast(f"Reported '{track['track']}' — won't be suggested "
+                            "for this song again")
+                    st.rerun()
+
             st.divider()
             if st.button("Block artist", key=f"btn_block_{uid}",
                          icon=":material/block:", use_container_width=True):
@@ -3647,7 +3702,7 @@ def _run_similar():
         else:
             results, source = covers_module.more_like_style(track)
             label = f"Same style as: {track['artist']} — {track['track']}"
-        results = apply_blacklist(results)
+        results = apply_mismatch_reports(apply_blacklist(results))
 
     st.session_state["candidates"] = results
     st.session_state["covers_source"] = f"{source} · {label}" if source else label
@@ -3688,7 +3743,7 @@ elif run_search and search_mode == MODE_ARTIST:
         results, source_used, titles = covers_module.find_artist_covers(
             cover_artist, filters=filters, prefer_new=prefer_new,
             min_year=RECENCY_OPTIONS[recency])
-        results = drop_seen(apply_blacklist(results),
+        results = drop_seen(apply_mismatch_reports(apply_blacklist(results)),
                             st.session_state["seen_keys"] if fresh_only else None)
     _store_results(results, source_used)
     for track in results:
@@ -3708,8 +3763,9 @@ elif run_search and search_mode == MODE_SONG:
         results, source_used, original = covers_module.find_all_covers(
             cover_title, cover_artist, filters=filters, prefer_new=prefer_new,
             min_year=RECENCY_OPTIONS[recency], work_id=chosen_work)
-        results = drop_seen(apply_blacklist(results),
-                            st.session_state["seen_keys"] if fresh_only else None)
+        results = drop_seen(
+            apply_mismatch_reports(apply_blacklist(results), original),
+            st.session_state["seen_keys"] if fresh_only else None)
     _store_results(results, source_used, original)
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
@@ -3725,11 +3781,11 @@ elif run_search:  # MODE_FREE
         exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
         # בחיפוש החופשי השאילתה היא שם השיר אם הוזן, ואחרת שם האמן —
         # ורק במקרה השני נכון להתאים על שם האמן
-        results = apply_blacklist(search_covers(
+        results = apply_mismatch_reports(apply_blacklist(search_covers(
             cover_title or cover_artist, filters=filters, exclude_keys=exclude,
             origin_artist=cover_artist, prefer_new=prefer_new,
             match_artist=not cover_title,
-            min_year=RECENCY_OPTIONS[recency]))
+            min_year=RECENCY_OPTIONS[recency])))
     _store_results(results, "store search")
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
