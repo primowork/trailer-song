@@ -1,0 +1,292 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>body { margin: 0; }</style>
+<script>
+// רכיב Streamlit ללא שלב build, אותו פרוטוקול postMessage כמו ב-audio_meter.
+// בניגוד אליו, הרכיב הזה לא מציג כלום בתוך ה-iframe שלו: הוא כותב ישירות
+// ל-window.parent.document, כי מה שהוא צריך לעטוף (שדות הטקסט של החיפוש)
+// חי שם ולא כאן. אותה טכניקה בדיוק כמו ב-`_audio_behaviour` ב-app.py.
+const send = (type, data) =>
+  window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+
+const setValue = (value) =>
+  send("streamlit:setComponentValue", { value, dataType: "json" });
+
+send("streamlit:setFrameHeight", { height: 0 });
+
+const doc = window.parent.document;
+
+// מגן כפול-אתחול: Streamlit לא בהכרח בונה את ה-iframe הזה מחדש בכל rerun
+// (אותה תופעה שמתועדת ב-audio_meter על lastBatch), אבל אין סיבה לא
+// להישמר גם מול המקרה שכן.
+if (doc.__searchTypeaheadBound) {
+  send("streamlit:componentReady", { apiVersion: 1 });
+} else {
+  doc.__searchTypeaheadBound = true;
+  init();
+  send("streamlit:componentReady", { apiVersion: 1 });
+}
+
+function init() {
+  const ITUNES = "https://itunes.apple.com/search";
+  const DEBOUNCE_MS = 300;
+  const MIN_CHARS = 2;
+
+  // צבעי ה-theme חוזרים כאן כי ה-iframe הזה הוא מסמך נפרד מ-app.py, בלי
+  // גישה למשתני ה-CSS של :root שם. הועתקו בעין מ-`:root` באפליקציה —
+  // אם הפלטה שם תשתנה, זה המקום השני שצריך לעדכן.
+  const style = doc.createElement("style");
+  style.textContent = `
+    .ts-typeahead {
+      position: fixed; z-index: 9999; min-width: 220px; max-width: 420px;
+      background: #14161D; border: 1px solid #232838; border-radius: 10px;
+      box-shadow: 0 12px 28px rgba(0,0,0,.45); overflow: hidden;
+      font: 13px/1.4 'Manrope', ui-rounded, system-ui, sans-serif;
+    }
+    .ts-typeahead-item {
+      display: block; width: 100%; text-align: left; padding: 8px 12px;
+      background: none; border: none; cursor: pointer; color: #ECEEF3;
+    }
+    .ts-typeahead-item:hover, .ts-typeahead-item.is-active { background: #1E2230; }
+    .ts-typeahead-sub { color: #8A91A3; font-size: 11.5px; }
+    .ts-typeahead-artist {
+      display: flex; align-items: center; gap: 6px; color: #FFB020;
+      font-weight: 600;
+    }
+    .ts-typeahead-sep { border-top: 1px solid #1E2230; }
+  `;
+  doc.head.appendChild(style);
+
+  const panel = doc.createElement("div");
+  panel.className = "ts-typeahead";
+  panel.hidden = true;
+  doc.body.appendChild(panel);
+
+  let items = [];       // {label, sub, pick(): void}[] בסדר התצוגה הנוכחי
+  let activeIndex = -1;
+  let activeInput = null;
+  let requestToken = 0;
+
+  function normalize(s) {
+    return (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function looksLikeArtist(typed, artistName) {
+    const a = normalize(typed), b = normalize(artistName);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.length >= 3 && (b.startsWith(a) || a.startsWith(b))) return true;
+    return false;
+  }
+
+  async function fetchJSON(params, token) {
+    try {
+      const url = `${ITUNES}?${new URLSearchParams(params).toString()}`;
+      const res = await fetch(url);
+      if (token !== requestToken) return null;   // תשובה ישנה, שאילתה חדשה יותר כבר יצאה
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err) {
+      // חסימת CORS, אין רשת, החנות נפלה — בכל מקרה שדה הטקסט הרגיל ממשיך
+      // לעבוד בלי שום רמז חזותי לשגיאה. זו תוספת, לא תלות.
+      return null;
+    }
+  }
+
+  function hide() {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    items = [];
+    activeIndex = -1;
+  }
+
+  function render(rows, input) {
+    items = rows;
+    activeIndex = -1;
+    panel.innerHTML = "";
+    rows.forEach((row, i) => {
+      if (row.separator) {
+        const sep = doc.createElement("div");
+        sep.className = "ts-typeahead-sep";
+        panel.appendChild(sep);
+        return;
+      }
+      const btn = doc.createElement("button");
+      btn.type = "button";
+      btn.className = "ts-typeahead-item" + (row.artistChip ? " ts-typeahead-artist" : "");
+      btn.innerHTML = row.artistChip
+        ? `\u{1F3A4} ${escapeHtml(row.label)} <span class="ts-typeahead-sub">— looks like the artist</span>`
+        : `${escapeHtml(row.label)}` +
+          (row.sub ? ` <span class="ts-typeahead-sub">${escapeHtml(row.sub)}</span>` : "");
+      // mousedown לא click: הוא רץ *לפני* ה-blur של שדה הטקסט, ו-preventDefault
+      // עוצר את אובדן ה-focus כליל — בלי זה ה-blur סוגר את הרשימה לפני שהקליק נקלט.
+      btn.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        row.pick();
+        hide();
+      });
+      panel.appendChild(btn);
+    });
+    if (!rows.length) { hide(); return; }
+    const rect = input.getBoundingClientRect();
+    panel.style.left = `${Math.round(rect.left)}px`;
+    panel.style.top = `${Math.round(rect.bottom + 4)}px`;
+    panel.hidden = false;
+  }
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // כותב ישירות ל-<input> האמיתי, לא רק ל-session_state דרך setValue.
+  // הבאג שזה מתקן: Streamlit לא דורס טקסט שהמשתמש "עדיין מקליד" בשדה
+  // הפעיל, גם כשה-rerun הבא כן שינה את הערך שלו ב-session_state בפועל —
+  // ונמדד: אחרי שבחרו את הצ'יפ 'Daft Punk', השדה המשיך להראות מה
+  // שהיה כתוב בו קודם, והמילה הבאה שהוקלדה נדבקה אליו. הכתיבה כאן היא
+  // בדיוק הטריק הסטנדרטי ל-input מבוקר-React מבחוץ: את ה-setter הנייטיבי
+  // (לא את זה שריאקט עוקף) ואז אירוע input אמיתי, כדי שריאקט יתפוס אותו
+  // בדיוק כאילו המשתמש הקליד. setValue עדיין נשלח, כי הוא המקור היחיד
+  // ל-session_state בצד השרת — מה ש"Find covers" בסוף קורא.
+  function setFieldValue(input, value) {
+    if (!input) return;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.parent.HTMLInputElement.prototype, "value").set;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function pickSong(titleInput, artistInput, track, artist) {
+    setFieldValue(titleInput, track);
+    setFieldValue(artistInput, artist);
+    setValue({ track, artist });
+  }
+
+  // שיר ריק בכוונה: המשתמש הקליד שם של להקה, לא של שיר, ולכן מה שהיה
+  // בשדה השיר לא רלוונטי יותר — הוא עומד עכשיו להקליד שיר אמיתי לתוך
+  // שדה ריק, עם השלמה שממוקדת כבר לאמן הזה.
+  function pickArtist(titleInput, artistInput, artist) {
+    setFieldValue(titleInput, "");
+    setFieldValue(artistInput, artist);
+    setValue({ track: "", artist });
+  }
+
+  async function onTitleInput(titleInput, artistInput) {
+    const typed = titleInput.value.trim();
+    if (typed.length < MIN_CHARS) { hide(); return; }
+    const token = ++requestToken;
+    const knownArtist = (artistInput && artistInput.value.trim()) || "";
+    const term = knownArtist ? `${knownArtist} ${typed}` : typed;
+
+    const [artistGuess, songs] = await Promise.all([
+      fetchJSON({ term: typed, entity: "musicArtist", limit: 1 }, token),
+      fetchJSON({ term, entity: "song", limit: 6 }, token),
+    ]);
+    if (token !== requestToken) return;   // מישהו כבר הקליד עוד אות
+
+    const rows = [];
+    const topArtist = artistGuess && artistGuess.results && artistGuess.results[0];
+    if (topArtist && looksLikeArtist(typed, topArtist.artistName)) {
+      rows.push({
+        label: topArtist.artistName, artistChip: true,
+        pick: () => pickArtist(titleInput, artistInput, topArtist.artistName),
+      });
+      rows.push({ separator: true });
+    }
+    const trackRows = ((songs && songs.results) || [])
+      .filter((r) => r.trackName && r.artistName)
+      .map((r) => ({
+        label: r.trackName, sub: `— ${r.artistName}`,
+        pick: () => pickSong(titleInput, artistInput, r.trackName, r.artistName),
+      }));
+    render(rows.concat(trackRows), titleInput);
+  }
+
+  async function onArtistInput(artistInput, titleInput) {
+    const typed = artistInput.value.trim();
+    if (typed.length < MIN_CHARS) { hide(); return; }
+    const token = ++requestToken;
+    const payload = await fetchJSON({ term: typed, entity: "musicArtist", limit: 6 }, token);
+    if (token !== requestToken) return;
+
+    const rows = ((payload && payload.results) || [])
+      .filter((r) => r.artistName)
+      .map((r) => ({
+        label: r.artistName,
+        pick: () => {
+          setFieldValue(artistInput, r.artistName);
+          setValue({ track: titleInput ? titleInput.value : "", artist: r.artistName });
+        },
+      }));
+    render(rows, artistInput);
+  }
+
+  function debounce(fn, ms) {
+    let t = null;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  function bind() {
+    const titleInput = doc.querySelector('input[aria-label="Song"]');
+    const artistInput = doc.querySelector('input[aria-label="Original artist"]');
+    if (!titleInput || titleInput.__typeaheadBound) return;
+    titleInput.__typeaheadBound = true;
+
+    const debouncedTitle = debounce(() => {
+      activeInput = titleInput;
+      onTitleInput(titleInput, artistInput);
+    }, DEBOUNCE_MS);
+    titleInput.addEventListener("input", debouncedTitle);
+    titleInput.addEventListener("focus", () => { activeInput = titleInput; });
+
+    if (artistInput && !artistInput.__typeaheadBound) {
+      artistInput.__typeaheadBound = true;
+      const debouncedArtist = debounce(() => {
+        activeInput = artistInput;
+        onArtistInput(artistInput, titleInput);
+      }, DEBOUNCE_MS);
+      artistInput.addEventListener("input", debouncedArtist);
+      artistInput.addEventListener("focus", () => { activeInput = artistInput; });
+    }
+
+    [titleInput, artistInput].forEach((el) => {
+      if (!el) return;
+      el.addEventListener("keydown", (event) => {
+        if (panel.hidden || !items.length) return;   // לא לגעת בהתנהגות הרגילה
+        const pickable = items.map((it, i) => ({ it, i })).filter((x) => !x.it.separator);
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const dir = event.key === "ArrowDown" ? 1 : -1;
+          const order = pickable.map((x) => x.i);
+          const pos = order.indexOf(activeIndex);
+          const next = order[(pos + dir + order.length) % order.length];
+          activeIndex = next;
+          [...panel.children].forEach((child, i) =>
+            child.classList && child.classList.toggle("is-active", i === activeIndex));
+        } else if (event.key === "Enter" && activeIndex >= 0) {
+          event.preventDefault();
+          const chosen = items[activeIndex];
+          if (chosen && chosen.pick) { chosen.pick(); hide(); }
+        } else if (event.key === "Escape") {
+          hide();
+        }
+      });
+    });
+  }
+
+  bind();
+  // השדות עצמם לא נבנים מחדש בכל rerun (אותו DOM), אבל ליתר ביטחון —
+  // ואם יום אחד ה-key שלהם ישתנה — ניסיון חוזר קל וזול.
+  setInterval(bind, 1000);
+
+  doc.addEventListener("mousedown", (event) => {
+    if (panel.hidden) return;
+    if (panel.contains(event.target)) return;
+    if (event.target === activeInput) return;
+    hide();
+  });
+}
+</script>

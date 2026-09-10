@@ -49,3 +49,11 @@ linkUnderline = false
 # כדי לחסוך שורה הוא בדיוק סוג הניקוי שנראה בטוח ואינו.
 [server]
 enableStaticServing = true
+
+# תפריט ה-"⋮" המובנה של Streamlit (Print / Record screen / "Made with
+# Streamlit"): לא חלק מהעיצוב שביקש המשתמש, ומופיע מעל הכותרת בלי שום
+# CSS שלנו שולט בו — הוא לא ב-DOM שלנו בכלל. "minimal" מסיר אותו כליל
+# במקום להשאיר גרסה מצומצמת: אין כאן "Deploy" רלוונטי (האפליקציה כבר
+# פרוסה), ואין למשתמשי הקצה שימוש ב-Print/Record screen של הפריימוורק.
+[client]
+toolbarMode = "minimal"

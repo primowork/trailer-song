@@ -187,6 +187,20 @@ def test_relevance_survives_version_tags_on_the_candidate_title():
     assert search.relevance(tagged, "Zombie") == 100
 
 
+def test_a_one_letter_off_word_is_not_the_same_song():
+    """הבאג שדווח: חיפוש 'Loser' (Beck) החזיר 'Closer' — שיר אחר
+    לגמרי. `fuzz.ratio('closer', 'loser')` הוא 91, מעל הרצפה, כי שתי
+    המילים קרובות באותיות בלי לחלוק אף מילה שלמה."""
+    wrong_song = make("J2", "Closer (feat. Keeley Bumford) [Epic Trailer Version]")
+    real_cover = make("Glee Cast", "Loser (Glee Cast Version)")
+    assert search.relevance(wrong_song, "Loser") < search.RELEVANCE_FLOOR
+    assert search.relevance(real_cover, "Loser") >= search.RELEVANCE_FLOOR
+    # שאילתה של יותר ממילה אחת כבר מוגנת בלי ההגנה הזו (ראו "My Way"/"My
+    # War" למעלה) — הבדיקה כאן שהיא לא נוגעת בהן בכלל
+    assert search.relevance(make("X", "On My Way (Trailer Version)"),
+                            "My Way") < search.RELEVANCE_FLOOR
+
+
 def test_search_covers_excludes_unrelated_titles_below_the_relevance_floor(monkeypatch):
     pool = [make("Beyoncé", "At Last (Album Version)", uid="a"),
            make("Danny Elfman", "At Long Last, Love", uid="b")]

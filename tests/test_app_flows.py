@@ -1581,6 +1581,51 @@ def test_a_row_without_a_preview_says_so_instead_of_just_hiding_the_button(app):
     assert bodies.count("no preview") == 1
 
 
+def test_reporting_a_wrong_song_removes_it_and_is_remembered_next_search(app, monkeypatch):
+    """"give me a report option — not the right song. make the algoritem
+    learn": הדיווח מוריד את הטראק מיד, ונשמר כדי שגם החיפוש הבא לאותו
+    שיר ידלג עליו — גם אם המקור עצמו יציע אותו שוב."""
+    wrong = track("J2", "Closer (feat. Keeley Bumford) [Epic Trailer Version]", "w1")
+    right = track("Glee Cast", "Loser (Glee Cast Version)", "r1")
+    app.session_state["candidates"] = [wrong, right]
+    app.session_state["original"] = {"artist": "Beck", "track": "Loser", "year": "1993"}
+    app.run()
+
+    reports = [b for b in app.button if b.key == "btn_report_itunes-w1"]
+    assert reports, "the report action should show once an original song is known"
+    reports[0].click().run()
+
+    assert not app.exception
+    assert "itunes-w1" not in _row_order(app)
+    assert "itunes-r1" in _row_order(app)
+
+    wrong_key = search_module.track_key("J2", wrong["track"])
+    assert storage.load_mismatch_reports() == {
+        search_module.track_key("Beck", "Loser"): {wrong_key}}
+
+    # חיפוש חדש לאותו שיר, שהמקור (ללא קשר לדיווח) מציע בו את אותה
+    # התאמה שגויה שוב — ועדיין לא רואים אותה
+    monkeypatch.setattr(
+        covers, "find_all_covers",
+        lambda title, artist="", **k: ([wrong, right], "src",
+                                       {"artist": "Beck", "track": "Loser"}))
+    app.text_input(key="cover_title").set_value("Loser").run()
+    app.text_input(key="cover_artist").set_value("Beck").run()
+    [b for b in app.button if b.key == "btn_search"][0].click().run()
+
+    assert not app.exception
+    assert _row_order(app) == ["itunes-r1"]
+
+
+def test_the_report_action_is_absent_without_a_known_original_song(app):
+    """חיפוש חופשי אינו פותר שיר מקור יחיד — אין למה לקשור את הדיווח,
+    ולכן הכפתור לא מופיע במקום לדווח תחת מפתח שגוי."""
+    app.session_state["candidates"] = [track("X", "Anything", "x1")]
+    app.session_state["original"] = None
+    app.run()
+    assert not [b for b in app.button if b.key == "btn_report_itunes-x1"]
+
+
 def test_the_resort_control_never_appears_or_disappears(app):
     """כפתור שצץ מעל הרשימה דוחף את כל מה שמתחתיו — וזה מזיז את המקום.
 
