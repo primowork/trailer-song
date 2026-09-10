@@ -66,6 +66,18 @@ CREATE TABLE IF NOT EXISTS charts (
     imported_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- דיווחי "זה לא השיר הנכון". משותף כמו evidence/charts — זו עובדה על
+-- ההתאמה, לא העדפה של מי שדיווח. זוג (query_key, track_key) ולא jsonb
+-- יחיד: כמה משתמשים יכולים לדווח על טראקים שונים תחת אותה שאילתה
+-- בו-זמנית, ו-INSERT ... ON CONFLICT DO NOTHING על המפתח המורכב לא דורש
+-- קרוא-שנה-כתוב בכלל, בניגוד למיזוג בתוך מערך יחיד.
+CREATE TABLE IF NOT EXISTS mismatch_reports (
+    query_key   text NOT NULL,
+    track_key   text NOT NULL,
+    reported_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (query_key, track_key)
+);
+
 -- מכסה. המפתח הוא ה-subject המלא ("user:<email>" או "anon:<uuid>"),
 -- ולא user_id, כי אנונימי חייב מכסה גם בלי שורה ב-users.
 CREATE TABLE IF NOT EXISTS quota (
@@ -268,6 +280,28 @@ def save_charts(items: dict) -> bool:
                     "INSERT INTO charts (slug, payload) VALUES (%s, %s) "
                     "ON CONFLICT (slug) DO UPDATE SET payload = EXCLUDED.payload",
                     (slug, json.dumps(payload, ensure_ascii=False)))
+        conn.commit()
+    return True
+
+
+def load_mismatch_reports() -> dict:
+    """{query_key: {track_key, ...}} — כל הדיווחים שנצברו, מכל המשתמשים."""
+    with connect() as conn:
+        with _cursor(conn) as cur:
+            cur.execute("SELECT query_key, track_key FROM mismatch_reports")
+            out: dict[str, set] = {}
+            for query_key, track_key in cur.fetchall():
+                out.setdefault(query_key, set()).add(track_key)
+            return out
+
+
+def add_mismatch_report(query_key: str, track_key: str) -> bool:
+    """דיווח אחד. `DO NOTHING` ולא upsert: דיווח שני על אותו זוג לא מוסיף מידע."""
+    with connect() as conn:
+        with _cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO mismatch_reports (query_key, track_key) VALUES (%s, %s) "
+                "ON CONFLICT (query_key, track_key) DO NOTHING", (query_key, track_key))
         conn.commit()
     return True
 

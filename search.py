@@ -578,6 +578,21 @@ def relevance(track: dict, query: str, match_artist: bool = False) -> int:
         pair_score(title_for_match(query) or query,
                    title_for_match(raw_title) or raw_title),
     )
+
+    # הבאג שדווח: חיפוש "Loser" (Beck) החזיר "Closer" — שיר אחר לגמרי.
+    # `fuzz.ratio("closer", "loser")` הוא 91: שתי המילים חולקות ארבע
+    # מתוך חמש אותיות ברצף, ולכן ההשוואה התווית לבדה עוברת את הרצפה בלי
+    # שום קשר בין השירים. הכיול למעלה (RELEVANCE_FLOOR) נבדק מול שירים
+    # שחולקים *מילה* ("At Last"/"At Long Last, Love") — לא מול שתי מילים
+    # שלמות שנבדלות באות אחת. ההגנה חלה רק כששאילתה היא מילה בודדת:
+    # שאילתה ארוכה יותר כבר מוגנת על ידי ההשוואה הרב-מילתית עצמה (ראו
+    # "My Way"/"My War" למעלה, שכבר נופל מתחת לרצפה בלי עזרה נוספת).
+    query_words = normalize_title(title_for_match(query) or query).split()
+    if len(query_words) == 1 and not match_artist:
+        title_words = normalize_title(title_for_match(raw_title) or raw_title).split()
+        if query_words[0] not in title_words:
+            title_score = min(title_score, RELEVANCE_FLOOR - 1)
+
     if not match_artist:
         return title_score
     return max(

@@ -69,3 +69,30 @@ def test_a_valid_file_of_the_wrong_shape_falls_back(tmp_path, monkeypatch):
     assert storage.load_rejections() == {}
     assert storage.load_blacklist() == set()
     assert storage.warnings
+
+
+def test_mismatch_reports_roundtrip(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    assert storage.load_mismatch_reports() == {}
+    assert storage.add_mismatch_report("beck|loser", "j2|closer")
+    assert storage.load_mismatch_reports() == {"beck|loser": {"j2|closer"}}
+
+
+def test_mismatch_reports_accumulate_under_the_same_query(tmp_path, monkeypatch):
+    """שני דיווחים על אותו שיר מצטברים, לא דורסים זה את זה."""
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    storage.add_mismatch_report("beck|loser", "j2|closer")
+    storage.add_mismatch_report("beck|loser", "3 doors down|loser")
+    assert storage.load_mismatch_reports() == {
+        "beck|loser": {"j2|closer", "3 doors down|loser"},
+    }
+
+
+def test_mismatch_reports_keep_separate_queries_separate(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    storage.add_mismatch_report("beck|loser", "j2|closer")
+    storage.add_mismatch_report("the cranberries|zombie", "fela kuti|zombie")
+    assert storage.load_mismatch_reports() == {
+        "beck|loser": {"j2|closer"},
+        "the cranberries|zombie": {"fela kuti|zombie"},
+    }
