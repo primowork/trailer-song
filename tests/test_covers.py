@@ -80,6 +80,46 @@ def test_enrich_falls_back_when_track_not_in_stores(monkeypatch):
     assert enriched["preview_url"] == ""
 
 
+def test_enrich_tries_deezer_when_itunes_matches_are_just_weak(monkeypatch):
+    """הבאג שדווח: ריבועי עטיפה ריקים בהמוניהם. לא כי אין עטיפה בשום
+    מקום — כי Deezer נוסה רק כש-iTunes החזיר ריק לגמרי, לא כשהוא החזיר
+    עשר תוצאות לא-קשורות ששום אחת מהן לא עוברת את סף ההתאמה."""
+    version = {"artist": "Obscure Artist", "track": "Zombie", "source_db": "SecondHandSongs"}
+    weak_itunes = [make("Totally Different Band", "Some Other Song", uid="wrong")]
+    real_deezer = {"source": "Deezer", "uid": "deezer-1", "artist": "Obscure Artist",
+                   "track": "Zombie", "album": "Zombie EP", "duration_sec": 180,
+                   "preview_url": "http://p.deezer", "artwork": "http://art.deezer/cover.jpg",
+                   "genre": ""}
+    deezer_calls = []
+
+    def fake_deezer(term, limit=10, client=None):
+        deezer_calls.append(term)
+        return [real_deezer]
+
+    monkeypatch.setattr(covers.search_module, "itunes_search", lambda *a, **k: weak_itunes)
+    monkeypatch.setattr(covers.search_module, "deezer_search", fake_deezer)
+    enriched = covers._enrich_one(version, None)
+
+    assert deezer_calls, "Deezer לא נוסה למרות שההתאמה מ-iTunes חלשה"
+    assert enriched["uid"] == "deezer-1"
+    assert enriched["preview_url"] == "http://p.deezer"
+    assert enriched["artwork"] == "http://art.deezer/cover.jpg"
+
+
+def test_enrich_skips_deezer_when_itunes_already_matches_well(monkeypatch):
+    """ולא הפוך: כשל-iTunes כבר יש התאמה חזקה, אין טעם בקריאת רשת נוספת —
+    היא הייתה מכפילה את זמן ההמתנה של כל חיפוש בלי לשנות את התוצאה."""
+    version = {"artist": "2WEI", "track": "Zombie", "source_db": "SecondHandSongs"}
+    monkeypatch.setattr(covers.search_module, "itunes_search",
+                        lambda *a, **k: [make("2WEI", "Zombie", uid="right")])
+    deezer_calls = []
+    monkeypatch.setattr(covers.search_module, "deezer_search",
+                        lambda *a, **k: deezer_calls.append(1) or [])
+    enriched = covers._enrich_one(version, None)
+    assert not deezer_calls
+    assert enriched["uid"] == "right"
+
+
 # ---------- רגרסיה: חיפוש "Sweet Dreams" החזיר קאנטרי מ-1960 ----------
 
 def test_work_query_is_not_an_exact_phrase(monkeypatch):

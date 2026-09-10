@@ -200,6 +200,34 @@ def _match_score(version: dict, candidate: dict) -> int:
     return min(artist, title)
 
 
+def _best_match(term: str, version: dict, client: httpx.Client) -> "dict | None":
+    """הביצוע הכי קרוב ל-`version` שמצאנו, מנסה גם ב-Deezer כשל-iTunes אין
+    התאמה חזקה מספיק.
+
+    הבאג שזה מתקן: לפני כן Deezer נוסה רק כש-iTunes החזיר **ריק לגמרי**.
+    עשר תוצאות לא-קשורות מ-iTunes (שם כותרת נפוץ, למשל) כבר מספיקות כדי
+    ש-`candidates` לא יהיה ריק — ואז Deezer לא נשאל בכלל, גם כשהוא דווקא
+    כן מחזיק את הגרסה הנכונה. **נמדד**: זו הסיבה שמשתמשים ראו ריבועי
+    עטיפה ריקים בהמוניהם — לא כי אין עטיפה בשום מקום, אלא כי המקור שכן
+    מחזיק אותה מעולם לא נשאל.
+
+    Deezer מנוסה רק כש-iTunes **לא** כבר סיפק התאמה שעוברת את הסף —
+    ולא תמיד, בניגוד למה שהתיקון הראשון כאן עשה: קריאת רשת נוספת על כל
+    התאמה טובה ממילא היא עלות בלי תועלת, וההעשרה כבר רצה על שמונה
+    workers מקבילים (ראו `find_covers`) — קריאה נוספת על כל אחד מהם
+    מכפילה את זמן ההמתנה של החיפוש כולו בלי לשפר תוצאה שכבר טובה.
+    """
+    itunes = search_module.itunes_search(term, limit=10, client=client)
+    best = max(itunes, key=lambda c: _match_score(version, c)) if itunes else None
+    if best and _match_score(version, best) >= ENRICH_MATCH_THRESHOLD:
+        return best
+
+    for candidate in search_module.deezer_search(term, limit=10, client=client):
+        if best is None or _match_score(version, candidate) > _match_score(version, best):
+            best = candidate
+    return best
+
+
 def _enrich_one(version: dict, client: httpx.Client) -> dict:
     """משלים preview, אורך ואלבום מ-iTunes/Deezer עבור ביצוע שהגיע מהמאגר.
 
@@ -208,14 +236,9 @@ def _enrich_one(version: dict, client: httpx.Client) -> dict:
     הפילה אותן לרשומה ללא preview.
     """
     term = f"{version['artist']} {version['track']}"
-    candidates = search_module.itunes_search(term, limit=10, client=client)
-    if not candidates:
-        candidates = search_module.deezer_search(term, limit=10, client=client)
-
-    if candidates:
-        best = max(candidates, key=lambda c: _match_score(version, c))
-        if _match_score(version, best) >= ENRICH_MATCH_THRESHOLD:
-            return {**best, **{k: v for k, v in version.items() if v}}
+    best = _best_match(term, version, client)
+    if best and _match_score(version, best) >= ENRICH_MATCH_THRESHOLD:
+        return {**best, **{k: v for k, v in version.items() if v}}
 
     # לא נמצא בחנויות: הביצוע עדיין רלוונטי כרפרנס, בלי preview
     return {
