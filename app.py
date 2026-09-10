@@ -85,11 +85,21 @@ st.set_page_config(page_title="COVER LOVER", page_icon="\U0001F3B5", layout="wid
 # **כולם ירדו** — כולל העקיפה של הבאג שבו `direction: rtl` על השורש הפך
 # את ה-`translateX` השלילי שבו Streamlit מקפל את הסרגל בטלפון. הבאג ההוא
 # לא קיים ב-LTR; אין כאן טלאי שהוסר בלי תחליף.
+# קישורי הגופן ב-`st.html` נפרד, לא בתוך אותה `st.markdown` של ה-`<style>`
+# שמתחתיו. **נמדד בפרודקשן**: כש-`<link>` יושב כשורה ראשונה לפני `<style>`
+# באותה מחרוזת markdown, הפרסר מפסיק לזהות בלוק HTML גולמי בכלל — הכל,
+# כולל כל ה-CSS שאחריו, יוצא כטקסט רגיל גלוי על הדף. `st.html` אין לו
+# את העמימות הזו (זו בדיוק הסיבה שהוא כבר משמש בקובץ הזה לכל שאר ה-HTML
+# הגולמי — הנגן, סרגל הנגן וכו').
+st.html(
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800'
+    '&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
+)
+
 st.markdown(
     """
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
     /* v2 richer-shell handoff: Sora (headings, numbers, micro-caps) + Manrope
        (body), loaded from Google Fonts CDN — same as the mockup.
