@@ -72,9 +72,9 @@ SOURCE_GOAT = "Billboard: greatest artists"
 
 st.set_page_config(page_title="COVER LOVER", page_icon="\U0001F3B5", layout="wide")
 
-# כל שפת החזות של האפליקציה, במקום אחד. הערכים מגיעים מטבלת הטוקנים
-# ב-`design_handoff_cover_lover/README.md` (כיוון 1a — STUDIO) והם ערכי
-# כוונה סופיים; מה שאין לו טוקן מסומן כאן בהערה למה נבחר.
+# כל שפת החזות של האפליקציה, במקום אחד. הטוקנים הבסיסיים (ענבר, אלמוג,
+# ink/rail/surface) מגיעים מהנדאוף העיצוב הראשון; זה שהוצג עם v2 הוסיף
+# את התכלת ואת שתי משפחות הגופן. מה שאין לו טוקן מסומן כאן בהערה למה נבחר.
 #
 # `max-width` על אזור התוכן: ב-`layout="wide"` הטופס נמתח על פני 1400px
 # ומפזר את העין. הרוחב הרחב עדיין משרת את הרשתות (אינדקס המצעדים).
@@ -112,7 +112,7 @@ st.markdown(
        המערכת. המעבר כאן ל-Sora+Manrope דרך ה-CDN הוא בקשה מפורשת של
        המשתמש שסקר את הסיכון הזה ובחר בו במודע על פני האפשרות השמרנית
        (אירוח עצמי של Sora/Manrope, באותו דפוס בדיוק כמו Nunito). קובץ
-       Nunito עצמו נשאר ב-`static/fonts/` בלי שימוש, למקרה שצריך לחזור.
+       ה-Nunito עצמו הוסר מ-`static/fonts/` — הוא לא נטען יותר משום מקום.
 
        שתי משפחות ולא אחת: Sora למה שצריך להיקרא כזהות — כותרות, ציונים,
        תוויות micro-cap — ו-Manrope לטקסט הרץ. `ui-rounded`/`system-ui`
@@ -192,19 +192,23 @@ st.markdown(
     }
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.34rem; }
 
-    .ts-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
-    /* סמל: ריבוע ענבר עם חור כהה — תקליט, לא ריבוע מלא */
+    .ts-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    /* סמל: ריבוע ענבר עם חור כהה — תקליט, לא ריבוע מלא. 26px ולא 22:
+       ב-Sora, שני-שורות "COVER LOVER" מפוזר יותר מאשר ב-Nunito (letter-
+       spacing .14em על כותרת עבה), והסמל הישן נראה זעיר וחסר יחס לידו —
+       26px עם צל ענבר עדין הוא המידה מה-handoff. */
     .ts-mark {
-        width: 22px; height: 22px; border-radius: 6px; background: var(--amber);
+        width: 26px; height: 26px; border-radius: 8px; background: var(--amber);
         position: relative; flex: none;
+        box-shadow: 0 6px 18px rgba(255,176,32,.35);
     }
     .ts-mark::after {
-        content: ""; position: absolute; inset: 8px;
+        content: ""; position: absolute; inset: 9px;
         border-radius: 50%; background: var(--ink);
     }
     .ts-word {
-        font-family: var(--sans-head); font-weight: 800; font-size: 13px;
-        letter-spacing: .14em; line-height: 1.15; color: var(--text);
+        font-family: var(--sans-head); font-weight: 800; font-size: 12.5px;
+        letter-spacing: .17em; line-height: 1.2; color: var(--text);
     }
 
     /* פריט ניווט. הפעיל מזוהה לפי סיומת ה-key (`nav_<item>_on`) — ראו
@@ -474,6 +478,25 @@ st.markdown(
     [class*="st-key-artist_preview_"] button p {
         font-size: 13.5px; overflow: hidden;
         text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* צ'יפ עטיפה מדומה לפני הטקסט, מצויר ב-CSS גנרטד-קונטנט: `st.button`
+       מקבל תווית טקסט בלבד, אין דרך להטמיע בו `st.image` אמיתי — אבל
+       בלעדי שום ריבוע כאן השורה קוראת כרשימת טקסט שטוחה במקום כרטיס,
+       בדיוק ההבדל מה-handoff. אותו דפוס הפסים האלכסוניים בדיוק כמו
+       `.ts-art-blank`/`.ts-comparecard-art`, כדי שזה יקרא כ"אין עדיין
+       עטיפה" ולא כקישוט משלו. הכפתור כבר `display:flex` (ברירת המחדל
+       של Streamlit — זו הסיבה ש-`justify-content` למעלה בכלל משפיע),
+       ולכן פסאודו-אלמנט ראשון פשוט נכנס לפני ה-`<div>` הפנימי. */
+    [class*="st-key-start_"] button::before,
+    [class*="st-key-classic_"] button::before,
+    [class*="st-key-goat_"] button::before,
+    [class*="st-key-imp_"] button::before,
+    [class*="st-key-artist_preview_"] button::before {
+        content: "";
+        width: 34px; height: 34px; flex: none; border-radius: 9px;
+        background: repeating-linear-gradient(135deg,#1F242F 0 6px,#181C26 6px 12px);
+        border: 1px solid var(--line-strong);
+        margin-inline-end: 11px;
     }
 
     /* ---- מסך הפלייליסט ---- */
@@ -1353,15 +1376,21 @@ def _audio_behaviour():
                     if (pin) pin.click();
                 };
 
-                const bar = document.getElementById("ts-bar");
-                if (bar) {
-                    const prevBtn = bar.querySelector(".ts-bar-prev");
-                    const nextBtn = bar.querySelector(".ts-bar-next");
-                    const pinBtn = bar.querySelector(".ts-bar-pin");
-                    if (prevBtn) prevBtn.addEventListener("click", function () { step(-1); });
-                    if (nextBtn) nextBtn.addEventListener("click", function () { step(1); });
-                    if (pinBtn) pinBtn.addEventListener("click", pinCurrent);
-                }
+                // `bar` כבר תפוס למעלה (הפונקציה שמחזירה את #ts-bar בכל
+                // קריאה) — שם אחר לגמרי לאלמנט עצמו, לא צל שלו. `const bar`
+                // שני באותו scope היה SyntaxError בזמן פרסור של כל ה-IIFE,
+                // כלומר אף מאזין בקובץ הזה — כולל לחיצת נגינה עצמה — לא
+                // היה נרשם בכלל. **נמדד**: זו בדיוק התקלה שנראתה בפרודקשן.
+                // delegation על ה-document, לא `bar().querySelector(...)`
+                // + `addEventListener` פעם אחת בכניסה: הסקריפט הזה רץ
+                // *לפני* ש-Streamlit בהכרח סיים לבנות את #ts-bar (אותה
+                // סיבה בדיוק שבגללה `media`/`bar` למעלה הן פונקציות
+                // שמחפשות מחדש בכל קריאה ולא הפניות שנשמרות פעם אחת).
+                document.addEventListener("click", function (event) {
+                    if (event.target.closest(".ts-bar-prev")) { step(-1); return; }
+                    if (event.target.closest(".ts-bar-next")) { step(1); return; }
+                    if (event.target.closest(".ts-bar-pin")) { pinCurrent(); return; }
+                }, true);
 
                 document.addEventListener("keydown", function (event) {
                     // הקלדה בשדה חיפוש היא לא קיצור מקלדת
@@ -2345,7 +2374,7 @@ def _compare_panel():
                                 "<span class='ts-comparecard-text'>"
                                 f"<span class='ts-comparecard-artist'>{html.escape(entry.get('artist', ''))}</span>"
                                 f"<span class='ts-comparecard-meta'>{html.escape(entry.get('genre') or '')}"
-                                + (f" · {entry['duration_sec'] // 60}:{entry['duration_sec'] % 60:02d}"
+                                + (f" · {int(entry['duration_sec']) // 60}:{int(entry['duration_sec']) % 60:02d}"
                                    if entry.get("duration_sec") else "") + "</span></span>"
                                 f"<span class='ts-comparecard-score' style='color:{color}'>{score}</span>")
                             if st.button("", key=f"unpin_{uid}", type="tertiary",
