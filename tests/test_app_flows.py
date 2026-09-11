@@ -1484,6 +1484,50 @@ def _thirty(genre_of=lambda i: "Soundtrack"):
             for i in range(30)]
 
 
+# פרופילי כרומה מ-`tests/test_bigness.py` — משולש מז'ורי, אותו משולש
+# מועבר טונציה (אותו שיר בסולם אחר), ומבנה מרווחים אחר לגמרי
+_TRIAD = [.20, .02, .05, .02, .18, .05, .02, .19, .02, .06, .03, .04]
+_TRANSPOSED = _TRIAD[-2:] + _TRIAD[:-2]
+_CLUSTER = [.20, .19, .18, .02, .03, .02, .02, .03, .02, .06, .03, .04]
+
+
+def test_the_harmonic_match_to_the_reference_moves_the_order(app):
+    """הסימן שעובד גם כששום מאגר לא מכיר את השיר: שני קאברים זהים בכל
+    השאר, אחד מהם חולק מהלך הרמוני עם גרסת הייחוס (בטונציה אחרת) והשני
+    לא — והראשון עולה."""
+    same_song = track("Cover A", "T", "match", preview_url="http://p")
+    other_song = track("Cover B", "T", "nomatch", preview_url="http://p")
+    app.session_state["candidates"] = [other_song, same_song]
+    app.session_state["original"] = {
+        "artist": "Origin", "track": "T", "uid": "itunes-ref", "preview_url": ""}
+    app.session_state["bigness"] = {
+        "itunes-ref": {**SMALL, "chroma": _TRIAD},
+        "itunes-match": {**SMALL, "chroma": _TRANSPOSED},
+        "itunes-nomatch": {**SMALL, "chroma": _CLUSTER},
+    }
+    app.run()
+
+    assert not app.exception
+    assert _row_order(app) == ["itunes-match", "itunes-nomatch"]
+
+
+def test_without_a_measured_reference_the_harmony_term_changes_nothing(app):
+    """גרסת ייחוס בלי preview לא נמדדת לעולם, ואז הרכיב חייב להיות קבוע
+    לכולם — ולא להעניש בשקט את מי שכן נמדד."""
+    import audio as audio_module
+
+    first = track("A", "T", "a", preview_url="http://p")
+    second = track("B", "T", "b", preview_url="http://p")
+    app.session_state["candidates"] = [first, second]
+    app.session_state["original"] = None
+    app.session_state["bigness"] = {"itunes-a": {**SMALL, "chroma": _TRIAD}}
+    app.run()
+
+    assert not app.exception
+    assert audio_module.chroma_similarity({**SMALL, "chroma": _TRIAD}, None) is None
+    assert set(_row_order(app)) == {"itunes-a", "itunes-b"}
+
+
 def test_arriving_measurements_do_not_move_the_rows(app):
     """התלונה: "כל פעם שאני מנגן או לוחץ הכל קופץ".
 

@@ -32,6 +32,18 @@ const MAX_FRAMES = 240;    // דגימה פרוסה על כל הקליפ; ממו
 const AIR_HZ = 8000;       // מעליו: אוויר, צימבלים, נשימה, ברק הפקה
 const PRESENCE_HZ = 2500;  // 2.5k–8k: חוד, עיוות, נשיכת מיתרים
 
+// כרומה: כמה אנרגיה יש בכל אחד משנים-עשר הצלילים (דו, דו#, רה...), בלי
+// קשר לאוקטבה. זה המדד היחיד כאן שמתאר *מה מנגנים* ולא *איך זה נשמע* —
+// קאבר משנה עיבוד, כלי נגינה, קצב ועוצמה, אבל שומר על המהלך ההרמוני,
+// ולכן פרופיל הכרומה שלו נשאר קרוב לזה של המקור גם כשכל שאר המדדים כאן
+// רחוקים. זה מה שמאפשר לזהות גרסה של שיר שאף מאגר עדיין לא מכיר.
+//
+// הטווח מצומצם בכוונה: מתחת ל-65Hz רזולוציית ה-FFT (כ-21Hz לסל ב-44.1kHz)
+// רחבה מחצי-טון ואי אפשר לייחס סל לצליל, ומעל ~2.1kHz מה שנשאר הוא בעיקר
+// הרמוניות עליונות ורעש הקשה, ששניהם מרחים את הפרופיל במקום לחדד אותו.
+const CHROMA_LOW_HZ = 65;
+const CHROMA_HIGH_HZ = 2100;
+
 function fft(re, im) {
   const n = re.length;
   for (let i = 1, j = 0; i < n; i++) {
@@ -114,6 +126,8 @@ function timbre(mono, sampleRate) {
   });
 
   let total = 0, weighted = 0, logSum = 0, air = 0, presence = 0;
+  const chroma = new Float64Array(12);
+  let chromaTotal = 0;
   const hzPerBin = sampleRate / FFT_SIZE;
   for (let k = 0; k < bins; k++) {
     const value = average[k] / starts.length;
@@ -123,11 +137,23 @@ function timbre(mono, sampleRate) {
     logSum += Math.log(value + 1e-12);
     if (hz >= AIR_HZ) air += value;
     else if (hz >= PRESENCE_HZ) presence += value;
+    if (hz >= CHROMA_LOW_HZ && hz <= CHROMA_HIGH_HZ) {
+      // מספר ה-MIDI של התדר, ומתוכו מחלקת הצליל: 69 הוא לה 440, ו-12
+      // חצאי-טונים הם אוקטבה. השארית מ-12 מקפלת את כל האוקטבות לצליל אחד.
+      const midi = Math.round(69 + 12 * Math.log2(hz / 440));
+      const pitchClass = ((midi % 12) + 12) % 12;
+      chroma[pitchClass] += value;
+      chromaTotal += value;
+    }
   }
   if (!total) return {};
 
   const round = (value) => Math.round(value * 1000) / 1000;
   return {
+    // מנורמל לסכום 1: מה שמעניין הוא *היחס* בין הצלילים, לא כמה חזק הוקלט
+    chroma: chromaTotal
+      ? Array.from(chroma, (value) => round(value / chromaTotal))
+      : [],
     // מרכז ספקטרלי כשבר מתדר נייקוויסט: בהיר מול אפל
     centroid: round((weighted / total) / (sampleRate / 2)),
     // שטיחות: טונאלי ונקי (נמוך) מול רועש ומעוות (גבוה)

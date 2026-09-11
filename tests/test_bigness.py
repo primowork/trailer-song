@@ -66,3 +66,62 @@ def test_a_non_numeric_measurement_does_not_crash_the_card():
         assert isinstance(audio.describe(bad), str)
         assert isinstance(audio.bigness(bad), int)
         assert audio.normalized(bad) is None or isinstance(audio.normalized(bad), dict)
+
+
+# ---------- כרומה: מהלך הרמוני, לא עוצמה ----------
+
+def _measured(chroma):
+    """מדידה תקינה שנושאת את פרופיל הכרומה הזה."""
+    return {**BALLAD, "chroma": list(chroma)}
+
+
+# דו מז'ור: דו, מי, סול בולטים (מחלקות 0, 4, 7)
+C_MAJOR = [.20, .02, .05, .02, .18, .05, .02, .19, .02, .06, .03, .04]
+# אותו שיר בדיוק, מועבר שני חצאי-טונים למעלה (רה מז'ור) — מה שקורה כשזמרת
+# עם טווח אחר שרה את אותו שיר
+D_MAJOR = C_MAJOR[-2:] + C_MAJOR[:-2]
+# מבנה מרווחים אחר לגמרי: שלושה חצאי-טונים צמודים במקום משולש מז'ורי.
+# *לא* סתם "אותם אקורדים בסולם אחר" — העברת טונציה מכוסה ממילא על ידי
+# ההשוואה לכל ההזזות, ולכן מה שיכול להבדיל הוא המרווחים עצמם.
+CLUSTER = [.20, .19, .18, .02, .03, .02, .02, .03, .02, .06, .03, .04]
+# משולש מינורי (0, 3, 7): חולק שני צלילים מתוך שלושה עם המז'ורי
+MINOR_TRIAD = [.20, .02, .05, .18, .03, .05, .02, .19, .02, .06, .03, .04]
+
+
+def test_a_transposed_version_still_matches():
+    """קאבר מועבר טונציה הוא אותו שיר, ולכן ההשוואה עוברת על כל
+    שתים-עשרה ההזזות ולוקחת את הטובה."""
+    assert audio.chroma_similarity(_measured(C_MAJOR), _measured(D_MAJOR)) > 0.99
+
+
+def test_a_different_interval_structure_scores_lower():
+    same = audio.chroma_similarity(_measured(C_MAJOR), _measured(C_MAJOR))
+    cluster = audio.chroma_similarity(_measured(C_MAJOR), _measured(CLUSTER))
+    assert same > 0.99
+    assert cluster < same - 0.3, (same, cluster)
+
+
+def test_the_signal_is_soft_and_the_test_says_so():
+    """התיעוד של מה שהמדד הזה *לא* עושה, כמספר ולא כהבטחה: משולש מינורי
+    הוא לא אותו אקורד, אבל הוא חולק איתו שני צלילים ולכן מקבל ציון גבוה
+    למדי. לכן `RANK_HARMONY` הוא משקל קטן ולא מסנן — שני שירים שונים
+    בעלי אופי הרמוני דומה *יקבלו* כאן ציון גבוה."""
+    close_but_different = audio.chroma_similarity(
+        _measured(C_MAJOR), _measured(MINOR_TRIAD))
+    assert 0.7 < close_but_different < 0.9, close_but_different
+
+
+def test_a_flat_profile_does_not_pretend_to_match():
+    """רעש לבן, או קליפ שלא נמצא בו שום גובה צליל, מפיק פרופיל שטוח —
+    ומתאם מול שטוח אינו מוגדר, לא 'התאמה מושלמת'."""
+    flat = _measured([1 / 12] * 12)
+    assert audio.chroma_similarity(flat, _measured(C_MAJOR)) == 0.5
+
+
+def test_no_similarity_without_two_real_measurements():
+    assert audio.chroma_similarity(_measured(C_MAJOR), None) is None
+    assert audio.chroma_similarity(_measured(C_MAJOR), BALLAD) is None
+    assert audio.chroma_similarity(_measured(C_MAJOR), {"error": "cors"}) is None
+    # אורך שגוי או ערכים שאינם מספרים מגיעים מהדפדפן ואינם נתון מהימן
+    assert audio.chroma_similarity(_measured(C_MAJOR), _measured([.5, .5])) is None
+    assert audio.chroma(_measured(["a"] * 12)) == []
