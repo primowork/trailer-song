@@ -475,9 +475,12 @@ def test_measured_row_shows_the_score_as_a_meter_and_keeps_the_numbers(app):
     # ענבר שמור למדרגת "גדול", וזו בדיוק מדידה גדולה
     assert "#FFB020" in html
 
-    captions = [c.value for c in app.caption]
-    assert any("loudness" in text for text in captions), \
-        "המספרים הגולמיים נעלמו לגמרי"
+    # המספרים הגולמיים כבר לא מוצגים למשתמש (ראו
+    # `test_the_overflow_menu_speaks_in_words_not_in_debug_output`), אבל
+    # הפונקציה שמייצרת אותם חייבת להישאר עובדת — היא כלי הכיול.
+    import audio as audio_module
+    assert "loudness" in audio_module.describe(
+        app.session_state["bigness"]["itunes-e1"])
 
 
 def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch):
@@ -1433,17 +1436,34 @@ def test_without_catalogue_verification_the_order_is_unchanged(app):
     assert _row_order(app)[0] == "itunes-epic"
 
 
-def test_the_overflow_menu_explains_where_the_row_ranks(app):
-    """"למה זה היה במקום 20" נשאל בפועל, והתשובה דרשה חישוב ידני."""
+def test_the_overflow_menu_speaks_in_words_not_in_debug_output(app):
+    """התלונה, עם צילום מהטלפון: "עדיין יש מלא קישקושי html". ב-⋯ ישבו
+    שלוש שורות של מספרים גולמיים (rank 0.239 · taste 17% · trailer 0.67
+    · loudness 0.22 · low end ×0.62 · hits 2.4/s), שהם כלי כיול שדלף
+    למוצר. מה שנשאר הוא מה שבאמת מכריע: האם הקטלוג מאשר את הגרסה."""
     verified = _epic()
     verified["work_verified"] = True
+    verified["album"] = "Cinematic Covers"
     app.session_state["candidates"] = [verified]
     app.run()
 
     captions = [c.value for c in app.caption]
-    assert any("rank" in text and "verified in catalogue" in text
-               and "trailer" in text
-               for text in captions), "אין שורת פירוק דירוג ב-⋯"
+    assert any("Confirmed version of this song" in text and "Cinematic Covers" in text
+               for text in captions), "אין שורת סיכום קריאה ב-⋯"
+    for noise in ("rank 0.", "taste 1", "trailer 0.", "low end", "hits ", "relevance:"):
+        assert not any(noise in text for text in captions), noise
+
+
+def test_an_unconfirmed_row_says_so_in_the_overflow_menu(app):
+    """הסימן היחיד ששרד הוא זה שמפריד בין גרסה של השיר שביקשת לבין שיר
+    אחר באותו שם, ולכן הוא חייב להיקרא בשני הכיוונים."""
+    unverified = _epic()
+    unverified["work_verified"] = False
+    app.session_state["candidates"] = [unverified]
+    app.run()
+
+    assert any("Not confirmed in the catalogue" in (c.value or "")
+               for c in app.caption)
 
 
 def test_the_reason_shown_is_the_reason_it_ranks(app):
