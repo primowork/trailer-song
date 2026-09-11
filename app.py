@@ -172,6 +172,11 @@ st.markdown(
     .stElementContainer:has(> .stHtml > audio) {
         height: 0; min-height: 0; margin: 0; padding: 0; overflow: visible;
     }
+    /* בלוק הסגנון שמזין את עטיפות האלבום לרשת הכפתורים (`_grid_artwork`)
+       אינו תוכן. `<style>` הוא `display: none` מלכתחילה, אבל המכולה שלו
+       היא פריט flex ככל אחר — בלי הכלל הזה היא תופסת את מלוא ה-gap של
+       העמודה, כלומר פס ריק מעל כל רשת. */
+    .stElementContainer:has(> .stHtml > style) { display: none; }
 
     /* טקסט משני אמיתי ולא אפור-על-אפור: היררכיה במקום שש שורות זהות */
     [data-testid="stMain"] [data-testid="stCaptionContainer"] p,
@@ -554,6 +559,10 @@ st.markdown(
         letter-spacing: -.025em; margin: 0; color: var(--text);
     }
     .ts-lede { font-size: 13.5px; font-weight: 600; color: var(--text-3); }
+    /* אותה כותרת, אבל במקומה החדש: מתחת ללוגו ומעל שדה החיפוש. המרווח
+       של `.ts-resulthead` נבנה לכותרת שיושבת בין שתי רשימות, וכאן הוא
+       היה דוחף את שדה החיפוש מטה עד שבטלפון הוא יורד מתחת לקפל. */
+    .ts-headline { margin: 4px 0 12px; }
 
     /* המכולה ששמה את הכותרת ואת ההיסטוגרמה זה לצד זה. `align-items` לא
        `baseline` (כמו `.ts-resulthead` עצמה) כי הכרטיס גבוה מהטקסט. */
@@ -1024,8 +1033,18 @@ st.markdown(
     .ts-comparecard-art {
         width: 34px; height: 34px; border-radius: 9px; flex: none;
         background: repeating-linear-gradient(135deg,#1F242F 0 6px,#181C26 6px 12px);
+        background-size: cover; background-position: center;
         border: 1px solid var(--line-strong); display: inline-block;
     }
+    /* יש עטיפה אמיתית: הרקע מוזרק inline (ראו `_compare_panel`), והמסגרת
+       יורדת כדי שהתמונה תמלא את הריבוע במקום לשבת בתוך מסגרת */
+    .ts-comparecard-art[style] { border-color: transparent; }
+    .ts-comparecard-row {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+    }
+    /* ה-x נשאר בשורה. השורה המלאה למעלה תופסת את כל הרוחב, ומכולה
+       שעוטפת הייתה מורידה את כפתור ההסרה לשורה משלו מתחת לכרטיס */
+    [class*="st-key-compcardhead_"] { flex-wrap: nowrap; }
     .ts-comparecard-text {
         display: inline-flex; flex-direction: column; min-width: 0; flex: 1 1 auto;
     }
@@ -2527,14 +2546,31 @@ def _compare_panel():
                         head = st.container(key=f"compcardhead_{uid}", horizontal=True,
                                             vertical_alignment="center")
                         with head:
+                            # העטיפה כרקע ולא כ-`st.image`: הכרטיס כולו הוא
+                            # מחרוזת HTML אחת, ותמונה כאלמנט Streamlit נפרד
+                            # הייתה שוברת אותו לשני בלוקים זה מעל זה
+                            # הקאש כנפילה לאחור: גרסה שהוצמדה או נשמרה
+                            # לפני שהעטיפות נוספו אינה נושאת כתובת משלה
+                            _art = _css_url(entry.get("artwork") or _artwork_cache().get(
+                                storage.cache_key(entry.get("artist", ""),
+                                                  entry.get("track", "")), ""))
+                            # עוטף flex מפורש: שלושת החלקים ישבו ישירות
+                            # בתוך מכולת ה-`st.html`, שאינה flex, ולכן
+                            # `flex: 1 1 auto` על הטקסט לא עשה כלום — שם
+                            # אמן ארוך גלש והציון נחת עליו (נראה בדפדפן)
                             st.html(
-                                "<span class='ts-comparecard-art'></span>"
+                                "<span class='ts-comparecard-row'>"
+                                "<span class='ts-comparecard-art'"
+                                + (f" style='background-image:url(\"{_art}\")'"
+                                   if _art else "")
+                                + "></span>"
                                 "<span class='ts-comparecard-text'>"
                                 f"<span class='ts-comparecard-artist'>{html.escape(entry.get('artist', ''))}</span>"
                                 f"<span class='ts-comparecard-meta'>{html.escape(entry.get('genre') or '')}"
                                 + (f" · {int(entry['duration_sec']) // 60}:{int(entry['duration_sec']) % 60:02d}"
                                    if entry.get("duration_sec") else "") + "</span></span>"
-                                f"<span class='ts-comparecard-score' style='color:{color}'>{score}</span>")
+                                f"<span class='ts-comparecard-score' style='color:{color}'>{score}</span>"
+                                "</span>")
                             if st.button("", key=f"unpin_{uid}", type="tertiary",
                                         icon=":material/close:", help="Unpin"):
                                 toggle_pin(entry)
@@ -3178,14 +3214,102 @@ def _loudness_meter(features: dict | None):
         "</div>")
 
 
+# ---------- עטיפות אלבום לריבועים שאין להם אחת ----------
+
+# כמה עטיפות מותר להביא ברינדור אחד. הגבול קיים בגלל מה שמתחתיו: קטגוריית
+# מצעד אחת מגיעה ל-330 שירים, וקריאת רשת לכל אחד מהם ברינדור אחד היא גם
+# המתנה של עשרות שניות וגם הדרך המהירה להיחסם על קצב. הרשתות מוגבלות
+# ממילא לעמוד (`GRID_PAGE`), כך שהמספר הזה מכסה עמוד שלם ועוד מרווח.
+ARTWORK_BUDGET = 80
+# העברות במקביל. Deezer מתירה חמישים בקשות לחמש שניות, ושמונה חוטים
+# מגיעים לזה בנוחות בלי לדפוק בתקרה.
+ARTWORK_WORKERS = 8
+# ואם החנות לא עונה בכלל: אחרי כך וכך שניות מפסיקים לנסות בריצה הזו,
+# ומה שנשאר מוצג בדפוס הפסים. בלי זה, חנות שנופלת הופכת את מסך הפתיחה
+# להמתנה ארוכה — בשביל תמונות.
+ARTWORK_DEADLINE = 8.0
+
+
+def _css_url(url: str) -> str:
+    """כתובת שבטוח להשתיל בתוך `url(...)` ב-CSS, או מחרוזת ריקה.
+
+    הכתובת מגיעה מ-API חיצוני, כלומר אינה נתון מהימן: תו ציטוט או סוגר
+    בתוכה היה סוגר את הכלל ופותח אחר. במקום לברוח מתווים, נדחה כל כתובת
+    שאינה https נקייה — לעטיפת אלבום מחנות אין שום סיבה להיראות אחרת.
+    """
+    url = (url or "").strip()
+    if not url.startswith("https://"):
+        return ""
+    if any(character in url for character in '"\'()\\<>'):
+        return ""
+    if any(ord(character) < 33 for character in url):
+        return ""
+    return url
+
+
+def _artwork_cache() -> dict:
+    """הקאש המשותף, נטען פעם אחת לסשן."""
+    if "artwork_cache" not in st.session_state:
+        st.session_state["artwork_cache"] = storage.load_artwork()
+    return st.session_state["artwork_cache"]
+
+
+def resolve_artwork(pairs: list) -> dict:
+    """{cache_key: url} לזוגות (אמן, שיר) — מהקאש, ומה שחסר מהרשת.
+
+    זה מה שמאפשר לרשתות הכפתורים להציג עטיפה אמיתית: הרשימות הסטטיות
+    (קלאסיקות, בילבורד, GOAT) הן שם ושיר בלבד ואין בהן שום כתובת תמונה.
+
+    מחרוזת ריקה **נשמרת** כתשובה ולא כ"עוד לא נבדק": בלעדיה שיר שאין לו
+    עטיפה בשום חנות היה נשלח לרשת שוב בכל רינדור. כישלון רשת לעומת זאת
+    אינו נשמר — `search.album_art` מחזירה `None` עליו בדיוק כדי שתקלה
+    רגעית לא תיחרט בקאש המשותף כ"אין עטיפה" לכל המשתמשים.
+    """
+    cache = _artwork_cache()
+    wanted, seen = [], set()
+    for artist, track in pairs:
+        key = storage.cache_key(artist or "", track or "")
+        if key in cache or key in seen:
+            continue
+        seen.add(key)
+        wanted.append((key, artist, track))
+    wanted = wanted[:ARTWORK_BUDGET]
+
+    if wanted:
+        found = {}
+        deadline = time.monotonic() + ARTWORK_DEADLINE
+        # לקוח אחד משותף: חיבור חוזר לאותו מארח הוא ההבדל בין שמונים
+        # לחיצות-יד TLS לאחת
+        with httpx.Client(follow_redirects=True) as client:
+            def fetch(item):
+                key, artist, track = item
+                if time.monotonic() > deadline:
+                    return key, None
+                return key, search_module.album_art(artist, track, client=client)
+
+            with ThreadPoolExecutor(max_workers=ARTWORK_WORKERS) as pool:
+                for key, url in pool.map(fetch, wanted):
+                    if url is not None:
+                        found[key] = url
+        cache.update(found)
+        storage.save_artwork(found)
+
+    return {storage.cache_key(a or "", t or ""): cache.get(
+        storage.cache_key(a or "", t or ""), "") for a, t in pairs}
+
+
 def _artwork(track: dict):
     """עטיפת האלבום — סימן הזיהוי המהיר ביותר בכלי מוזיקה.
 
     הכתובת חוזרת מ-iTunes ומ-Deezer מאז ומעולם (`search.py`) ופשוט לא הוצגה.
     `st.image` מעביר את ה-URL לדפדפן כמו שהוא, ולכן הטעינה היא של המשתמש ולא
     של השרת — מה שחשוב כאן, כי השרת חסום מול חלק מהחנויות.
+
+    כשהתוצאה חזרה בלי כתובת, הקאש המשותף נשאל לפני שמצייר ריבוע ריק: אותה
+    גרסה כבר נראתה כנראה במסך אחר, ואין סיבה שדווקא כאן היא תיראה חסרה.
     """
-    art = track.get("artwork")
+    art = track.get("artwork") or _artwork_cache().get(
+        storage.cache_key(track.get("artist", ""), track.get("track", "")), "")
     if art:
         st.image(art, width=ARTWORK_SIZE)
     else:
@@ -3456,6 +3580,13 @@ with st.container(key="appbar", horizontal=True, vertical_alignment="center"):
     st.html(f"<span class='ts-navcount'>{len(st.session_state['favorites'])}"
             " loved</span>")
 
+# הכותרת של מסך הפתיחה יושבת כאן, מתחת ללוגו ומעל שדה החיפוש, ולא מעל
+# רשת ההצעות שלמטה — לבקשת המשתמש. מחזיק ולא `st.html` ישיר, כי מי
+# שמחליט אם יש בכלל מסך פתיחה הוא הקוד שרץ הרבה אחרי הנקודה הזו בסקריפט
+# (צריך לדעת אם יש תוצאות ואם חיפוש רץ עכשיו); מחזיק ריק שלא מולא אינו
+# מצייר כלום.
+headline_slot = st.empty()
+
 # מסך ולא סרגל. `st.stop()` ולא הסתרה ב-CSS: זה מסך אחר, ואין סיבה
 # לשלם על רינדור של כל התוצאות מאחוריו. מה שנשמר לפני העצירה הוא מצב
 # הפקדים — ראו `_remember_screen_state`.
@@ -3674,6 +3805,68 @@ def _artist_preview_titles(artist: str) -> list[str]:
     return st.session_state["artist_preview_titles"]
 
 
+GRID_PAGE = 60
+
+
+def _grid_page(entries: list[dict], key_prefix: str) -> tuple:
+    """(מה שמוצג עכשיו, חתימת הרשימה) — הרשימה חתוכה לעמוד.
+
+    קטגוריית מצעד אחת מגיעה ל-330 שירים. הכל בבת אחת זה גם קיר של כפתורים
+    שאי אפשר לסרוק בעין וגם — מאז שלכל כפתור יש עטיפת אלבום — מאות קריאות
+    רשת ברינדור אחד. "Show more" מוסיף עמוד בכל לחיצה, וכך גם המסך וגם
+    הרשת נשארים בגודל שאפשר לחיות איתו.
+
+    החתימה היא איך שהעמוד מתאפס כשהרשימה מתחלפת: בחירת קטגוריה אחרת
+    מגיעה תחת אותו `key_prefix` בדיוק, ובלי זה "עוד 60" של הקטגוריה
+    הקודמת היה נשאר בתוקף לקטגוריה החדשה.
+    """
+    pages = st.session_state.setdefault("grid_pages", {})
+    signature = f"{len(entries)}|{entries[0]}|{entries[-1]}" if entries else ""
+    remembered, shown = pages.get(key_prefix, ("", GRID_PAGE))
+    if remembered != signature:
+        shown = GRID_PAGE
+    pages[key_prefix] = (signature, shown)
+    return entries[:shown], signature
+
+
+def _grid_artwork(entries: list[dict], key_prefix: str):
+    """מזין עטיפת אלבום אמיתית לריבוע שבכל כפתור ברשת.
+
+    למה CSS ולא `st.image`: `st.button` מקבל תווית טקסט בלבד, ותמונה לצדו
+    הייתה אלמנט נפרד — כלומר חצי מהכרטיס מפסיק להיות שטח לחיצה. הריבוע
+    כאן הוא פסאודו-אלמנט **של הכפתור עצמו** (ראו הכלל עם `::before`
+    ב-CSS הראשי), ולכן הזנת רקע אליו משאירה את הכרטיס כולו יעד לחיצה אחד.
+
+    בורר לפי `[class~=]` ולא לפי מחלקה כתובה: `key_prefix` של מצעד מיובא
+    נגזר מכותרת המצעד ויכול להכיל תווים שאינם חוקיים בשם מחלקה ב-CSS,
+    ובתוך ערך מצוטט הם לא מפריעים. `~=` ולא `*=` כי התאמת תת-מחרוזת
+    הייתה גורמת לכלל של `_3` לצבוע גם את `_30`.
+
+    מה שלא נמצאה לו עטיפה נשאר עם דפוס הפסים. זו נפילה לאחור שקטה ולא
+    כשל: ריבוע ריק אחד עדיף על השהיה של כל המסך בשביל ניסיון חוזר.
+    """
+    # אותה אי-אמון בדיוק כמו ב-`_css_url`: `key_prefix` של מצעד מיובא נגזר
+    # מכותרת שהמשתמש ייבא, וציטוט בתוכה היה סוגר את הבורר
+    if any(character in key_prefix for character in '"\'\\<>'):
+        return
+    art = resolve_artwork([(entry["artist"], entry.get("track", ""))
+                           for entry in entries])
+    rules = []
+    for index, entry in enumerate(entries):
+        url = _css_url(art.get(storage.cache_key(
+            entry["artist"], entry.get("track", "")), ""))
+        if not url:
+            continue
+        selector = f'[class~="st-key-{key_prefix}_{index}"]'
+        rules.append(
+            f"{selector} button::before{{"
+            f'background-image:url("{url}")!important;'
+            "background-size:cover!important;background-position:center!important;"
+            "border-color:transparent!important;}")
+    if rules:
+        st.html("<style>" + "".join(rules) + "</style>")
+
+
 def _entry_grid(entries: list[dict], key_prefix: str, source_label: str | None = None):
     """רשת כפתורים משותפת לאמנים ולשירים, מכל אחד משלושת מקורות האינדקס.
 
@@ -3690,6 +3883,10 @@ def _entry_grid(entries: list[dict], key_prefix: str, source_label: str | None =
     רשת בדיוק מוצגת גם כשהמשתמש הקליד אמן ביד, בלי שום קשר למצעדים, ותווית
     "חזרה למצעדים" שם הייתה שקר.
     """
+    total = len(entries)
+    entries, signature = _grid_page(entries, key_prefix)
+    _grid_artwork(entries, key_prefix)
+
     is_song = any(entry["kind"] == "song" for entry in entries)
     per_row = 2 if is_song else 4
     for row_start in range(0, len(entries), per_row):
@@ -3732,6 +3929,18 @@ def _entry_grid(entries: list[dict], key_prefix: str, source_label: str | None =
                             "for_query": entry["track"],
                         }
                     queue_fields(entry["track"], entry["artist"], mode=MODE_SONG, auto_run=True)
+
+    if total > len(entries):
+        remaining = total - len(entries)
+        # `more_<prefix>` ולא `<prefix>_more`: כלל הריבוע ב-CSS תופס לפי
+        # `[class*="st-key-classic_"]`, וכפתור בשם `classic_more` היה מקבל
+        # ריבוע עטיפה משלו
+        if st.button(f"Show {min(GRID_PAGE, remaining)} more "
+                     f"({remaining} left)", key=f"more_{key_prefix}",
+                     use_container_width=True):
+            st.session_state["grid_pages"][key_prefix] = (
+                signature, len(entries) + GRID_PAGE)
+            st.rerun()
 
 
 def _classics_entries(category: str) -> list[dict]:
@@ -4090,12 +4299,6 @@ def _start_here():
             for entry in random.sample(famous, min(START_HERE_COUNT, len(famous)))
         ]
 
-    st.html(
-        "<div class='ts-resulthead'>"
-        "<h2 class='ts-h2'>Find a cover worth cutting to</h2>"
-        "<span class='ts-lede'>Every version is measured in your browser, "
-        "so the loud ones rise to the top.</span>"
-        "</div>")
     st.html("<div class='ts-railcap ts-startcap'>START WITH ONE OF THESE</div>")
     _entry_grid(st.session_state["start_here"], "start")
 
@@ -4103,6 +4306,13 @@ def _start_here():
 candidates = st.session_state["candidates"]
 
 if not candidates and not run_search:
+    # הכותרת רק כשמסך החיפוש הוא מה שמוצג. במסך המצעדים היא יושבת מעל
+    # הכותרת "Charts" ומכריזה על מסך אחר מזה שרואים — במקומה הישן, מעל
+    # רשת ההצעות שבתחתית הדף, זה לא היה יכול לקרות.
+    if st.session_state["rail_nav"] == NAV_DISCOVER:
+        headline_slot.html(
+            "<div class='ts-resulthead ts-headline'>"
+            "<h2 class='ts-h2'>Find a cover worth cutting to</h2></div>")
     with start_slot.container():
         _start_here()
 
@@ -4249,6 +4459,20 @@ if candidates:
                 youtube_module.search_trailer_evidence(track["artist"], track["track"]))
         progress.empty()
         st.rerun()
+
+    # שורה שחזרה מהחנות בלי כתובת עטיפה מקבלת אחת מאותו קאש משותף של
+    # רשתות הכפתורים. זה נדיר — ל-iTunes ול-Deezer יש עטיפה כמעט תמיד —
+    # ולכן ברוב הריצות אין כאן שום קריאת רשת, אבל השורות הבודדות שכן
+    # חסרות היו הריבועים הריקים היחידים שנשארו בעמוד התוצאות.
+    _missing = [t for t in visible if not t.get("artwork")]
+    _found = resolve_artwork([(t["artist"], t["track"]) for t in _missing])
+    # נכתב **לתוך** הטראק ולא רק מוחזר: כל מה שיורד במורד הזרם מהשורה —
+    # סרגל הנגן (`data-art`), הצמדה ל-Compare, שמירה לפלייליסט — מעתיק
+    # את ה-dict הזה. השלמה כאן פותרת את כולם בבת אחת, במקום שכל אחד
+    # מהם ישאל את הקאש בעצמו.
+    for _track in _missing:
+        _track["artwork"] = _found.get(
+            storage.cache_key(_track["artist"], _track["track"]), "")
 
     for index, track in enumerate(visible):
         render_track(track, index, learned)
