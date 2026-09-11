@@ -702,6 +702,55 @@ st.markdown(
        אותו ולא הצלחתי בלי להסתיר גם את ה-⋯ עצמו (שני האייקונים אינם
        אחים באותה רמה), ולכן הוא נשאר — הוא גם לא שקר: הכפתור באמת פותח
        תפריט. אין כאן כלל CSS מת שמתיימר לטפל בזה. */
+    /* ---- תפריט השורה כתפריט, לא כדף ----
+       נמדד בטלפון לפני התיקון: גוף ה-popover יצא 374x591 פיקסלים — כלומר
+       כמעט כל המסך — עם פדינג 23 ומרווח 16 בין עשרה פריטים. ברירות המחדל
+       של Streamlit בנויות לטופס, וכאן מדובר בחמש פעולות. התיחום הוא
+       `:has(.ts-rowmenu)` ולא `st-key-tacts_`, כי הגוף מרונדר בפורטל
+       בשורש המסמך ואינו צאצא של השורה. */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) {
+        padding: 6px !important;
+        width: max-content; min-width: 232px; max-width: min(290px, 88vw);
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-testid="stVerticalBlock"] {
+        gap: 1px;
+    }
+    /* פריטי התפריט: שורות, לא כפתורים בעלי מסגרת */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button {
+        border: none; background: transparent; color: var(--text-2);
+        min-height: 32px; height: 32px; padding: 0 8px; font-size: 13px;
+        border-radius: 7px;
+    }
+    /* היישור לשמאל חייב לרדת גם ל-`<div>` הפנימי: הכפתור עצמו הוא
+       ה-flex container, אבל Streamlit עוטף את התווית בעוד `<div>`
+       שמרכז בעצמו — בלי השורה הזו כל פריטי התפריט יצאו ממורכזים */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button,
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button > div {
+        justify-content: flex-start; text-align: start;
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button:hover {
+        background: var(--raised); color: var(--text);
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) hr {
+        margin: 5px 0; border-color: var(--line);
+    }
+    .ts-menucap {
+        font-size: 11.5px; line-height: 1.45; color: var(--text-3);
+        padding: 4px 8px;
+    }
+    .ts-menucap b { color: var(--text-2); font-weight: 600; }
+    /* בורר הקטגוריה: תווית צמודה לפקד, ופקד בגובה של פריט תפריט */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-testid="stWidgetLabel"] p {
+        font-size: 11.5px; color: var(--text-3); margin: 0; padding: 4px 8px 2px;
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-baseweb="select"] > div {
+        background: transparent; border-color: var(--line-strong);
+        border-radius: 7px; min-height: 32px; font-size: 12.5px;
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-baseweb="select"] input {
+        font-size: 12.5px;
+    }
+
     /* לב אהוב ו"לא זה" פעיל: אלמוג. ברירת המחדל של פעולה מסומנת בשורה. */
     [class*="st-key-tacts_"] .stButton button[kind="primary"] {
         background: rgba(255,107,74,.12); border-color: rgba(255,107,74,.45);
@@ -3304,7 +3353,18 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         # תפריט אחד לכל מה שנדיר: קודם כל פעולה תפסה כפתור משלה בכל שורה,
         # ושש שורות טקסט אפור נאבקו על אותה תשומת לב
         with st.popover("", icon=":material/more_horiz:", width=54):
-            st.caption(f"More like **{track['track']}**")
+            # סמן לתיחום ה-CSS: גוף ה-popover מרונדר בפורטל בשורש המסמך
+            # ולא בתוך השורה, ולכן אי אפשר להגיע אליו דרך `st-key-tacts_`.
+            # בלי התיחום, הכללים שמכווצים את התפריט הזה היו חלים גם על
+            # ה-popover של הפילטרים — שם הם היו הופכים טופס לרשימת פריטים.
+            st.html("<span class='ts-rowmenu' hidden></span>")
+            # `st.html` ולא `st.caption`: גוף ה-popover מרונדר מחוץ
+            # ל-`stMain`, ולכן כללי הכיתובים של האפליקציה לא חלים עליו
+            # בכלל, והמעטפת ש-Streamlit בונה סביב markdown קרסה ל-5
+            # פיקסלים בעוד שהטקסט עצמו 21 — כלומר הכיתוב גלש על הכפתור
+            # שמתחתיו ועל הקו המפריד (נמדד בדפדפן). כאן התיבה שלנו.
+            st.html("<div class='ts-menucap'>More like <b>"
+                    f"{html.escape(track['track'])}</b></div>")
             if st.button("More covers of this song", key=f"more_covers_{uid}",
                          icon=":material/library_music:", use_container_width=True):
                 st.session_state["similar_of"] = ("covers", track)
@@ -3322,7 +3382,9 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             # loudness, low end, hits, dynamic span) — כלי כיול שלי
             # שדלף למוצר, ונקרא בטלפון בדיוק כמו מה שהוא: פלט דיבאג.
             # המספרים לא נמחקו, הם מאחורי `TRAILER_SONG_DEBUG` למטה.
-            st.caption(_track_summary(track))
+            _summary = _track_summary(track)
+            if _summary:
+                st.html(f"<div class='ts-menucap'>{html.escape(_summary)}</div>")
             if DEBUG_DETAILS:
                 st.caption(_rank_breakdown(track, learned, features))
                 if audio.measured(features):
@@ -3346,7 +3408,6 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                             "for this song again")
                     st.rerun()
 
-            st.divider()
             # "Wrong category?" — הכלל שקובע את הקטגוריה קורא כותרת, ז'אנר
             # ומדידה, ולכן הוא טועה בדיוק איפה שהמטא-דאטה משקרת: אלבום
             # בשם "... (Original Motion Picture Soundtrack)" נקרא טריילר
@@ -3370,7 +3431,6 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                 st.toast(f"Filed '{track['track']}' under {_picked}")
                 st.rerun()
 
-            st.divider()
             if st.button("Block artist", key=f"btn_block_{uid}",
                          icon=":material/block:", use_container_width=True):
                 st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())

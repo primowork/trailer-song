@@ -1447,11 +1447,15 @@ def test_the_overflow_menu_speaks_in_words_not_in_debug_output(app):
     app.session_state["candidates"] = [verified]
     app.run()
 
-    captions = [c.value for c in app.caption]
-    assert any("Confirmed version of this song" in text and "Cinematic Covers" in text
-               for text in captions), "אין שורת סיכום קריאה ב-⋯"
+    # `_html_bodies` ולא `app.caption`: הסיכום עבר ל-`st.html`, כי גוף
+    # ה-popover מרונדר מחוץ ל-`stMain` ומעטפת ה-markdown שם קרסה לגובה
+    # חמישה פיקסלים והגלישה על הכפתור שמתחתיה
+    shown = _html_bodies(app)
+    assert "Confirmed version of this song" in shown, "אין שורת סיכום קריאה ב-⋯"
+    assert "Cinematic Covers" in shown
+    everything = shown + " " + " ".join(str(c.value) for c in app.caption)
     for noise in ("rank 0.", "taste 1", "trailer 0.", "low end", "hits ", "relevance:"):
-        assert not any(noise in text for text in captions), noise
+        assert noise not in everything, noise
 
 
 def test_an_unconfirmed_row_says_so_in_the_overflow_menu(app):
@@ -1462,8 +1466,7 @@ def test_an_unconfirmed_row_says_so_in_the_overflow_menu(app):
     app.session_state["candidates"] = [unverified]
     app.run()
 
-    assert any("Not confirmed in the catalogue" in (c.value or "")
-               for c in app.caption)
+    assert "Not confirmed in the catalogue" in _html_bodies(app)
 
 
 def test_the_reason_shown_is_the_reason_it_ranks(app):
@@ -1981,3 +1984,31 @@ def test_the_filter_buttons_agree_with_the_correction(app):
 
     assert not app.exception
     assert buckets.TRAILER not in kinds(), "הקטגוריה הישנה עדיין נספרת"
+
+
+def test_the_row_menu_is_scoped_and_stays_a_menu(app):
+    """התלונה: "למה זה דף כל-כך גדול ולא תפריטון קטן". גוף ה-popover יצא
+    374x591 פיקסלים — כמעט כל מסך הטלפון — עם פדינג 23 ומרווח 16 בין
+    עשרה פריטים, כי ברירות המחדל של Streamlit בנויות לטופס.
+
+    `AppTest` אינו מריץ דפדפן, ולכן מה שנבדק כאן הוא שני הדברים שאפשר
+    לבדוק בלעדיו: הסמן שעליו הכללים נשענים קיים בתפריט, והכללים עצמם
+    קיימים בגיליון. בלי הסמן הם היו חלים גם על ה-popover של הפילטרים.
+    """
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert "ts-rowmenu" in _html_bodies(app), "אין סמן לתפריט השורה"
+    css = _page_css(app)
+    assert ":has(.ts-rowmenu)" in css, "הכללים לא מתוחמים לתפריט השורה"
+    assert ".ts-menucap" in css
+
+
+def test_the_row_menu_has_one_divider_and_not_three(app):
+    """שלושה קווים מפרידים בתפריט של חמש פעולות הם מה שהפך אותו לדף."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert len(app.get("divider")) == 1, "מספר הקווים המפרידים השתנה"
