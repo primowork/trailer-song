@@ -523,6 +523,22 @@ def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
     assert app.session_state["candidates"][0]["uid"] == "itunes-y1"
 
 
+def test_the_loading_skeleton_is_wired_up_but_does_not_linger(app, monkeypatch):
+    """שלד הטעינה מוצג רק בזמן שהחיפוש רץ. `AppTest` מריץ סקריפט עד
+    הסוף בלי לעצור באמצע, ולכן אי אפשר לתפוס כאן את הרגע הביניים עצמו —
+    אבל אפשר לוודא שה-CSS שלו קיים בעמוד, ושהוא לא נשאר על המסך אחרי
+    שהתוצאות האמיתיות כבר שם."""
+    assert ".ts-skel-row" in _page_css(app)
+
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda title, artist="", **k: ([track("X", "Y", "y1")], "src", None))
+    app.text_input(key="cover_title").set_value("Yellow").run()
+    [b for b in app.button if b.key == "btn_search"][0].click().run()
+
+    assert not app.exception
+    assert "ts-skel-row" not in _html_bodies(app)
+
+
 def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
     called = {}
     monkeypatch.setattr(covers, "find_artist_covers",
@@ -1549,6 +1565,20 @@ def test_blocking_an_artist_drops_it_without_moving_the_rest(app):
     after = _row_order(app)
     assert "itunes-u3" not in after
     assert after == [uid for uid in before if uid != "itunes-u3"] + ["itunes-u20"]
+
+
+def test_a_row_without_a_preview_says_so_instead_of_just_hiding_the_button(app):
+    """`.ts-noplay` כבר מסמן את זה ב-`title`, אבל זה טקסט שרואים רק
+    ב-hover ולא בסריקה של הרשימה."""
+    silent = track("No Preview Band", "Quiet One", "np1", preview_url="")
+    playable = track("Loud Band", "Loud One", "p1")
+    app.session_state["candidates"] = [silent, playable]
+    app.run()
+
+    bodies = _html_bodies(app)
+    assert "no preview" in bodies
+    # התג לא נדבק לשורה שכן מנגנת
+    assert bodies.count("no preview") == 1
 
 
 def test_reporting_a_wrong_song_removes_it_and_is_remembered_next_search(app, monkeypatch):
