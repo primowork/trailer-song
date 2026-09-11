@@ -770,6 +770,28 @@ st.markdown(
         border: 1px dashed var(--line-strong);
     }
 
+    /* שלד טעינה: מוצג בדיוק במקום שבו התוצאות יופיעו, בזמן שה-spinner
+       שמעל השורה עוד רץ. אותו דפוס פסים אלכסוניים כמו `.ts-art-blank` —
+       "עוד לא הגיע" ולא קישוט משלו — כדי שלא יתווסף שפה חזותית שלישית
+       לצד "יש עטיפה" ו"אין preview". בלי אנימציה: הבהוב שמתחיל ונעצר
+       באמצע (כשהתשובה חוזרת מהר) בולט יותר משורה דוממת.  */
+    .ts-skel-row {
+        display: flex; align-items: center; gap: 12px;
+        padding-block: 10px;
+    }
+    .ts-skel-art {
+        width: 52px; height: 52px; border-radius: 13px; flex: none;
+        border: 1px solid var(--line-strong);
+        background: repeating-linear-gradient(135deg,#1B1F2A 0 6px,#161A24 6px 12px);
+    }
+    .ts-skel-lines { flex: auto; display: flex; flex-direction: column; gap: 8px; }
+    .ts-skel-bar {
+        height: 10px; border-radius: 5px; background: var(--line-strong);
+        opacity: .55;
+    }
+    .ts-skel-bar-wide { width: min(240px, 60%); }
+    .ts-skel-bar-narrow { width: min(140px, 35%); }
+
     /* כפתור ההעתקה בשורות הפלייליסט. האייקון מצויר ב-CSS ולא באימוג'י
        ולא ב-Material: שתי הדרכים האלה כבר נכשלו כאן ברינדור (כפתור
        הקובייה יצא נקודה כתומה בשני סבבים), ושני ריבועים חופפים הם בדיוק
@@ -3104,6 +3126,11 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             str(track.get("year") or "") or None,
             f"{int(track.get('duration_sec', 0) // 60)}:{int(track.get('duration_sec', 0) % 60):02d}"
             if track.get("duration_sec") else None,
+            # אין preview: השורה כבר מסמנת את זה ב-`.ts-noplay` ליד כפתור
+            # הנגינה, אבל זה `title` שרואים רק ב-hover — לא בסריקה. מילה
+            # אחת כאן נראית בלי לרחף, ומסבירה למה אין כפתור נגינה בשורה
+            # הזו במקום להשאיר את זה לניחוש.
+            None if track.get("preview_url") else "no preview",
         ) if part]
         # `st.html` ולא `st.markdown`: נמדד בדפדפן שמכולת ה-markdown נותנת
         # לתוכן גובה קבוע של 20px, והשורה הבאה (תגי הסימנים) נכנסה לתוכה —
@@ -3754,6 +3781,24 @@ def _run_similar():
             st.info("Nothing similar found.")
 
 
+def _skeleton_rows(count: int = 4):
+    """שורות מדומות במקום שבו התוצאות יופיעו, בזמן שהחיפוש עצמו עוד רץ.
+
+    בלעדיהן הרגע שבין לחיצה על "Find covers" לתשובה הראשונה הוא מסך ריק
+    מתחת לשורת החיפוש — שום דבר לא רומז שיש שם משהו בדרך, חוץ מה-spinner
+    הקטן שמעל השורה. הצורה מחקה את `render_track` בלי לשכפל אותו: אין
+    כאן טעם לבנות שורה אמיתית עם כפתורים מושבתים בשביל אפקט חזותי.
+    """
+    rows = "".join(
+        "<div class='ts-skel-row'><div class='ts-skel-art'></div>"
+        "<div class='ts-skel-lines'>"
+        "<div class='ts-skel-bar ts-skel-bar-wide'></div>"
+        "<div class='ts-skel-bar ts-skel-bar-narrow'></div>"
+        "</div></div>"
+        for _ in range(count))
+    st.html(f"<div class='ts-skel'>{rows}</div>")
+
+
 def _store_results(results, source, original=None):
     st.session_state["candidates"] = results
     st.session_state["covers_source"] = source
@@ -3785,12 +3830,16 @@ elif run_search and search_mode == MODE_SONG and cover_artist.strip() \
                "to browse everything by them.")
 
 elif run_search and search_mode == MODE_ARTIST:
+    skeleton_slot = st.empty()
+    with skeleton_slot.container():
+        _skeleton_rows()
     with st.spinner("Finding the artist's songs and searching for covers..."):
         results, source_used, titles = covers_module.find_artist_covers(
             cover_artist, filters=filters, prefer_new=prefer_new,
             min_year=RECENCY_OPTIONS[recency])
         results = drop_seen(apply_mismatch_reports(apply_blacklist(results)),
                             st.session_state["seen_keys"] if fresh_only else None)
+    skeleton_slot.empty()
     _store_results(results, source_used)
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
@@ -3805,6 +3854,9 @@ elif run_search and search_mode == MODE_ARTIST:
         st.caption("Scanned: " + " · ".join(titles))
 
 elif run_search and search_mode == MODE_SONG:
+    skeleton_slot = st.empty()
+    with skeleton_slot.container():
+        _skeleton_rows()
     with st.spinner("Searching the official catalogue and the stores..."):
         results, source_used, original = covers_module.find_all_covers(
             cover_title, cover_artist, filters=filters, prefer_new=prefer_new,
@@ -3812,6 +3864,7 @@ elif run_search and search_mode == MODE_SONG:
         results = drop_seen(
             apply_mismatch_reports(apply_blacklist(results), original),
             st.session_state["seen_keys"] if fresh_only else None)
+    skeleton_slot.empty()
     _store_results(results, source_used, original)
     for track in results:
         st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
