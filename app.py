@@ -44,18 +44,21 @@ SORT_ARTIST = "Artist"
 SORT_OPTIONS = (SORT_BEST, SORT_LOUDNESS, SORT_RELEVANCE, SORT_NEWEST,
                 SORT_SHORTEST, SORT_LONGEST, SORT_ARTIST)
 
-# שלושת מצבי החיפוש. "Covers of a song" ממזג שני מקורות (מאגר יחסי + חיפוש
+# שני מצבי החיפוש. "Covers of a song" ממזג שני מקורות (מאגר יחסי + חיפוש
 # בחנויות) תחת בחירה אחת — הם עונים בפועל על אותה שאלה. "Covers of an artist"
-# ו-"Free search" הם כוונות שונות באמת (קלט שונה; חיפוש רחב מכוון-פילטרים)
-# ונשארים מצבים נפרדים.
+# היא כוונה שונה באמת (קלט שונה: אמן ולא שיר) ונשארת מצב נפרד.
+#
+# היה כאן גם "Free search" — חיפוש רחב מכוון-פילטרים בלי להיצמד ליצירה
+# אחת. הוסר: השלמת השם החיה בשדה עצמה כבר נותנת גישה ישירה ומהירה יותר
+# לכל שיר קונקרטי, ובפועל אף אחד לא היה במצב הזה. `search_covers` שהניע
+# אותו עדיין בשימוש כרכיב פנימי (`more_like_style` וכו'), רק לא כמצב UI.
 # מתחת לזה התג "מתאים לטעם שלך" הוא רעש: עם מעט לייקים כל הטראקים מקבלים
 # ציון נמוך דומה, ותג על כולם אינו אומר דבר
 TASTE_BADGE_THRESHOLD = 0.35
 
 MODE_SONG = "Covers of a song"
 MODE_ARTIST = "Covers of an artist"
-MODE_FREE = "Free search"
-SEARCH_MODES = [MODE_SONG, MODE_ARTIST, MODE_FREE]
+SEARCH_MODES = [MODE_SONG, MODE_ARTIST]
 
 # פילטר "חדשות": התווית וסף השנה שהיא מייצגת. 0 = בלי סינון.
 RECENCY_OPTIONS = {
@@ -1728,7 +1731,7 @@ def apply_mismatch_reports(tracks: list[dict], original: "dict | None" = None) -
 def drop_seen(tracks: list[dict], seen) -> list[dict]:
     """מסיר את מה שכבר הוצג בסבב הזה, כש"רק מה שלא ראיתי" מסומן.
 
-    ב-MODE_FREE הסינון קורה בתוך `search_covers` דרך `exclude_keys`, אבל שני
+    הבאג שזה תיקן: `search_covers` כיבד את `exclude_keys` בעצמו, אבל שני
     המסלולים האחרים — קאברים לשיר ולאמן — לא קיבלו אותו כלל, והצ'קבוקס פשוט
     לא עשה דבר במצב שבו המשתמש נמצא רוב הזמן (נבדק).
     """
@@ -3387,8 +3390,7 @@ with mode_row:
              "(SecondHandSongs/MusicBrainz) with a store search for "
              f"'Epic/Trailer/Cinematic' tracks. {MODE_ARTIST}: finds the "
              "titles most associated with the artist and pulls covers for "
-             f"each. {MODE_FREE}: a broad search driven by the filters, "
-             "without pinning to one work.")
+             "each.")
     # `segmented_control` מחזיר None כשהמשתמש מבטל את הבחירה בלחיצה חוזרת.
     # בלי הנפילה חזרה, אותה לחיצה הייתה מרוקנת את מצב החיפוש והשאילתה
     # הבאה הייתה נופלת לענף שגוי.
@@ -3809,36 +3811,8 @@ elif run_search and search_mode == MODE_SONG:
         if failure:
             st.error(failure)
         else:
-            st.info(f"No covers found for this song. Try '{MODE_FREE}'.")
-
-elif run_search:  # MODE_FREE
-    with st.spinner("Scanning iTunes and Deezer..."):
-        exclude = st.session_state["seen_keys"] if fresh_only else frozenset()
-        # בחיפוש החופשי השאילתה היא שם השיר אם הוזן, ואחרת שם האמן —
-        # ורק במקרה השני נכון להתאים על שם האמן
-        results = apply_mismatch_reports(apply_blacklist(search_covers(
-            cover_title or cover_artist, filters=filters, exclude_keys=exclude,
-            origin_artist=cover_artist, prefer_new=prefer_new,
-            match_artist=not cover_title,
-            min_year=RECENCY_OPTIONS[recency])))
-    _store_results(results, "store search")
-    for track in results:
-        st.session_state["seen_keys"].add(track_key(track["artist"], track["track"]))
-    if not results:
-        failure = _lookup_failed()
-        if failure:
-            st.error(failure)
-        else:
-            st.info("No results. Try turning off 'Unheard only' or "
-                    "widening the filters.")
-
-original = st.session_state.get("original")
-if original:
-    st.caption(f"Reference version: **{original['artist']}** — {original['track']}"
-               + (f" ({original['year']})" if original.get("year") else ""))
-
-if st.session_state["covers_source"]:
-    st.caption(f"Source: {st.session_state['covers_source']}")
+            st.info("No covers found for this song. Try a different "
+                    "spelling, or 'Which songs have this name?' above.")
 
 
 # ---------- מסך פתיחה ----------

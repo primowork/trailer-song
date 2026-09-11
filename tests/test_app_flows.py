@@ -504,9 +504,11 @@ def test_chart_song_click_fills_both_fields_and_runs_the_epic_search(monkeypatch
     assert app.session_state["candidates"]
 
 
-def test_search_mode_has_three_options(app):
+def test_search_mode_has_two_options(app):
+    """'Free search' הוסר: השלמת השם החיה בשדה עצמו כבר עונה על אותה
+    כוונה מהר יותר, ואף אחד לא היה במצב הזה בפועל."""
     modes = app.get("button_group")[0]
-    assert modes.options == ["Covers of a song", "Covers of an artist", "Free search"]
+    assert modes.options == ["Covers of a song", "Covers of an artist"]
 
 
 def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
@@ -537,22 +539,6 @@ def test_artist_mode_dispatches_to_find_artist_covers(app, monkeypatch):
     assert not app.exception
     assert called.get("hit")
     assert app.session_state["candidates"][0]["uid"] == "itunes-y2"
-
-
-def test_free_mode_dispatches_to_search_covers(app, monkeypatch):
-    called = {}
-    monkeypatch.setattr(search_module, "search_covers",
-                        lambda *a, **k: called.setdefault("hit", True) and
-                                        [track("X", "Y", "y3")])
-    modes = app.get("button_group")[0]
-    modes.set_value("Free search").run()
-    app.text_input(key="cover_title").set_value("Yellow").run()
-    search_button = [b for b in app.button if b.key == "btn_search"][0]
-    search_button.click().run()
-
-    assert not app.exception
-    assert called.get("hit")
-    assert app.session_state["candidates"][0]["uid"] == "itunes-y3"
 
 
 def test_filters_thread_through_to_song_mode(app, monkeypatch):
