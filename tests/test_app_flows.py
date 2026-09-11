@@ -1447,11 +1447,15 @@ def test_the_overflow_menu_speaks_in_words_not_in_debug_output(app):
     app.session_state["candidates"] = [verified]
     app.run()
 
-    captions = [c.value for c in app.caption]
-    assert any("Confirmed version of this song" in text and "Cinematic Covers" in text
-               for text in captions), "אין שורת סיכום קריאה ב-⋯"
+    # `_html_bodies` ולא `app.caption`: הסיכום עבר ל-`st.html`, כי גוף
+    # ה-popover מרונדר מחוץ ל-`stMain` ומעטפת ה-markdown שם קרסה לגובה
+    # חמישה פיקסלים והגלישה על הכפתור שמתחתיה
+    shown = _html_bodies(app)
+    assert "Confirmed version of this song" in shown, "אין שורת סיכום קריאה ב-⋯"
+    assert "Cinematic Covers" in shown
+    everything = shown + " " + " ".join(str(c.value) for c in app.caption)
     for noise in ("rank 0.", "taste 1", "trailer 0.", "low end", "hits ", "relevance:"):
-        assert not any(noise in text for text in captions), noise
+        assert noise not in everything, noise
 
 
 def test_an_unconfirmed_row_says_so_in_the_overflow_menu(app):
@@ -1462,8 +1466,7 @@ def test_an_unconfirmed_row_says_so_in_the_overflow_menu(app):
     app.session_state["candidates"] = [unverified]
     app.run()
 
-    assert any("Not confirmed in the catalogue" in (c.value or "")
-               for c in app.caption)
+    assert "Not confirmed in the catalogue" in _html_bodies(app)
 
 
 def test_the_reason_shown_is_the_reason_it_ranks(app):
@@ -1913,3 +1916,99 @@ def test_a_saved_artist_ranks_their_other_covers_higher(app):
     assert not app.exception
     keys = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert keys.index("btn_favorite_itunes-known") < keys.index("btn_favorite_itunes-unknown")
+
+
+# ---------- "Wrong category?" ----------
+
+def _soundtrack(uid="cat1", title="Lollipop"):
+    return track("Ronnie Minder", title, uid,
+                 album="Kane (Original Motion Picture Soundtrack)")
+
+
+def test_a_wrong_category_can_be_corrected_from_the_row(app):
+    """הבקשה: כפתור בשורה שנותן את האופציות, והתיקון נלמד."""
+    import buckets
+
+    app.session_state["candidates"] = [_soundtrack()]
+    app.run()
+    assert not app.exception
+
+    picker = [s for s in app.selectbox if s.key == "cat_itunes-cat1"]
+    assert picker, "אין בורר קטגוריה בשורה"
+    assert list(picker[0].options) == list(buckets.ORDER)
+    # שם האלבום לבדו הוא מה שמסווג את השורה כטריילר
+    assert picker[0].value == buckets.TRAILER
+
+    picker[0].set_value(buckets.OTHER).run()
+    assert not app.exception
+    assert storage.load_category_corrections(), "התיקון לא נשמר בכלל"
+
+
+def test_the_correction_is_shared_and_survives_a_new_search(app):
+    """דיווח אחד מציל את כל מי שיראה את אותה גרסה אחריו — כולל חיפוש אחר
+    לגמרי, שבו היא חוזרת עם uid אחר."""
+    import buckets
+
+    app.session_state["candidates"] = [_soundtrack()]
+    app.run()
+    [s for s in app.selectbox if s.key == "cat_itunes-cat1"][0].set_value(
+        buckets.OTHER).run()
+
+    # אותה גרסה, חיפוש אחר, מזהה חנות אחר
+    app.session_state["candidates"] = [_soundtrack(uid="from-another-search")]
+    app.run()
+
+    assert not app.exception
+    again = [s for s in app.selectbox if s.key == "cat_itunes-from-another-search"]
+    assert again and again[0].value == buckets.OTHER
+
+
+def test_the_filter_buttons_agree_with_the_correction(app):
+    """בלי זה השורה זזה בתפריט אבל לא בכפתורי הסינון שמעל התוצאות."""
+    import buckets
+
+    app.session_state["candidates"] = [
+        _soundtrack(), track("Somebody", "Yellow (Rock Cover)", "rock1")]
+    app.run()
+
+    def kinds():
+        row = [p for p in app.pills if p.key == "bucket_filter"]
+        assert row, "שורת הקטגוריות נעלמה"
+        # התוויות נושאות מונה ("Trailer / epic (1)")
+        return {label.rsplit(" (", 1)[0] for label in row[0].options}
+
+    assert buckets.TRAILER in kinds()
+
+    [s for s in app.selectbox if s.key == "cat_itunes-cat1"][0].set_value(
+        buckets.OTHER).run()
+
+    assert not app.exception
+    assert buckets.TRAILER not in kinds(), "הקטגוריה הישנה עדיין נספרת"
+
+
+def test_the_row_menu_is_scoped_and_stays_a_menu(app):
+    """התלונה: "למה זה דף כל-כך גדול ולא תפריטון קטן". גוף ה-popover יצא
+    374x591 פיקסלים — כמעט כל מסך הטלפון — עם פדינג 23 ומרווח 16 בין
+    עשרה פריטים, כי ברירות המחדל של Streamlit בנויות לטופס.
+
+    `AppTest` אינו מריץ דפדפן, ולכן מה שנבדק כאן הוא שני הדברים שאפשר
+    לבדוק בלעדיו: הסמן שעליו הכללים נשענים קיים בתפריט, והכללים עצמם
+    קיימים בגיליון. בלי הסמן הם היו חלים גם על ה-popover של הפילטרים.
+    """
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert "ts-rowmenu" in _html_bodies(app), "אין סמן לתפריט השורה"
+    css = _page_css(app)
+    assert ":has(.ts-rowmenu)" in css, "הכללים לא מתוחמים לתפריט השורה"
+    assert ".ts-menucap" in css
+
+
+def test_the_row_menu_has_one_divider_and_not_three(app):
+    """שלושה קווים מפרידים בתפריט של חמש פעולות הם מה שהפך אותו לדף."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert len(app.get("divider")) == 1, "מספר הקווים המפרידים השתנה"

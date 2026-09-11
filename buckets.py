@@ -139,8 +139,92 @@ def _is_calm(features: "dict | None") -> bool:
     return values.get("onset_rate", 1.0) <= 0.35
 
 
-def bucket_of(track: dict, features: "dict | None" = None) -> str:
-    """הקטגוריה היחידה של קאבר אחד."""
+# ---------- תיקוני משתמשים ----------
+#
+# כל מה שלמעלה נגזר מהכותרת, מהז'אנר ומהמדידה, ולכן הוא טועה בדיוק איפה
+# שהמקורות האלה משקרים: אלבום בשם "Kane (Original Motion Picture
+# Soundtrack)" נקרא "טריילר" גם כשמדובר בשיר פופ רגיל בפסקול. מי שרואה
+# את השורה יודע את זה מיד, והכפתור "Wrong category?" הוא הדרך להגיד את זה.
+#
+# התיקון **משותף לכל המשתמשים**, כמו דיווחי ההתאמה: לאיזו קטגוריה שייכת
+# גרסה היא עובדה עליה, לא העדפה של מי שדיווח.
+
+# כמה תיקונים מסכימים צריך כדי להכליל מטראק בודד. אלבום הוא הפקה אחת
+# ולכן שניים מספיקים; אמן הוא גוף עבודה שלם ולכן הרף גבוה יותר.
+ALBUM_AGREEMENT = 2
+ARTIST_AGREEMENT = 3
+
+
+def correction_keys(track: dict) -> "tuple[str, str, str]":
+    """(מפתח טראק, מפתח אלבום, מפתח אמן) — שלוש הרמות שתיקון יכול לחול בהן.
+
+    מפתח האלבום נושא גם את האמן: "Greatest Hits" הוא שם של מאות אלבומים
+    שונים, ותיקון על אחד מהם היה מחיל את עצמו על כולם.
+    """
+    artist = search_module.normalize_artist(track.get("artist", ""))
+    album = " ".join((track.get("album") or "").lower().split())
+    return (search_module.track_key(track.get("artist", ""), track.get("track", "")),
+            f"{artist}|{album}" if artist and album else "",
+            artist)
+
+
+def correction_index(records: "list[dict]") -> dict:
+    """מה שנלמד מהתיקונים: שלוש רמות, מהמדויק לרחב.
+
+    זה החלק ש"לומד לשאר החיפושים". תיקון בודד חל תמיד על הטראק שתוקן,
+    בכל חיפוש ובכל מצעד. הכללה לאלבום או לאמן דורשת כמה תיקונים
+    **שכולם מסכימים**: מספיק שני דיווחים סותרים על אותו אלבום כדי שלא
+    תהיה שם הכללה בכלל.
+
+    למה הסכמה מלאה ולא רוב: רוב על שלושה דיווחים הוא שניים, כלומר משתמש
+    אחד שטועה פעמיים היה משנה קטגוריה לכל הקטלוג של אמן. עדות מעורבת
+    פירושה "לא יודעים", והנפילה לאחור היא החוקים שלמעלה — שהם לפחות
+    עקביים.
+
+    פונקציה טהורה על הרשומות, ולכן נבדקת בלי מסד נתונים ובלי רשת.
+    """
+    levels = {"track": {}, "album": {}, "artist": {}}
+    votes = {"album": {}, "artist": {}}
+    for record in records:
+        category = record.get("category")
+        if category not in ORDER:
+            continue
+        if record.get("track_key"):
+            levels["track"][record["track_key"]] = category
+        for level, field in (("album", "album_key"), ("artist", "artist_key")):
+            if record.get(field):
+                votes[level].setdefault(record[field], []).append(category)
+
+    for level, threshold in (("album", ALBUM_AGREEMENT), ("artist", ARTIST_AGREEMENT)):
+        for key, cast in votes[level].items():
+            if len(cast) >= threshold and len(set(cast)) == 1:
+                levels[level][key] = cast[0]
+    return levels
+
+
+def corrected(track: dict, corrections: "dict | None") -> "str | None":
+    """הקטגוריה שנלמדה לטראק הזה, או None כשאין תיקון שחל עליו."""
+    if not corrections:
+        return None
+    track_k, album_k, artist_k = correction_keys(track)
+    for level, key in (("track", track_k), ("album", album_k), ("artist", artist_k)):
+        found = corrections.get(level, {}).get(key)
+        if found:
+            return found
+    return None
+
+
+def bucket_of(track: dict, features: "dict | None" = None,
+              corrections: "dict | None" = None) -> str:
+    """הקטגוריה היחידה של קאבר אחד.
+
+    תיקון של משתמש גובר על כל החוקים: הוא ראה את השורה, והחוקים כאן
+    קוראים מטא-דאטה.
+    """
+    override = corrected(track, corrections)
+    if override:
+        return override
+
     text, genre = _haystack(track), (track.get("genre") or "").lower()
 
     def declared(name: str) -> bool:
@@ -164,7 +248,8 @@ def bucket_of(track: dict, features: "dict | None" = None) -> str:
     return OTHER
 
 
-def group(tracks: list, measurements: "dict | None" = None) -> "list[tuple[str, list]]":
+def group(tracks: list, measurements: "dict | None" = None,
+          corrections: "dict | None" = None) -> "list[tuple[str, list]]":
     """(שם קטגוריה, שורות) לפי `ORDER`, בלי קטגוריות ריקות.
 
     הסדר בתוך כל קטגוריה הוא הסדר שהתקבל — כלומר המיון שכבר הוחל
@@ -178,12 +263,13 @@ def group(tracks: list, measurements: "dict | None" = None) -> "list[tuple[str, 
     measurements = measurements or {}
     found: dict = {}
     for track in tracks:
-        name = bucket_of(track, measurements.get(track.get("uid")))
+        name = bucket_of(track, measurements.get(track.get("uid")), corrections)
         found.setdefault(name, []).append(track)
     return [(name, found[name]) for name in ORDER if found.get(name)]
 
 
-def counts(tracks: list, measurements: "dict | None" = None) -> dict:
+def counts(tracks: list, measurements: "dict | None" = None,
+           corrections: "dict | None" = None) -> dict:
     """כמה קאברים בכל קטגוריה. הבסיס לשורת הכפתורים שמעל התוצאות.
 
     נספר על **כל** התוצאות ולא על העמוד המוצג, אחרת המספר על הכפתור היה
@@ -192,6 +278,6 @@ def counts(tracks: list, measurements: "dict | None" = None) -> dict:
     measurements = measurements or {}
     tally: dict = {}
     for track in tracks:
-        name = bucket_of(track, measurements.get(track.get("uid")))
+        name = bucket_of(track, measurements.get(track.get("uid")), corrections)
         tally[name] = tally.get(name, 0) + 1
     return tally

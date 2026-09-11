@@ -280,6 +280,40 @@ def add_mismatch_report(query_key: str, wrong_track_key: str) -> bool:
     return _save_json(MISMATCH_FILE, data)
 
 
+# תיקוני קטגוריה ("Wrong category?"). משותף כמו דיווחי ההתאמה: לאיזה סוג
+# גרסה שייך קאבר הוא עובדה עליו, לא העדפה של מי שדיווח.
+#
+# רשומה לכל טראק, ולא מילון "מפתח → קטגוריה": האמן והאלבום נשמרים איתה
+# כדי ש-`buckets.correction_index` תוכל להכליל מכמה תיקונים מסכימים
+# לאלבום ולאמן שלם. שמירת המסקנה בלבד הייתה מוחקת את מה שהיא נגזרה ממנו,
+# וכל שינוי בסולם ההכללה היה דורש להתחיל לאסוף מאפס.
+CATEGORY_FILE = "category_corrections.json"
+
+
+def load_category_corrections() -> list:
+    if db.available():
+        return db.load_category_corrections()
+    data = _load_json(CATEGORY_FILE, {}) or {}
+    return [record for record in data.values() if isinstance(record, dict)]
+
+
+def add_category_correction(track_key: str, artist_key: str, album_key: str,
+                            category: str) -> bool:
+    """תיקון אחד, נוסף למה שכבר נשמר — מאותה סיבה כמו `add_mismatch_report`.
+
+    תיקון חוזר על אותו טראק **מחליף** את הקודם: מי שמתקן פעמיים התכוון
+    לפעם השנייה, ושתי רשומות סותרות על אותו טראק היו מבטלות הכללה שכל
+    השאר מסכימים עליה.
+    """
+    record = {"track_key": track_key, "artist_key": artist_key,
+              "album_key": album_key, "category": category}
+    if db.available():
+        return db.add_category_correction(record)
+    data = _load_json(CATEGORY_FILE, {}) or {}
+    data[track_key] = record
+    return _save_json(CATEGORY_FILE, data)
+
+
 # ---------- מכסת חיפושים ----------
 #
 # מפתח לפי ה-subject המלא ("user:<email>" או "anon:<uuid>"), כי לאנונימי
