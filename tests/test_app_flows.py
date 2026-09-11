@@ -511,6 +511,20 @@ def test_search_mode_has_two_options(app):
     assert modes.options == ["Covers of a song", "Covers of an artist"]
 
 
+def test_an_artist_alone_in_song_mode_gets_a_helpful_warning(app, monkeypatch):
+    """נמדד: 'Daft Punk' לבד ב-Covers of a song חיפש שיר ריק וחזר עם
+    'No covers found', בלי לרמוז שהפתרון הוא למלא שיר או לעבור מצב."""
+    called = {}
+    monkeypatch.setattr(covers, "find_all_covers",
+                        lambda *a, **k: called.setdefault("hit", True))
+    app.text_input(key="cover_artist").set_value("Daft Punk").run()
+    [b for b in app.button if b.key == "btn_search"][0].click().run()
+
+    assert not app.exception
+    assert not called.get("hit")
+    assert any("switch to 'Covers of an artist'" in (w.value or "") for w in app.warning)
+
+
 def test_song_mode_dispatches_to_find_all_covers(app, monkeypatch):
     called = {}
     monkeypatch.setattr(covers, "find_all_covers",

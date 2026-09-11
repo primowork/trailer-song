@@ -3775,6 +3775,15 @@ elif run_search and search_mode != MODE_ARTIST and not (
         cover_title.strip() or cover_artist.strip()):
     st.warning("Enter a song or artist name")
 
+# רק שם אמן במצב "קאברים לשיר" (בלי כותרת) עבר את הבדיקה למעלה בשקט
+# ורץ לחיפוש בלי שיר לחפש — `find_all_covers("", artist, ...)` תמיד
+# ריק. **נמדד**: "Daft Punk" לבד ב-Covers of a song חזר "No covers
+# found", בלי לרמוז שהפתרון הוא למלא שם שיר או לעבור מצב.
+elif run_search and search_mode == MODE_SONG and cover_artist.strip() \
+        and not cover_title.strip():
+    st.warning("Enter a song name too, or switch to 'Covers of an artist' "
+               "to browse everything by them.")
+
 elif run_search and search_mode == MODE_ARTIST:
     with st.spinner("Finding the artist's songs and searching for covers..."):
         results, source_used, titles = covers_module.find_artist_covers(
