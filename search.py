@@ -384,18 +384,25 @@ def _record_error(message: str):
 
 
 def get_json(url: str, client: httpx.Client | None = None, timeout: float = 10.0,
-             headers: dict | None = None, params: dict | None = None):
+             headers: dict | None = None, params: dict | None = None,
+             quiet: bool = False, attempts: int | None = None):
     """GET עם ניסיונות חוזרים. מחזיר None כשהבקשה נכשלה — ולא dict ריק.
 
     זו ההבחנה שהחסרה שלה גרמה ל"לא נמצאו תוצאות" על כישלון רשת: חנות שהחזירה
     429 או 503 נראתה בדיוק כמו חיפוש שלא מצא כלום, והלחיצה השנייה "עבדה".
+
+    `quiet`: כישלון לא נרשם ב-`last_errors`. מיועד לבקשות **נלוות** שאינן
+    החיפוש עצמו — הבאת עטיפות אלבום לרשת הכפתורים, למשל. בלעדיו כישלון
+    בהבאת תמונה היה מוצג למשתמש כ"החיפוש לא הושלם", כלומר שקר על תוצאות
+    שכן חזרו.
     """
     # User-Agent אמיתי כברירת מחדל: iTunes מחזיר 403 לבקשות עם ה-UA הדיפולטי
     # של httpx, במיוחד מכתובות של דאטה-סנטר. זה לא מעקף חסימה אלא זיהוי תקין —
     # בקשה בלי UA כלל היא מה שנראה חריג
     headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    attempts = HTTP_ATTEMPTS if attempts is None else max(1, attempts)
     last = ""
-    for attempt in range(HTTP_ATTEMPTS):
+    for attempt in range(attempts):
         try:
             response = (client or httpx).get(url, timeout=timeout,
                                              headers=headers, params=params)
@@ -406,9 +413,10 @@ def get_json(url: str, client: httpx.Client | None = None, timeout: float = 10.0
                 break
         except Exception as exc:
             last = f"{exc.__class__.__name__}: {exc}"
-        if attempt < HTTP_ATTEMPTS - 1:
+        if attempt < attempts - 1:
             time.sleep(HTTP_BACKOFF * (attempt + 1))
-    _record_error(f"{urllib.parse.urlsplit(url).netloc} — {last}")
+    if not quiet:
+        _record_error(f"{urllib.parse.urlsplit(url).netloc} — {last}")
     return None
 
 
@@ -472,6 +480,56 @@ def deezer_search(term: str, limit: int = 100,
     if payload is None:
         return []
     return [t for t in (_normalize_deezer(i) for i in payload.get("data", [])) if t]
+
+
+def album_art(artist: str, track: str = "",
+              client: httpx.Client | None = None) -> "str | None":
+    """כתובת עטיפת אלבום לזוג אמן/שיר.
+
+    מחרוזת ריקה = החנות ענתה ואין עטיפה. `None` = החנות לא ענתה בכלל.
+    ההבחנה הזו היא מה שמונע מהקאש המשותף להנציח תקלת רשת רגעית כ"לשיר
+    הזה אין עטיפה", לנצח ולכל המשתמשים.
+
+    למה Deezer ראשון ולא iTunes, בניגוד לשאר האפליקציה: זו בקשה אחת **לכל
+    ריבוע** על המסך, כלומר עשרות בקשות מרוכזות ברינדור אחד. מגבלת הקצב של
+    iTunes (בסביבות עשרים בקשות לדקה לכתובת) הייתה נחנקת מזה וגוררת איתה
+    את החיפוש עצמו לאותה דלת סגורה; ל-Deezer יש חמישים בקשות לחמש שניות,
+    והיא גם מחזירה עטיפה בגודל כפול (250px מול 100px).
+
+    iTunes נשאר כנפילה לאחור לשאילתה יחידה שלא נמצאה, ולא כמקור ראשי.
+
+    אין כאן שום ניקוד התאמה: התוצאה הראשונה על "אמן + שיר" בשם מוכר היא
+    האלבום הנכון ברוב המוחלט של המקרים, וריבוע של 34 פיקסלים אינו המקום
+    להשקיע בו קריאת רשת שנייה כדי לאמת.
+    """
+    term = " ".join(part for part in (artist.strip(), track.strip()) if part)
+    if not term:
+        return ""
+
+    # ניסיון אחד וטיימאאוט קצר, בניגוד לכל שאר הקריאות בקובץ: העטיפה היא
+    # קישוט, וסולם הניסיונות החוזרים (שלושה ניסיונות עם השהיה גדלה) היה
+    # הופך חנות שלא עונה להמתנה של דקות על מסך הפתיחה. מה שלא נענה מיד
+    # פשוט מוותר, והריבוע נשאר בדפוס הפסים.
+    url = f"{DEEZER_URL}?{urllib.parse.urlencode({'q': term, 'limit': 1})}"
+    deezer = get_json(url, client=client, timeout=4.0, quiet=True, attempts=1)
+    for item in (deezer or {}).get("data", []):
+        art = (item.get("album") or {}).get("cover_medium") or ""
+        if art:
+            return art
+
+    params = {"term": term, "media": "music", "entity": "song", "limit": 1,
+              "country": "US"}
+    itunes = get_json(f"{ITUNES_URL}?{urllib.parse.urlencode(params)}",
+                      client=client, timeout=4.0, quiet=True, attempts=1)
+    for item in (itunes or {}).get("results", []):
+        art = item.get("artworkUrl100") or ""
+        if art:
+            return art
+
+    # שתיהן נפלו: אין כאן תשובה, ואין מה לשמור בקאש
+    if deezer is None and itunes is None:
+        return None
+    return ""
 
 
 ITUNES_LOOKUP_URL = "https://itunes.apple.com/lookup"
