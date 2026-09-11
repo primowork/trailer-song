@@ -330,8 +330,23 @@ st.markdown(
         border: none !important; background: transparent !important;
     }
     .st-key-searchbar input { font-size: 15px; }
+    /* האמן משני לשיר, ובגודל זהה שני השדות נקראו כשני חיפושים נפרדים
+       שצריך למלא את שניהם. אותה היררכיה בדיוק כמו ה-chip שמחליף אותו
+       ברגע שיש ערך. */
+    .st-key-searchbar .st-key-cover_artist input { font-size: 13px; }
     .st-key-searchbar [data-testid="stElementContainer"]:has(input) {
         flex-grow: 1; min-width: 120px;
+    }
+    /* המכולה שעוטפת את ה-chip של האמן לא גדלה — אותה תקלה בדיוק
+       שמתועדת מיד מתחת על מכולת הזכוכית, וכאן היא הייתה חמורה יותר:
+       היא תפסה 179 פיקסלים מתוך 390 ודחסה את שדה השיר עד מינימום 120,
+       כך ש-"Look At Me Now" נחתך ל-"Look At Me No" (נמדד בטלפון). שם
+       האמן כמעט תמיד ידוע וקצר, ושם השיר הוא מה שמקלידים — הרוחב שייך לו. */
+    .st-key-searchbar > div:has(> .st-key-artistchip) {
+        /* `width` מפורש ולא רק `flex: 0 0 auto`: המכולה היא בלוק, ולכן
+           רוחב אוטומטי הוא עדיין 100% מהשורה — ה-chip פשוט היה יורד
+           לשורה משלו במקום להידחס */
+        flex: 0 0 auto; width: fit-content; max-width: 46%;
     }
     /* מכולת הזכוכית לא גדלה. ברירת המחדל של Streamlit למכולת אלמנט
        בתוך מכולה אופקית היא `flex: 1 1 fit-content`, ולכן היא נמתחה על
@@ -360,14 +375,17 @@ st.markdown(
     .st-key-searchbar:has(.ts-chiptext) .st-key-cover_artist {
         display: none !important;
     }
-    /* האמן כ-chip: mono, כי הוא ערך שנקבע ולא טקסט חופשי */
+    /* האמן כ-chip: גלולה מלאה ובלי מסגרת. עם מסגרת הוא נקרא כשדה קלט
+       שני — טקסט אפור בתוך תיבה מתארת, בדיוק כמו placeholder — כלומר
+       שני שדות שמתחרים על אותה שורה במקום שדה אחד וערך שכבר נבחר. */
     .st-key-artistchip {
-        border: 1px solid var(--line-strong); border-radius: 5px;
-        padding: 1px 3px 1px 7px; gap: 2px; flex: none;
+        border: none; border-radius: 999px; background: var(--chip-on);
+        padding: 2px 4px 2px 10px; gap: 2px; flex: none; max-width: 42vw;
     }
     .ts-chiptext {
-        font-family: var(--sans); font-weight: 500; font-size: 11px;
-        color: var(--text-4); white-space: nowrap;
+        font-family: var(--sans); font-weight: 500; font-size: 12px;
+        color: var(--text-2); white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
     }
     .st-key-clear_artist button { min-height: 22px; padding: 0 2px; }
     /* Surprise me — כפתור ghost; Find covers — ענבר מלא */
@@ -403,16 +421,47 @@ st.markdown(
         background: var(--chip-on) !important; color: var(--text) !important;
         font-weight: 500;
     }
-    .ts-sortlabel { font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
-    .st-key-moderow [data-testid="stSelectbox"] { min-width: 150px; }
+    .st-key-moderow [data-testid="stSelectbox"] { min-width: 130px; }
     .st-key-moderow [data-baseweb="select"] > div {
         background: transparent; border-color: var(--line-strong);
         border-radius: 8px; min-height: 30px; font-size: 12.5px;
     }
+    /* גם ה-input הפנימי של baseweb: בלעדיו הערך הנבחר יוצא ב-16px בעוד
+       שכל שאר הפקדים בשורה הם 12.5px, וזה נקרא כשני גופנים שונים */
+    .st-key-moderow [data-baseweb="select"] input,
+    .st-key-moderow [data-baseweb="select"] div[value] { font-size: 12.5px; }
     .st-key-moderow [data-testid="stPopover"] button {
         background: transparent; border: 1px solid var(--line-strong);
         border-radius: 8px; min-height: 30px; padding: 0 10px;
         color: var(--text-3); font-size: 12.5px;
+        /* בלי אלה התווית נחתכה ל-"Filt…" בטלפון. `max-content` לבדו לא
+           הספיק כי הוא כבר נמדד על הטקסט המקוצר, ולכן רוחב מפורש:
+           פדינג 20 + אייקון 16 + חץ 16 + "Filters" ב-12.5px. */
+        white-space: nowrap; min-width: 112px;
+    }
+    /* ובורר המיון לצידו מפסיק לבלוע את השורה. ברירת המחדל שלו היא
+       `flex: 1 1 128px`, כלומר הוא גדל על כל מה שנשאר ומשאיר לכפתור
+       הפילטרים את השארית בלבד. */
+    .st-key-moderow > div:has([data-testid="stSelectbox"]) {
+        flex: 0 1 200px;
+    }
+    /* ---- מה שלא מוצג לפני שיש תוצאות ----
+       מיון, פילטרים ו"אילו שירים בשם הזה" הם תחזוקה של רשימה שעוד לא
+       קיימת. על מסך ריק הם שלושה אשכולות בחירה נוספים מעל שדה החיפוש,
+       ובדיוק על זה נאמר "יש עומס בחירות".
+
+       הסתרה ב-CSS ולא ויתור על יצירת ה-widget: `filter_style` ו-
+       `filter_length` נשלחים *לתוך* החיפוש, ו-Streamlit מוחק מ-
+       `session_state` מפתח של widget שהפסיק להיווצר — אותו שיקול בדיוק
+       שמתועד על שדה האמן. `display: none` מוציא אותם גם מסדר ה-Tab. */
+    [data-testid="stMain"]:has(.ts-emptystate) .st-key-moderow
+        [data-testid="stSelectbox"],
+    [data-testid="stMain"]:has(.ts-emptystate) .st-key-moderow
+        [data-testid="stPopover"],
+    [data-testid="stMain"]:has(.ts-emptystate) .st-key-moderow
+        .ts-filtercount,
+    [data-testid="stMain"]:has(.ts-emptystate) .st-key-btn_which {
+        display: none !important;
     }
     .ts-filtercount {
         font-family: var(--sans); font-weight: 500; font-size: 11px;
@@ -3727,9 +3776,12 @@ with mode_row:
     search_mode = search_mode or MODE_SONG
 
     st.container(width="stretch")
-    st.html("<span class='ts-sortlabel'>Sort</span>")
+    # התווית בתוך הפקד ולא כ-span לצידו: ה-span היה יתום — הוא נדחק
+    # לקצה שורת המצבים בעוד שהבורר שלו ירד לשורה הבאה, וכך המילה "Sort"
+    # ריחפה ליד כפתורי המצב בלי שום קשר נראה אליהם (נראה בצילום מהטלפון).
     sort_by = st.selectbox("Sort", SORT_OPTIONS, key="sort_by",
-                           label_visibility="collapsed")
+                           label_visibility="collapsed",
+                           format_func=lambda name: f"Sort: {name}")
 
     _active_filters = 0
     with st.popover("Filters", icon=":material/tune:"):
@@ -4299,6 +4351,10 @@ def _start_here():
             for entry in random.sample(famous, min(START_HERE_COUNT, len(famous)))
         ]
 
+    # סמן ל-CSS: כל עוד מסך הפתיחה על המסך, פקדי המיון והסינון מוסתרים
+    # (ראו את הכלל על `.ts-emptystate`). כאן ולא ב-`st.session_state`, כי
+    # מי שמחליט אם יש מסך פתיחה רץ הרבה אחרי שהפקדים האלה כבר נוצרו.
+    st.html("<span class='ts-emptystate' hidden></span>")
     st.html("<div class='ts-railcap ts-startcap'>START WITH ONE OF THESE</div>")
     _entry_grid(st.session_state["start_here"], "start")
 

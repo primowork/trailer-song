@@ -2159,3 +2159,42 @@ def test_the_headline_stays_off_the_charts_screen(app):
     _nav(app, "Charts")
     assert not app.exception
     assert "Find a cover worth cutting to" not in _html_bodies(app)
+# ---------- ניקוי שורת החיפוש ----------
+
+def test_the_empty_screen_marks_itself_for_the_hidden_controls(app):
+    """מיון, פילטרים ו"אילו שירים בשם הזה" הם תחזוקה של רשימה שעוד לא
+    קיימת, ועל מסך ריק הם שלושה אשכולות בחירה נוספים מעל שדה החיפוש.
+
+    הסמן נבדק ולא ה-CSS עצמו, כי `AppTest` אינו מריץ דפדפן — ולכן גם
+    הכלל שנשען עליו נבדק כאן, כדי ששינוי שם של אחד מהם לא יעבור בשקט.
+    """
+    assert not app.exception
+    assert "ts-emptystate" in _html_bodies(app), "אין סמן למסך הריק"
+    assert "ts-emptystate" in _page_css(app), "אין כלל CSS שנשען על הסמן"
+
+
+def test_the_marker_goes_away_with_the_results(app):
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert "ts-emptystate" not in _html_bodies(app)
+
+
+def test_the_hidden_controls_are_still_created_and_keep_their_state(app):
+    """הסתרה ב-CSS ולא ויתור על יצירת ה-widget: `filter_style` ו-
+    `filter_length` נשלחים *לתוך* החיפוש, ו-Streamlit מוחק מ-
+    `session_state` מפתח של widget שהפסיק להיווצר."""
+    assert not app.exception
+    keys = {s.key for s in app.selectbox}
+    assert {"sort_by", "filter_style", "filter_length"} <= keys
+
+    app.selectbox(key="filter_style").set_value(search_module.STYLES[0]).run()
+    assert app.session_state["filter_style"] == search_module.STYLES[0]
+
+
+def test_the_sort_control_carries_its_own_label(app):
+    """ה-span שכתוב בו "Sort" היה יתום: הוא נדחק לקצה שורת המצבים בעוד
+    שהבורר שלו ירד לשורה הבאה."""
+    assert "ts-sortlabel" not in _rendered(app)
+    assert "ts-sortlabel" not in _page_css(app)
