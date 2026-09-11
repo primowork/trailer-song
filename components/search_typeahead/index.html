@@ -229,11 +229,46 @@ function init() {
     };
   }
 
+  // "לחיצה על Find covers" בלי לחיצה: מחפש כפתור אמיתי ולא את השכפול
+  // האטום שלו — Streamlit מצייר עותק ברוחב/גובה אפס לכל `st.button`
+  // (תועד ונבדק ב-Playwright בעבר), ולחיצה עליו לא הייתה עושה כלום.
+  function clickSearchButton() {
+    const button = Array.from(doc.querySelectorAll("button"))
+      .find((b) => b.textContent.trim() === "Find covers" && b.offsetParent !== null);
+    if (button) button.click();
+  }
+
+  // ה-Enter עצמו כבר מ*חיל* את הערך שהוקלד (ה-tooltip של Streamlit אומר
+  // בדיוק את זה — "Press Enter to apply"), אבל זה רק כותב ל-session_state
+  // ולא מריץ חיפוש. השהיה קצרה לפני הלחיצה על הכפתור, כדי שה"החלה" של
+  // Streamlit תספיק להגיע לשרת לפני שהחיפוש קורא את מה שהיא כתבה — שני
+  // אירועים סמוכים על אותו שדה, ולא אחד.
+  function searchOnPlainEnter(event) {
+    if (event.key !== "Enter") return;
+    if (!panel.hidden && items.length) return;   // ה-Enter הזה שייך לרשימת ההצעות
+    setTimeout(clickSearchButton, 80);
+  }
+
+  // התמקדות אוטומטית בשדה הראשי: מי שנוחת על האפליקציה יכול פשוט להתחיל
+  // להקליד, בלי ללחוץ על השדה קודם. בלי דגל "כבר ניסינו" בכוונה — נמדד
+  // ש-Streamlit מחליף את ה-<input> פעם אחת בזמן ה-hydration הראשוני, אחרי
+  // שהניסיון הראשון כבר קרא ל-`focus()` על האלמנט הישן, כך שההתמקדות
+  // הראשונה אבדה בשקט. `bind()` נקרא שוב על כל אלמנט טרי (לא רק בטעינה),
+  // ולכן הפונקציה כאן פשוט תמיד בודקת את המצב הנוכחי מחדש — ומפסיקה
+  // לבד ברגע שיש focus אמיתי במקום כלשהו או שהשדה כבר לא ריק, בלי
+  // צורך בדגל נפרד. הריצה החוזרת מוגבלת ממילא ל-`setInterval` של `bind`
+  // (פעם בשנייה), ורק כל עוד השדה הזה עדיין "טרי" מבחינתו.
+  function autofocusOnce(titleInput) {
+    const nothingFocused = !doc.activeElement || doc.activeElement === doc.body;
+    if (nothingFocused && !titleInput.value) titleInput.focus();
+  }
+
   function bind() {
     const titleInput = doc.querySelector('input[aria-label="Song"]');
     const artistInput = doc.querySelector('input[aria-label="Original artist"]');
     if (!titleInput || titleInput.__typeaheadBound) return;
     titleInput.__typeaheadBound = true;
+    autofocusOnce(titleInput);
 
     const debouncedTitle = debounce(() => {
       activeInput = titleInput;
@@ -255,7 +290,7 @@ function init() {
     [titleInput, artistInput].forEach((el) => {
       if (!el) return;
       el.addEventListener("keydown", (event) => {
-        if (panel.hidden || !items.length) return;   // לא לגעת בהתנהגות הרגילה
+        if (panel.hidden || !items.length) { searchOnPlainEnter(event); return; }
         const pickable = items.map((it, i) => ({ it, i })).filter((x) => !x.it.separator);
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
@@ -272,6 +307,11 @@ function init() {
           if (chosen && chosen.pick) { chosen.pick(); hide(); }
         } else if (event.key === "Escape") {
           hide();
+        } else if (event.key === "Enter") {
+          // הצעות פתוחות, אבל אף אחת מהן לא מסומנת בחצים: המשתמש
+          // מתעלם מהרשימה ורוצה לחפש בדיוק את מה שהוא הקליד.
+          hide();
+          searchOnPlainEnter(event);
         }
       });
     });
