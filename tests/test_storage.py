@@ -96,3 +96,36 @@ def test_mismatch_reports_keep_separate_queries_separate(tmp_path, monkeypatch):
         "beck|loser": {"j2|closer"},
         "the cranberries|zombie": {"fela kuti|zombie"},
     }
+
+
+def test_category_corrections_roundtrip(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    assert storage.load_category_corrections() == []
+    assert storage.add_category_correction(
+        "ronnie minder|lollipop", "ronnie minder",
+        "ronnie minder|kane (original motion picture soundtrack)",
+        "Everything else")
+    assert storage.load_category_corrections() == [{
+        "track_key": "ronnie minder|lollipop",
+        "artist_key": "ronnie minder",
+        "album_key": "ronnie minder|kane (original motion picture soundtrack)",
+        "category": "Everything else",
+    }]
+
+
+def test_correcting_the_same_track_twice_keeps_one_record(tmp_path, monkeypatch):
+    """מי שמתקן פעמיים התכוון לפעם השנייה, ושתי רשומות סותרות על אותו
+    טראק היו מבטלות הכללה שכל השאר מסכימים עליה."""
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    storage.add_category_correction("a|b", "a", "a|album", "Rock")
+    storage.add_category_correction("a|b", "a", "a|album", "Classical")
+    records = storage.load_category_corrections()
+    assert len(records) == 1
+    assert records[0]["category"] == "Classical"
+
+
+def test_two_users_correcting_different_tracks_do_not_overwrite(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    storage.add_category_correction("a|b", "a", "a|album", "Rock")
+    storage.add_category_correction("c|d", "c", "c|album", "Classical")
+    assert len(storage.load_category_corrections()) == 2

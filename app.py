@@ -1661,6 +1661,11 @@ def _init_state():
         # לא לפי SUBJECT: זו עובדה על הקטלוג ("זה לא השיר הזה"), לא טעם
         # אישי — ראו ההערה ב-`storage.load_mismatch_reports`.
         "mismatch_reports": storage.load_mismatch_reports(),
+        # ומאותה סיבה: לאיזה סוג גרסה שייך קאבר הוא עובדה עליו. נשמר
+        # כרשומות גולמיות, וההכללה לאלבום ולאמן נגזרת מהן בכל ריצה
+        # (`buckets.correction_index`) כדי ששינוי בסולם ההכללה לא ידרוש
+        # לאסוף מאפס.
+        "category_corrections": storage.load_category_corrections(),
         "favorites": storage.load_favorites(SUBJECT),
         "rejections": storage.load_rejections(SUBJECT),
         "candidates": [],
@@ -1748,6 +1753,34 @@ def apply_mismatch_reports(tracks: list[dict], original: "dict | None" = None) -
             continue
         out.append(t)
     return out
+
+
+def category_index() -> dict:
+    """מה שנלמד מתיקוני הקטגוריה, מחושב פעם אחת לריצה.
+
+    נגזר ולא נשמר: הסולם (`buckets.ALBUM_AGREEMENT` וחבריו) יכול להשתנות,
+    ואינדקס שמור היה מתיישן בשקט בדיוק כמו שהתגיות ב-`tags.py` היו
+    מתיישנות אילו נשמרו.
+    """
+    cached = st.session_state.get("_category_index")
+    records = st.session_state.get("category_corrections") or []
+    if cached is None or cached[0] != len(records):
+        cached = (len(records), buckets.correction_index(records))
+        st.session_state["_category_index"] = cached
+    return cached[1]
+
+
+def record_category(track: dict, category: str):
+    """שומר תיקון של משתמש ומחיל אותו מיד, בלי להמתין לחיפוש הבא."""
+    track_k, album_k, artist_k = buckets.correction_keys(track)
+    record = {"track_key": track_k, "artist_key": artist_k,
+              "album_key": album_k, "category": category}
+    # מחליף רשומה קודמת על אותו טראק, בדיוק כמו בשכבת השמירה
+    records = [r for r in st.session_state["category_corrections"]
+               if r.get("track_key") != track_k]
+    st.session_state["category_corrections"] = records + [record]
+    st.session_state.pop("_category_index", None)
+    storage.add_category_correction(track_k, artist_k, album_k, category)
 
 
 def drop_seen(tracks: list[dict], seen) -> list[dict]:
@@ -3314,6 +3347,30 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                     st.rerun()
 
             st.divider()
+            # "Wrong category?" — הכלל שקובע את הקטגוריה קורא כותרת, ז'אנר
+            # ומדידה, ולכן הוא טועה בדיוק איפה שהמטא-דאטה משקרת: אלבום
+            # בשם "... (Original Motion Picture Soundtrack)" נקרא טריילר
+            # גם כשמדובר בשיר פופ רגיל בפסקול. מי שרואה את השורה יודע.
+            #
+            # selectbox ולא כפתור שפותח רשימה: ל-popover של Streamlit אין
+            # מצב פתוח ב-`session_state`, וכל לחיצה בתוכו סוגרת אותו —
+            # כלומר "כפתור שפותח אופציות" היה דורש לפתוח את התפריט פעמיים.
+            # כאן הלחיצה פותחת את האופציות בתוך אותו תפריט, ובחירה מחילה.
+            _now_in = buckets.bucket_of(track, features, category_index())
+            _picked = st.selectbox(
+                "Wrong category?", buckets.ORDER,
+                index=buckets.ORDER.index(_now_in), key=f"cat_{uid}",
+                help="The category is guessed from the title, the genre and "
+                     "the measurement. Correcting it here is shared: this "
+                     "version is filed under your choice in every search, "
+                     "and enough matching corrections move the whole album "
+                     "or artist with it.")
+            if _picked != _now_in:
+                record_category(track, _picked)
+                st.toast(f"Filed '{track['track']}' under {_picked}")
+                st.rerun()
+
+            st.divider()
             if st.button("Block artist", key=f"btn_block_{uid}",
                          icon=":material/block:", use_container_width=True):
                 st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
@@ -4092,7 +4149,8 @@ if candidates:
     #
     # כמסנן, הדירוג הגלובלי נשאר שלם — גרסאות הטריילר עדיין בראש דרך
     # `RANK_TRAILER` — והלחיצה רק מצמצמת את אותה רשימה מדורגת.
-    _counts = buckets.counts(display, _measurements)
+    _corrections = category_index()
+    _counts = buckets.counts(display, _measurements, _corrections)
     _present = [name for name in buckets.ORDER if _counts.get(name)]
     if len(_present) > 1:
         with st.container(key="kindrow"):
@@ -4106,7 +4164,8 @@ if candidates:
         if _kind and _kind != buckets.ALL:
             display = [track for track in display
                        if buckets.bucket_of(
-                           track, _measurements.get(track["uid"])) == _kind]
+                           track, _measurements.get(track["uid"]),
+                           _corrections) == _kind]
 
     visible = display[: st.session_state["visible_count"]]
 

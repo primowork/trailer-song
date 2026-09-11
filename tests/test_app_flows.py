@@ -1913,3 +1913,71 @@ def test_a_saved_artist_ranks_their_other_covers_higher(app):
     assert not app.exception
     keys = [b.key for b in app.button if (b.key or "").startswith("btn_favorite_")]
     assert keys.index("btn_favorite_itunes-known") < keys.index("btn_favorite_itunes-unknown")
+
+
+# ---------- "Wrong category?" ----------
+
+def _soundtrack(uid="cat1", title="Lollipop"):
+    return track("Ronnie Minder", title, uid,
+                 album="Kane (Original Motion Picture Soundtrack)")
+
+
+def test_a_wrong_category_can_be_corrected_from_the_row(app):
+    """הבקשה: כפתור בשורה שנותן את האופציות, והתיקון נלמד."""
+    import buckets
+
+    app.session_state["candidates"] = [_soundtrack()]
+    app.run()
+    assert not app.exception
+
+    picker = [s for s in app.selectbox if s.key == "cat_itunes-cat1"]
+    assert picker, "אין בורר קטגוריה בשורה"
+    assert list(picker[0].options) == list(buckets.ORDER)
+    # שם האלבום לבדו הוא מה שמסווג את השורה כטריילר
+    assert picker[0].value == buckets.TRAILER
+
+    picker[0].set_value(buckets.OTHER).run()
+    assert not app.exception
+    assert storage.load_category_corrections(), "התיקון לא נשמר בכלל"
+
+
+def test_the_correction_is_shared_and_survives_a_new_search(app):
+    """דיווח אחד מציל את כל מי שיראה את אותה גרסה אחריו — כולל חיפוש אחר
+    לגמרי, שבו היא חוזרת עם uid אחר."""
+    import buckets
+
+    app.session_state["candidates"] = [_soundtrack()]
+    app.run()
+    [s for s in app.selectbox if s.key == "cat_itunes-cat1"][0].set_value(
+        buckets.OTHER).run()
+
+    # אותה גרסה, חיפוש אחר, מזהה חנות אחר
+    app.session_state["candidates"] = [_soundtrack(uid="from-another-search")]
+    app.run()
+
+    assert not app.exception
+    again = [s for s in app.selectbox if s.key == "cat_itunes-from-another-search"]
+    assert again and again[0].value == buckets.OTHER
+
+
+def test_the_filter_buttons_agree_with_the_correction(app):
+    """בלי זה השורה זזה בתפריט אבל לא בכפתורי הסינון שמעל התוצאות."""
+    import buckets
+
+    app.session_state["candidates"] = [
+        _soundtrack(), track("Somebody", "Yellow (Rock Cover)", "rock1")]
+    app.run()
+
+    def kinds():
+        row = [p for p in app.pills if p.key == "bucket_filter"]
+        assert row, "שורת הקטגוריות נעלמה"
+        # התוויות נושאות מונה ("Trailer / epic (1)")
+        return {label.rsplit(" (", 1)[0] for label in row[0].options}
+
+    assert buckets.TRAILER in kinds()
+
+    [s for s in app.selectbox if s.key == "cat_itunes-cat1"][0].set_value(
+        buckets.OTHER).run()
+
+    assert not app.exception
+    assert buckets.TRAILER not in kinds(), "הקטגוריה הישנה עדיין נספרת"
