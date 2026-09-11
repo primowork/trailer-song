@@ -128,3 +128,122 @@ def test_an_unmeasured_cover_does_not_guess_at_calm_or_intimate():
     assert buckets.bucket_of(_track("Yellow"), None) == buckets.OTHER
     assert buckets.bucket_of(_track("Yellow"), {}) == buckets.OTHER
     assert buckets.bucket_of(_track("Yellow"), {"error": "cors"}) == buckets.OTHER
+
+
+# ---------- תיקוני משתמשים ל"Wrong category?" ----------
+
+def _row(artist, title, album="", genre=""):
+    return {"artist": artist, "track": title, "album": album, "genre": genre}
+
+
+SOUNDTRACK = _row("Ronnie Minder", "Lollipop",
+                    album="Kane (Original Motion Picture Soundtrack)")
+
+
+def _correction(track, category):
+    track_key, album_key, artist_key = buckets.correction_keys(track)
+    return {"track_key": track_key, "album_key": album_key,
+            "artist_key": artist_key, "category": category}
+
+
+def test_the_rules_alone_call_a_soundtrack_a_trailer():
+    """הכשל שהתיקון קיים בשבילו: שיר פופ רגיל בפסקול נקרא 'טריילר' רק
+    בגלל שם האלבום."""
+    assert buckets.bucket_of(SOUNDTRACK) == buckets.TRAILER
+
+
+def test_a_correction_beats_the_rules():
+    index = buckets.correction_index([_correction(SOUNDTRACK, buckets.OTHER)])
+    assert buckets.bucket_of(SOUNDTRACK, None, index) == buckets.OTHER
+
+
+def test_a_correction_follows_the_track_into_another_search():
+    """זו הלמידה שנתבקשה: הדיווח נעשה פעם אחת וחל על כל חיפוש אחר כך.
+
+    אותה גרסה חוזרת עם uid אחר ומחנות אחרת, ולכן ההתאמה היא לפי זהות
+    תוכן (`search.track_key`) ולא לפי מזהה החנות.
+    """
+    index = buckets.correction_index([_correction(SOUNDTRACK, buckets.OTHER)])
+    same_song_other_store = _row("ronnie minder", "Lollipop  ",
+                                   album="Something Else")
+    assert buckets.bucket_of(same_song_other_store, None, index) == buckets.OTHER
+
+
+def test_one_correction_does_not_move_the_whole_album():
+    """הכללה מטראק בודד לאלבום שלם על סמך קליק אחד היא ניחוש."""
+    index = buckets.correction_index([_correction(SOUNDTRACK, buckets.OTHER)])
+    sibling = _row("Ronnie Minder", "Another Cue",
+                     album="Kane (Original Motion Picture Soundtrack)")
+    assert buckets.bucket_of(sibling, None, index) == buckets.TRAILER
+
+
+def test_enough_matching_corrections_move_the_album():
+    records = [
+        _correction(SOUNDTRACK, buckets.OTHER),
+        _correction(_row("Ronnie Minder", "Another Cue",
+                           album="Kane (Original Motion Picture Soundtrack)"),
+                    buckets.OTHER),
+    ]
+    index = buckets.correction_index(records)
+    third = _row("Ronnie Minder", "A Third Cue",
+                   album="Kane (Original Motion Picture Soundtrack)")
+    assert buckets.bucket_of(third, None, index) == buckets.OTHER
+
+
+def test_two_users_who_disagree_teach_nothing():
+    """עדות מעורבת פירושה 'לא יודעים', והנפילה לאחור היא החוקים —
+    שהם לפחות עקביים. רוב על שניים הוא משתמש אחד שטעה."""
+    records = [
+        _correction(SOUNDTRACK, buckets.OTHER),
+        _correction(_row("Ronnie Minder", "Another Cue",
+                           album="Kane (Original Motion Picture Soundtrack)"),
+                    buckets.ROCK),
+    ]
+    index = buckets.correction_index(records)
+    third = _row("Ronnie Minder", "A Third Cue",
+                   album="Kane (Original Motion Picture Soundtrack)")
+    assert buckets.bucket_of(third, None, index) == buckets.TRAILER
+    # ומה שתוקן במפורש עדיין מתוקן
+    assert buckets.bucket_of(SOUNDTRACK, None, index) == buckets.OTHER
+
+
+def test_an_artist_needs_a_higher_bar_than_an_album():
+    """אלבום הוא הפקה אחת; אמן הוא גוף עבודה שלם."""
+    albums = ["First Score", "Second Score", "Third Score"]
+    records = [_correction(_row("Ronnie Minder", f"Cue {i}", album=album,
+                                  genre="Rock"), buckets.CLASSICAL)
+               for i, album in enumerate(albums)]
+    assert len(records) == buckets.ARTIST_AGREEMENT
+
+    fewer = buckets.correction_index(records[:-1])
+    elsewhere = _row("Ronnie Minder", "Unrelated", album="Fourth Score",
+                       genre="Rock")
+    assert buckets.bucket_of(elsewhere, None, fewer) == buckets.ROCK
+
+    enough = buckets.correction_index(records)
+    assert buckets.bucket_of(elsewhere, None, enough) == buckets.CLASSICAL
+
+
+def test_the_same_album_name_under_another_artist_is_untouched():
+    """"Greatest Hits" הוא שם של מאות אלבומים שונים."""
+    records = [_correction(_row("Ronnie Minder", f"Cue {i}",
+                                  album="Greatest Hits", genre="Rock"),
+                           buckets.CLASSICAL) for i in range(2)]
+    index = buckets.correction_index(records)
+    other_artist = _row("Somebody Else", "Cue 9", album="Greatest Hits",
+                          genre="Rock")
+    assert buckets.bucket_of(other_artist, None, index) == buckets.ROCK
+
+
+def test_a_category_that_is_not_in_the_list_is_ignored():
+    """הרשומות מגיעות מאחסון משותף ואינן נתון מהימן."""
+    index = buckets.correction_index([_correction(SOUNDTRACK, "Klezmer")])
+    assert buckets.bucket_of(SOUNDTRACK, None, index) == buckets.TRAILER
+
+
+def test_counts_and_group_see_the_correction_too():
+    """בלי זה השורה זזה בתפריט אבל לא בכפתורי הסינון שמעל התוצאות."""
+    tracks = [{**SOUNDTRACK, "uid": "a"}]
+    index = buckets.correction_index([_correction(SOUNDTRACK, buckets.OTHER)])
+    assert buckets.counts(tracks, {}, index) == {buckets.OTHER: 1}
+    assert [name for name, _ in buckets.group(tracks, {}, index)] == [buckets.OTHER]

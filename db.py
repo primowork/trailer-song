@@ -88,6 +88,18 @@ CREATE TABLE IF NOT EXISTS mismatch_reports (
     PRIMARY KEY (query_key, track_key)
 );
 
+-- תיקוני קטגוריה ("Wrong category?"). משותף כמו mismatch_reports — לאיזה
+-- סוג גרסה שייך קאבר הוא עובדה עליו, לא העדפה. מפתח ראשי על הטראק, כי
+-- תיקון חוזר עליו הוא דעה מעודכנת ולא רשומה נוספת; האמן והאלבום נשמרים
+-- כדי שההכללה ב-`buckets.correction_index` תוכל להיגזר מחדש.
+CREATE TABLE IF NOT EXISTS category_corrections (
+    track_key   text PRIMARY KEY,
+    artist_key  text NOT NULL DEFAULT '',
+    album_key   text NOT NULL DEFAULT '',
+    category    text NOT NULL,
+    reported_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- מכסה. המפתח הוא ה-subject המלא ("user:<email>" או "anon:<uuid>"),
 -- ולא user_id, כי אנונימי חייב מכסה גם בלי שורה ב-users.
 CREATE TABLE IF NOT EXISTS quota (
@@ -320,6 +332,35 @@ def add_mismatch_report(query_key: str, track_key: str) -> bool:
             cur.execute(
                 "INSERT INTO mismatch_reports (query_key, track_key) VALUES (%s, %s) "
                 "ON CONFLICT (query_key, track_key) DO NOTHING", (query_key, track_key))
+        conn.commit()
+    return True
+
+
+def load_category_corrections() -> list:
+    """כל תיקוני הקטגוריה שנצברו, מכל המשתמשים."""
+    with connect() as conn:
+        with _cursor(conn) as cur:
+            cur.execute("SELECT track_key, artist_key, album_key, category "
+                        "FROM category_corrections")
+            return [{"track_key": t, "artist_key": ar, "album_key": al,
+                     "category": c} for t, ar, al, c in cur.fetchall()]
+
+
+def add_category_correction(record: dict) -> bool:
+    """תיקון אחד. upsert ולא `DO NOTHING`, בניגוד ל-`add_mismatch_report`:
+    תיקון חוזר על אותו טראק הוא דעה מעודכנת ולא כפילות."""
+    with connect() as conn:
+        with _cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO category_corrections "
+                "(track_key, artist_key, album_key, category) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (track_key) DO UPDATE SET "
+                "artist_key = EXCLUDED.artist_key, "
+                "album_key = EXCLUDED.album_key, "
+                "category = EXCLUDED.category, reported_at = now()",
+                (record["track_key"], record["artist_key"],
+                 record["album_key"], record["category"]))
         conn.commit()
     return True
 

@@ -711,6 +711,55 @@ st.markdown(
        אותו ולא הצלחתי בלי להסתיר גם את ה-⋯ עצמו (שני האייקונים אינם
        אחים באותה רמה), ולכן הוא נשאר — הוא גם לא שקר: הכפתור באמת פותח
        תפריט. אין כאן כלל CSS מת שמתיימר לטפל בזה. */
+    /* ---- תפריט השורה כתפריט, לא כדף ----
+       נמדד בטלפון לפני התיקון: גוף ה-popover יצא 374x591 פיקסלים — כלומר
+       כמעט כל המסך — עם פדינג 23 ומרווח 16 בין עשרה פריטים. ברירות המחדל
+       של Streamlit בנויות לטופס, וכאן מדובר בחמש פעולות. התיחום הוא
+       `:has(.ts-rowmenu)` ולא `st-key-tacts_`, כי הגוף מרונדר בפורטל
+       בשורש המסמך ואינו צאצא של השורה. */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) {
+        padding: 6px !important;
+        width: max-content; min-width: 232px; max-width: min(290px, 88vw);
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-testid="stVerticalBlock"] {
+        gap: 1px;
+    }
+    /* פריטי התפריט: שורות, לא כפתורים בעלי מסגרת */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button {
+        border: none; background: transparent; color: var(--text-2);
+        min-height: 32px; height: 32px; padding: 0 8px; font-size: 13px;
+        border-radius: 7px;
+    }
+    /* היישור לשמאל חייב לרדת גם ל-`<div>` הפנימי: הכפתור עצמו הוא
+       ה-flex container, אבל Streamlit עוטף את התווית בעוד `<div>`
+       שמרכז בעצמו — בלי השורה הזו כל פריטי התפריט יצאו ממורכזים */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button,
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button > div {
+        justify-content: flex-start; text-align: start;
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) .stButton button:hover {
+        background: var(--raised); color: var(--text);
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) hr {
+        margin: 5px 0; border-color: var(--line);
+    }
+    .ts-menucap {
+        font-size: 11.5px; line-height: 1.45; color: var(--text-3);
+        padding: 4px 8px;
+    }
+    .ts-menucap b { color: var(--text-2); font-weight: 600; }
+    /* בורר הקטגוריה: תווית צמודה לפקד, ופקד בגובה של פריט תפריט */
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-testid="stWidgetLabel"] p {
+        font-size: 11.5px; color: var(--text-3); margin: 0; padding: 4px 8px 2px;
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-baseweb="select"] > div {
+        background: transparent; border-color: var(--line-strong);
+        border-radius: 7px; min-height: 32px; font-size: 12.5px;
+    }
+    [data-testid="stPopoverBody"]:has(.ts-rowmenu) [data-baseweb="select"] input {
+        font-size: 12.5px;
+    }
+
     /* לב אהוב ו"לא זה" פעיל: אלמוג. ברירת המחדל של פעולה מסומנת בשורה. */
     [class*="st-key-tacts_"] .stButton button[kind="primary"] {
         background: rgba(255,107,74,.12); border-color: rgba(255,107,74,.45);
@@ -1680,6 +1729,11 @@ def _init_state():
         # לא לפי SUBJECT: זו עובדה על הקטלוג ("זה לא השיר הזה"), לא טעם
         # אישי — ראו ההערה ב-`storage.load_mismatch_reports`.
         "mismatch_reports": storage.load_mismatch_reports(),
+        # ומאותה סיבה: לאיזה סוג גרסה שייך קאבר הוא עובדה עליו. נשמר
+        # כרשומות גולמיות, וההכללה לאלבום ולאמן נגזרת מהן בכל ריצה
+        # (`buckets.correction_index`) כדי ששינוי בסולם ההכללה לא ידרוש
+        # לאסוף מאפס.
+        "category_corrections": storage.load_category_corrections(),
         "favorites": storage.load_favorites(SUBJECT),
         "rejections": storage.load_rejections(SUBJECT),
         "candidates": [],
@@ -1767,6 +1821,34 @@ def apply_mismatch_reports(tracks: list[dict], original: "dict | None" = None) -
             continue
         out.append(t)
     return out
+
+
+def category_index() -> dict:
+    """מה שנלמד מתיקוני הקטגוריה, מחושב פעם אחת לריצה.
+
+    נגזר ולא נשמר: הסולם (`buckets.ALBUM_AGREEMENT` וחבריו) יכול להשתנות,
+    ואינדקס שמור היה מתיישן בשקט בדיוק כמו שהתגיות ב-`tags.py` היו
+    מתיישנות אילו נשמרו.
+    """
+    cached = st.session_state.get("_category_index")
+    records = st.session_state.get("category_corrections") or []
+    if cached is None or cached[0] != len(records):
+        cached = (len(records), buckets.correction_index(records))
+        st.session_state["_category_index"] = cached
+    return cached[1]
+
+
+def record_category(track: dict, category: str):
+    """שומר תיקון של משתמש ומחיל אותו מיד, בלי להמתין לחיפוש הבא."""
+    track_k, album_k, artist_k = buckets.correction_keys(track)
+    record = {"track_key": track_k, "artist_key": artist_k,
+              "album_key": album_k, "category": category}
+    # מחליף רשומה קודמת על אותו טראק, בדיוק כמו בשכבת השמירה
+    records = [r for r in st.session_state["category_corrections"]
+               if r.get("track_key") != track_k]
+    st.session_state["category_corrections"] = records + [record]
+    st.session_state.pop("_category_index", None)
+    storage.add_category_correction(track_k, artist_k, album_k, category)
 
 
 def drop_seen(tracks: list[dict], seen) -> list[dict]:
@@ -3395,7 +3477,18 @@ def render_track(track: dict, index: int, learned: dict | None = None):
         # תפריט אחד לכל מה שנדיר: קודם כל פעולה תפסה כפתור משלה בכל שורה,
         # ושש שורות טקסט אפור נאבקו על אותה תשומת לב
         with st.popover("", icon=":material/more_horiz:", width=54):
-            st.caption(f"More like **{track['track']}**")
+            # סמן לתיחום ה-CSS: גוף ה-popover מרונדר בפורטל בשורש המסמך
+            # ולא בתוך השורה, ולכן אי אפשר להגיע אליו דרך `st-key-tacts_`.
+            # בלי התיחום, הכללים שמכווצים את התפריט הזה היו חלים גם על
+            # ה-popover של הפילטרים — שם הם היו הופכים טופס לרשימת פריטים.
+            st.html("<span class='ts-rowmenu' hidden></span>")
+            # `st.html` ולא `st.caption`: גוף ה-popover מרונדר מחוץ
+            # ל-`stMain`, ולכן כללי הכיתובים של האפליקציה לא חלים עליו
+            # בכלל, והמעטפת ש-Streamlit בונה סביב markdown קרסה ל-5
+            # פיקסלים בעוד שהטקסט עצמו 21 — כלומר הכיתוב גלש על הכפתור
+            # שמתחתיו ועל הקו המפריד (נמדד בדפדפן). כאן התיבה שלנו.
+            st.html("<div class='ts-menucap'>More like <b>"
+                    f"{html.escape(track['track'])}</b></div>")
             if st.button("More covers of this song", key=f"more_covers_{uid}",
                          icon=":material/library_music:", use_container_width=True):
                 st.session_state["similar_of"] = ("covers", track)
@@ -3413,7 +3506,9 @@ def render_track(track: dict, index: int, learned: dict | None = None):
             # loudness, low end, hits, dynamic span) — כלי כיול שלי
             # שדלף למוצר, ונקרא בטלפון בדיוק כמו מה שהוא: פלט דיבאג.
             # המספרים לא נמחקו, הם מאחורי `TRAILER_SONG_DEBUG` למטה.
-            st.caption(_track_summary(track))
+            _summary = _track_summary(track)
+            if _summary:
+                st.html(f"<div class='ts-menucap'>{html.escape(_summary)}</div>")
             if DEBUG_DETAILS:
                 st.caption(_rank_breakdown(track, learned, features))
                 if audio.measured(features):
@@ -3437,7 +3532,29 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                             "for this song again")
                     st.rerun()
 
-            st.divider()
+            # "Wrong category?" — הכלל שקובע את הקטגוריה קורא כותרת, ז'אנר
+            # ומדידה, ולכן הוא טועה בדיוק איפה שהמטא-דאטה משקרת: אלבום
+            # בשם "... (Original Motion Picture Soundtrack)" נקרא טריילר
+            # גם כשמדובר בשיר פופ רגיל בפסקול. מי שרואה את השורה יודע.
+            #
+            # selectbox ולא כפתור שפותח רשימה: ל-popover של Streamlit אין
+            # מצב פתוח ב-`session_state`, וכל לחיצה בתוכו סוגרת אותו —
+            # כלומר "כפתור שפותח אופציות" היה דורש לפתוח את התפריט פעמיים.
+            # כאן הלחיצה פותחת את האופציות בתוך אותו תפריט, ובחירה מחילה.
+            _now_in = buckets.bucket_of(track, features, category_index())
+            _picked = st.selectbox(
+                "Wrong category?", buckets.ORDER,
+                index=buckets.ORDER.index(_now_in), key=f"cat_{uid}",
+                help="The category is guessed from the title, the genre and "
+                     "the measurement. Correcting it here is shared: this "
+                     "version is filed under your choice in every search, "
+                     "and enough matching corrections move the whole album "
+                     "or artist with it.")
+            if _picked != _now_in:
+                record_category(track, _picked)
+                st.toast(f"Filed '{track['track']}' under {_picked}")
+                st.rerun()
+
             if st.button("Block artist", key=f"btn_block_{uid}",
                          icon=":material/block:", use_container_width=True):
                 st.session_state["blacklist"].add(clean_artist_name(track["artist"]).lower())
@@ -4302,7 +4419,8 @@ if candidates:
     #
     # כמסנן, הדירוג הגלובלי נשאר שלם — גרסאות הטריילר עדיין בראש דרך
     # `RANK_TRAILER` — והלחיצה רק מצמצמת את אותה רשימה מדורגת.
-    _counts = buckets.counts(display, _measurements)
+    _corrections = category_index()
+    _counts = buckets.counts(display, _measurements, _corrections)
     _present = [name for name in buckets.ORDER if _counts.get(name)]
     if len(_present) > 1:
         with st.container(key="kindrow"):
@@ -4316,7 +4434,8 @@ if candidates:
         if _kind and _kind != buckets.ALL:
             display = [track for track in display
                        if buckets.bucket_of(
-                           track, _measurements.get(track["uid"])) == _kind]
+                           track, _measurements.get(track["uid"]),
+                           _corrections) == _kind]
 
     visible = display[: st.session_state["visible_count"]]
 
