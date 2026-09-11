@@ -2827,6 +2827,30 @@ def rank_score(track: dict, learned: dict, measurements: dict) -> float:
             + RANK_HARMONY * (NEUTRAL_HARMONY if harmony is None else harmony))
 
 
+# פירוק הדירוג והמדדים הגולמיים הם כלי כיול, לא תוכן. הם נשארים בקוד
+# ומוצגים רק כשמדליקים אותם במפורש בסביבה — בטלפון הם נקראו כמו פלט
+# דיבאג שדלף למסך, וזו בדיוק התלונה שהתקבלה.
+DEBUG_DETAILS = os.environ.get("TRAILER_SONG_DEBUG", "").strip().lower() in (
+    "1", "true", "yes", "on")
+
+
+def _track_summary(track: dict) -> str:
+    """מה שבאמת עוזר להחליט על הגרסה הזו, במילים: האם הקטלוג מאשר
+    שזו גרסה של השיר שביקשת, ומאיזה אלבום היא.
+
+    האלבום נשאר כי הוא אומר משהו ("Original Motion Picture Soundtrack"
+    זו הסיבה שהגרסה נשמעת כמו טריילר); שם החנות וציון הרלוונטיות ירדו,
+    כי הם לא משנים שום החלטה של מי שמחפש מוזיקה.
+    """
+    parts = []
+    if "work_verified" in track:
+        parts.append("Confirmed version of this song" if track["work_verified"]
+                     else "Not confirmed in the catalogue")
+    if track.get("album"):
+        parts.append(track["album"])
+    return " · ".join(parts)
+
+
 def _rank_breakdown(track: dict, learned: dict | None, features: dict | None) -> str:
     """הדירוג ורכיביו כשורה אחת, באותם משקלים שקבעו את הסדר בפועל."""
     measurements = st.session_state.get("bigness", {})
@@ -3260,19 +3284,16 @@ def render_track(track: dict, index: int, learned: dict | None = None):
                 st.rerun()
 
             st.divider()
-            details = [f"source: {track['source']}",
-                       f"relevance: {track.get('score', 0)}"]
-            if track.get("catalog_source"):
-                details.append(f"found via: {track['catalog_source']}")
-            if track.get("album"):
-                details.append(f"album: {track['album']}")
-            st.caption(" · ".join(details))
-            # פירוק הדירוג: "למה זה כאן" נשאל בפועל, והתשובה דרשה חישוב
-            # ידני. כאן היא גלויה — וגם רואים מיד אם גרסה שאמורה להיות
-            # מאומתת בקטלוג אינה מאומתת.
-            st.caption(_rank_breakdown(track, learned, features))
-            if audio.measured(features):
-                st.caption(audio.describe(features))
+            # שורה אחת בשפה של בן אדם. קודם ישבו כאן שלוש שורות של
+            # מספרים גולמיים (source, relevance, rank, taste, trailer,
+            # loudness, low end, hits, dynamic span) — כלי כיול שלי
+            # שדלף למוצר, ונקרא בטלפון בדיוק כמו מה שהוא: פלט דיבאג.
+            # המספרים לא נמחקו, הם מאחורי `TRAILER_SONG_DEBUG` למטה.
+            st.caption(_track_summary(track))
+            if DEBUG_DETAILS:
+                st.caption(_rank_breakdown(track, learned, features))
+                if audio.measured(features):
+                    st.caption(audio.describe(features))
             report_key = _report_key_for(track)
             if report_key:
                 # דיווח על התאמה, לא על טעם: "לא אהבתי" הוא 👎, "זה לא
@@ -3696,27 +3717,28 @@ if st.session_state["rail_nav"] == NAV_CHARTS:
     _charts_panel()
 
 chosen_work = ""
-if search_mode == MODE_SONG:
+# רק כשיש שם שיר בשדה: על מסך ריק זו שורה שמציעה לפתור עמימות של
+# שאילתה שעוד לא הוקלדה, והיא ישבה שם בכל מצב — כולל מסך הפתיחה.
+if search_mode == MODE_SONG and cover_title.strip():
     with mode_row:
         _which = st.button("Which songs have this name?", key="btn_which",
                            type="tertiary", icon=":material/help_outline:")
     if _which:
-        if not cover_title.strip():
-            st.warning("Enter a song name")
-        else:
-            search_module.reset_errors()
-            with st.spinner("Looking up works..."):
-                st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
-                    cover_title, cover_artist)
-            st.session_state["work_query"] = search_module.track_key(
-                cover_artist, cover_title)
-            if not st.session_state["work_candidates"]:
-                failure = _lookup_failed()
-                if failure:
-                    st.error(failure + " — try again")
-                else:
-                    st.info("No works found with that name. You can search "
-                            "directly with Find covers.")
+        search_module.reset_errors()
+        with st.spinner("Looking up works..."):
+            st.session_state["work_candidates"] = covers_module.musicbrainz_work_candidates(
+                cover_title, cover_artist)
+        st.session_state["work_query"] = search_module.track_key(
+            cover_artist, cover_title)
+        if not st.session_state["work_candidates"]:
+            failure = _lookup_failed()
+            if failure:
+                st.error(failure + " — try again")
+            else:
+                # caption ולא info: תיבה כחולה בגובה שתי שורות על "לא
+                # נמצא" היא יותר נוכחות ממה שהמידע הזה שווה
+                st.caption("No separate works with that name — "
+                           "'Find covers' searches it directly.")
 
     # הבורר שייך לשאילתה שעבורה נפתר. בלי הבדיקה הזו בחירה של "Sweet
     # Dreams" שרדה הקלדה של "Yellow", ו-`work_id` של Sweet Dreams נשלח
@@ -3844,7 +3866,14 @@ def _store_results(results, source, original=None):
 
 _run_similar()
 
+# מסך הפתיחה חי בתוך מחזיק משלו, כדי שחיפוש יוכל לרוקן אותו *לפני*
+# קריאת הרשת. Streamlit משאיר על המסך את מה שצויר בריצה הקודמת עד
+# שמשהו מחליף אותו באותו מקום, ולכן "START WITH ONE OF THESE" נשאר
+# תלוי מתחת לשלד הטעינה כל עוד החיפוש רץ (נראה בצילום מהטלפון).
+start_slot = st.empty()
+
 if run_search:
+    start_slot.empty()
     search_module.reset_errors()
 
 if run_search and search_mode == MODE_ARTIST and not cover_artist.strip():
@@ -3957,7 +3986,8 @@ def _start_here():
 candidates = st.session_state["candidates"]
 
 if not candidates and not run_search:
-    _start_here()
+    with start_slot.container():
+        _start_here()
 
 if candidates:
     # סמן הדור עבור שומר הגלילה: כל עוד הוא לא השתנה, מקום הגלילה שווה
@@ -4015,9 +4045,10 @@ if candidates:
     _subject = (st.session_state.get("last_query") or "").strip()
     _declared = sum(1 for t in display if t.get("trailer_indicator"))
     _shown = min(st.session_state["visible_count"], len(display))
+    # "X measured in your browser" ירד: מסך הפתיחה כבר אומר את זה כמשפט
+    # אחד, וכאן הוא היה העובדה השלישית באותה שורה — שבטלפון נשברה לשתי
+    # שורות של סטטיסטיקה מעל התוצאה הראשונה.
     _lede = [f"{_declared} declare a trailer version"] if _declared else []
-    _measured_n = sum(1 for t in display if audio.measured(_measurements.get(t["uid"])))
-    _lede.append(f"{_measured_n} measured in your browser")
     if _shown < len(display):
         _lede.insert(0, f"showing {_shown}")
 
