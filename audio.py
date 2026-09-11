@@ -130,6 +130,69 @@ def envelope(features: "dict | None") -> "list[float]":
             if isinstance(v, (int, float))]
 
 
+CHROMA_BINS = 12
+
+
+def chroma(features: "dict | None") -> "list[float]":
+    """פרופיל שנים-עשר הצלילים של הטראק, או רשימה ריקה.
+
+    כמו `envelope`, מגיע כמו שהוא מהרכיב בדפדפן. מדידות שנשמרו לפני
+    שהשדה נוסף פשוט לא נושאות אותו.
+    """
+    if not measured(features):
+        return []
+    values = features.get("chroma")
+    if not isinstance(values, list) or len(values) != CHROMA_BINS:
+        return []
+    if not all(isinstance(v, (int, float)) for v in values):
+        return []
+    return [float(v) for v in values]
+
+
+def _correlation(left: "list[float]", right: "list[float]") -> float:
+    """מתאם פירסון בין שני וקטורים באותו אורך, -1..1.
+
+    פירסון ולא קוסינוס: וקטורי כרומה הם כולם חיוביים ודי שטוחים, ולכן
+    קוסינוס מחזיר ~0.9 גם לשני שירים שאין ביניהם שום קשר — הוא בעצם
+    מודד שלשניהם יש אנרגיה. חיסור הממוצע מסלק בדיוק את הרכיב המשותף
+    הזה, ומשאיר את מה שבאמת מבדיל: *אילו* צלילים בולטים מעל השאר.
+    """
+    size = len(left)
+    mean_left = sum(left) / size
+    mean_right = sum(right) / size
+    numerator = sum((left[i] - mean_left) * (right[i] - mean_right)
+                    for i in range(size))
+    left_span = sum((value - mean_left) ** 2 for value in left) ** 0.5
+    right_span = sum((value - mean_right) ** 2 for value in right) ** 0.5
+    if left_span <= 0 or right_span <= 0:
+        return 0.0
+    return numerator / (left_span * right_span)
+
+
+def chroma_similarity(features_a: "dict | None",
+                      features_b: "dict | None") -> "float | None":
+    """כמה שני טראקים חולקים מהלך הרמוני, 0..1 — או None בלי שתי מדידות.
+
+    **חסין לטרנספוזיציה**: קאבר מועבר טונציה כל הזמן (זמרת עם טווח אחר,
+    גיטרה מכוונת נמוך), וזו העברה של *כל* הפרופיל באותו מספר חצאי-טונים.
+    לכן ההשוואה נעשית לכל שתים-עשרה ההזזות האפשריות והטובה שבהן נבחרת:
+    אותו שיר בטונציה אחרת מקבל את אותו ציון כמו בטונציה המקורית.
+
+    מה זה **לא**: זיהוי יצירה. הפרופיל ממוצע על פני הקליפ כולו ואינו
+    מכיר סדר זמנים, ולכן שני שירים שונים באותו סולם עם אותם אקורדים
+    שכיחים יקבלו ציון גבוה גם בלי שום קשר ביניהם. זה סימן נוסף בדירוג
+    (ראו `RANK_HARMONY` ב-`app.py`), לא מסנן — ובמכוון: מסנן על סימן
+    שלא כויל מול ייצוא אמיתי היה מעלים קאברים אמיתיים בשקט.
+    """
+    left, right = chroma(features_a), chroma(features_b)
+    if not left or not right:
+        return None
+    best = max(_correlation(left, right[shift:] + right[:shift])
+               for shift in range(CHROMA_BINS))
+    # -1..1 → 0..1, כדי שיישב באותה סקאלה של שאר רכיבי הדירוג
+    return max(0.0, min(1.0, (best + 1.0) / 2.0))
+
+
 def describe(features: "dict | None") -> str:
     """המספרים הגולמיים לתצוגה, כדי שהכיול הבא יהיה מבוסס ולא ניחוש."""
     if not measured(features):

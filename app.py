@@ -2759,10 +2759,39 @@ RANK_TASTE = 0.55      # מה שהמשתמש לימד בפועל — גובר ע
 RANK_WORK = 0.35       # הקטלוג מאשר שזו גרסה של השיר שביקשת
 RANK_TRAILER = 0.18    # עדות מפורשת שזו גרסת טריילר — הסיבה שהאפליקציה קיימת
 RANK_SIZE = 0.07       # המדידה בדפדפן. יש גם מיון מפורש "גודל (נמדד)"
+# קרבה הרמונית לגרסת הייחוס, מפרופיל הכרומה שנמדד בדפדפן
+# (`audio.chroma_similarity`). קטן בכוונה, וקטן בהרבה מ-`RANK_WORK`:
+# כשהקטלוג יודע לענות הוא העדות החזקה, וזה סימן משלים בדיוק למקרה שבו
+# הוא *לא* יודע — שיר חדש מדי, או קאבר שאף מאגר עוד לא רשם. הוא גם לא
+# כויל מול ייצוא אמיתי (ראו את הבדיקות ב-`tests/test_bigness.py`
+# שמתעדות כמה רחב הטווח שלו), ולכן הוא לא מסנן ולא מכריע לבדו.
+RANK_HARMONY = 0.10
 # "טרם נמדד" אינו "קטן". הערך הקודם היה -1, ולכן כל טראק שהמדידה לא הגיעה
 # אליו (אין preview, חסימת CORS, כישלון) צנח לתחתית — גם כשכתוב עליו
 # במפורש "Epic Trailer Version" ויש לו שני סימני טריילר.
 NEUTRAL_SIZE = 0.5
+# ואותו עיקרון על הקרבה ההרמונית: בלי שתי מדידות (אין preview לגרסת
+# הייחוס, או שהיא טרם נמדדה) הרכיב קבוע לכולם ואינו מזיז את הסדר בכלל.
+NEUTRAL_HARMONY = 0.5
+
+
+def reference_features() -> "dict | None":
+    """המדידה של גרסת הייחוס של המסך הזה, אם היא כבר נמדדה בדפדפן.
+
+    גרסת הייחוס אינה אחת מהתוצאות ולכן לא נמדדה עד עכשיו: `measure_visible`
+    מקבל אותה במפורש (ראו קריאתו), והמדידה נכנסת לקאש המשותף לפי
+    `track_key` — כלומר המקור של שיר מוכר נמדד פעם אחת לכל המשתמשים.
+    """
+    original = st.session_state.get("original")
+    if not original:
+        return None
+    return st.session_state.get("bigness", {}).get(original.get("uid"))
+
+
+def harmony_of(track: dict, measurements: dict) -> "float | None":
+    """קרבה הרמונית בין הטראק לגרסת הייחוס, או None כשאין את שתי המדידות."""
+    return audio.chroma_similarity(measurements.get(track["uid"]),
+                                   reference_features())
 
 
 def rank_score(track: dict, learned: dict, measurements: dict) -> float:
@@ -2790,10 +2819,12 @@ def rank_score(track: dict, learned: dict, measurements: dict) -> float:
     features = measurements.get(track["uid"])
     size = (audio.bigness(features) / 100.0 if audio.measured(features)
             else NEUTRAL_SIZE)
+    harmony = harmony_of(track, measurements)
     return (RANK_TASTE * taste_of(track, learned)
             + RANK_WORK * (1.0 if track.get("work_verified") else 0.0)
             + RANK_TRAILER * search_module.trailer_strength(track)
-            + RANK_SIZE * size)
+            + RANK_SIZE * size
+            + RANK_HARMONY * (NEUTRAL_HARMONY if harmony is None else harmony))
 
 
 def _rank_breakdown(track: dict, learned: dict | None, features: dict | None) -> str:
@@ -2801,12 +2832,15 @@ def _rank_breakdown(track: dict, learned: dict | None, features: dict | None) ->
     measurements = st.session_state.get("bigness", {})
     score = rank_score(track, learned or {}, measurements)
     size = audio.bigness(features) if audio.measured(features) else None
+    harmony = harmony_of(track, measurements)
     return (f"rank {score:.3f} · "
             f"taste {round(taste_of(track, learned or {}) * 100)}% · "
             + ("verified in catalogue" if track.get("work_verified")
                else "not verified in catalogue")
             + f" · trailer {search_module.trailer_strength(track):.2f} · "
-            + (f"loudness {size}" if size is not None else "not measured yet"))
+            + (f"loudness {size}" if size is not None else "not measured yet")
+            + (f" · harmony {harmony:.2f} vs the reference" if harmony is not None
+               else " · harmony not compared"))
 
 
 def sorted_by(tracks: list, sort_by: str, learned: dict) -> list:
@@ -4045,7 +4079,14 @@ if candidates:
 
     visible = display[: st.session_state["visible_count"]]
 
-    measure_visible(visible)
+    # גרסת הייחוס נמדדת יחד עם התוצאות אף שאינה אחת מהן: בלי המדידה
+    # שלה אין מול מה להשוות את הכרומה, ו-`RANK_HARMONY` היה נשאר ניטרלי
+    # לנצח. היא נכנסת ראשונה כדי שהיא תימדד גם כשהדף מציג רק שורה אחת.
+    _reference = st.session_state.get("original")
+    _to_measure = ([_reference] if _reference and _reference.get("preview_url")
+                   else []) + visible
+
+    measure_visible(_to_measure)
     measure_via_server(visible)
 
     if youtube_module.available() and st.button(
