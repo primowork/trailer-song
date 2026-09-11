@@ -233,6 +233,36 @@ def save_evidence(evidence: dict) -> bool:
     return _save_json(EVIDENCE_FILE, evidence)
 
 
+# כתובות עטיפות אלבום לפי `cache_key`. **משותף**: העטיפה של אלבום היא
+# עובדה ציבורית, ובלי שיתוף כל משתמש שפותח את מסך הפתיחה היה מוציא מחדש
+# בדיוק את אותן קריאות רשת.
+#
+# מחרוזת ריקה נשמרת בכוונה ואינה "אין רשומה": היא אומרת "חיפשנו ולא
+# נמצאה עטיפה", ובלעדיה אותה שאילתה כושלת הייתה רצה שוב בכל רינדור.
+ARTWORK_FILE = "artwork.json"
+
+
+def load_artwork() -> dict:
+    if db.available():
+        return db.load_artwork()
+    return _load_json(ARTWORK_FILE, {}) or {}
+
+
+def save_artwork(found: dict) -> bool:
+    """**מיזוג** של מה שהתחדש, לא החלפה של הקאש כולו.
+
+    בניגוד ל-`save_evidence`, כאן הקורא מעביר רק את המפתחות החדשים: הקאש
+    גדל לכל שיר בכל מצעד (אלפי רשומות), וכתיבת כולו בכל רינדור היא אלפי
+    INSERT מיותרים. המיזוג בגיבוי הקבצים נעשה כאן כדי ששני הבקאנדים יקבלו
+    את אותו קלט בדיוק.
+    """
+    if not found:
+        return True
+    if db.available():
+        return db.save_artwork(found)
+    return _save_json(ARTWORK_FILE, {**(_load_json(ARTWORK_FILE, {}) or {}), **found})
+
+
 # מצעדים שיובאו מעמודי בילבורד שמורים. שם הקובץ נגזר משם המצעד, כדי שייבוא
 # חוזר של אותו מצעד יעדכן במקום לשכפל. **משותף**: מצעד בילבורד הוא נתון ציבורי.
 IMPORTED_CHARTS = "imported_charts.json"

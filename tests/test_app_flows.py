@@ -55,6 +55,12 @@ def offline(monkeypatch, tmp_path):
     import accounts
     monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(accounts.st, "user", _UserWithoutAuth())
+    # עטיפות האלבום של רשתות הכפתורים יוצאות לרשת בכל רינדור של מסך
+    # הפתיחה או המצעדים. בלי החסימה הזו כל טסט כאן היה תלוי בחנות חיצונית
+    # — ובסביבה בלי רשת, מחכה לטיימאאוט בעשרות ריבועים. `None` הוא
+    # "החנות לא ענתה", שהוא בדיוק מה שלא נשמר בקאש.
+    monkeypatch.setattr(search_module, "album_art",
+                        lambda artist, track="", client=None: None)
 
 
 @pytest.fixture
@@ -2012,6 +2018,147 @@ def test_the_row_menu_has_one_divider_and_not_three(app):
 
     assert not app.exception
     assert len(app.get("divider")) == 1, "מספר הקווים המפרידים השתנה"
+# ---------- כותרת מסך הפתיחה ----------
+
+def _html_index(app, needle) -> int:
+    """המיקום של אלמנט `st.html` שמכיל את הטקסט, בסדר שהוא מצויר על הדף."""
+    bodies = [str(getattr(e, "body", "")) for e in app.get("html")]
+    return next(i for i, body in enumerate(bodies) if needle in body)
+
+
+def test_the_headline_sits_between_the_logo_and_the_search_field(app):
+    """בקשה מפורשת: הכותרת עברה מעל רשת ההצעות אל מתחת ללוגו.
+
+    נבדק לפי סדר הציור ולא לפי נוכחות בלבד — "הכותרת קיימת" היה עובר גם
+    כשהיא חזרה למקומה הישן, כלומר בדיוק התקלה שהטסט אמור לתפוס.
+    """
+    assert not app.exception
+    logo = _html_index(app, "COVER LOVER")
+    headline = _html_index(app, "Find a cover worth cutting to")
+    field = _html_index(app, "ts-searchglyph")
+    assert logo < headline < field, (logo, headline, field)
+
+
+def test_the_measured_in_your_browser_lede_is_gone(app):
+    """המשתמש ביקש להסיר את שורת המשנה. היא נמחקה מהקוד, ולכן הטסט
+    שומר עליה מלחזור בגלגול הבא של מסך הפתיחה."""
+    assert "rise to the top" not in _html_bodies(app)
+
+
+def test_the_headline_leaves_with_the_start_screen(app):
+    """"מצא קאבר" היא כותרת של המסך הריק. מעל רשימת תוצאות היא כבר לא
+    נכונה — שם הכותרת היא מספר הגרסאות שנמצאו."""
+    app.session_state["candidates"] = [track("2WEI", "Zombie (Epic)", "s1")]
+    app.run()
+
+    assert not app.exception
+    assert "Find a cover worth cutting to" not in _html_bodies(app)
+
+
+# ---------- עטיפות אלבום בריבועי הרשת ----------
+
+COVER = "https://cdn.example.com/cover-250.jpg"
+
+
+def test_a_start_square_carries_a_real_album_cover(app, monkeypatch):
+    """הבקשה: בכל מקום שיש ריבוע אלבום תהיה עטיפה, לא ריבוע ריק.
+
+    הריבוע הוא פסאודו-אלמנט של הכפתור (`st.button` מקבל תווית טקסט
+    בלבד), ולכן הראיה שהוא התמלא היא כלל ה-CSS שמוזרק לו.
+    """
+    monkeypatch.setattr(search_module, "album_art",
+                        lambda artist, track="", client=None: COVER)
+    app.run()
+
+    assert not app.exception
+    injected = _html_bodies(app)
+    assert COVER in injected, "לא הוזרקה שום עטיפה לרשת ההתחלה"
+    assert 'st-key-start_0"] button::before' in injected
+
+
+def test_an_answer_of_no_cover_is_remembered_but_a_dead_store_is_not(app, monkeypatch):
+    """ההבדל שמונע מתקלת רשת רגעית להיחרט כ"אין עטיפה" לכל המשתמשים:
+    מחרוזת ריקה היא תשובה ונשמרת, `None` הוא "החנות לא ענתה" ואינו."""
+    monkeypatch.setattr(search_module, "album_art",
+                        lambda artist, track="", client=None: None)
+    app.run()
+    assert storage.load_artwork() == {}, "כישלון רשת נשמר בקאש המשותף"
+
+    monkeypatch.setattr(search_module, "album_art",
+                        lambda artist, track="", client=None: "")
+    # אין צורך לנקות את הקאש: הריצה הקודמת לא שמרה בו את המפתחות האלה,
+    # וזה בדיוק מה שנבדק כאן — הם נשאלים שוב
+    app.run()
+    assert storage.load_artwork(), "'חיפשנו ואין עטיפה' לא נשמר, וייבדק שוב לנצח"
+    assert set(storage.load_artwork().values()) == {""}
+
+
+def test_a_cover_url_from_the_store_cannot_escape_the_css_rule(app, monkeypatch):
+    """הכתובת מגיעה מ-API חיצוני ואינה נתון מהימן: ציטוט בתוכה היה סוגר
+    את הכלל ופותח אחד משלו, בתוך גיליון הסגנונות של הדף."""
+    monkeypatch.setattr(
+        search_module, "album_art",
+        lambda artist, track="", client=None:
+            'https://x/a.jpg");}body{display:none}.x{background:url("https://x/b.jpg')
+    app.run()
+
+    assert not app.exception
+    assert "body{display:none}" not in _html_bodies(app)
+
+
+def test_a_long_chart_is_shown_a_page_at_a_time(app):
+    """קטגוריה אחת מגיעה ל-330 שירים. הכל בבת אחת זה קיר כפתורים — ומאז
+    שלכל כפתור יש עטיפה, גם מאות קריאות רשת ברינדור אחד."""
+    import app as app_module
+
+    _nav(app, "Charts")
+    app.selectbox(key="classics_category").set_value("60's").run()
+
+    assert not app.exception
+    shown = [b for b in app.button if (b.key or "").startswith("classic_")]
+    assert len(shown) == app_module.GRID_PAGE, len(shown)
+
+    more = [b for b in app.button if b.key == "more_classic"]
+    assert more, "אין דרך להגיע לשאר הרשימה"
+    more[0].click().run()
+
+    grown = [b for b in app.button if (b.key or "").startswith("classic_")]
+    assert len(grown) == 2 * app_module.GRID_PAGE, len(grown)
+
+
+def test_switching_category_starts_the_page_count_over(app):
+    """הקטגוריות חולקות את אותו `key_prefix`, ובלי איפוס 'עוד 60' של
+    הקטגוריה הקודמת היה נשאר בתוקף לחדשה."""
+    import app as app_module
+
+    _nav(app, "Charts")
+    app.selectbox(key="classics_category").set_value("60's").run()
+    [b for b in app.button if b.key == "more_classic"][0].click().run()
+
+    app.selectbox(key="classics_category").set_value("70's").run()
+
+    shown = [b for b in app.button if (b.key or "").startswith("classic_")]
+    assert len(shown) == app_module.GRID_PAGE, len(shown)
+
+
+def test_the_show_more_button_does_not_get_an_album_square(app):
+    """כלל הריבוע תופס לפי `[class*="st-key-classic_"]`, וכפתור בשם
+    `classic_more` היה מקבל ריבוע עטיפה משלו באמצע הרשימה."""
+    _nav(app, "Charts")
+    app.selectbox(key="classics_category").set_value("60's").run()
+
+    keys = [b.key for b in app.button]
+    assert "more_classic" in keys
+    assert not any((key or "").startswith("classic_") and key.endswith("_more")
+                   for key in keys)
+
+
+def test_the_headline_stays_off_the_charts_screen(app):
+    """במקומה החדש היא הדבר הראשון על הדף, ובמסך המצעדים היא הייתה יושבת
+    מעל הכותרת "Charts" ומכריזה על מסך אחר מזה שרואים."""
+    _nav(app, "Charts")
+    assert not app.exception
+    assert "Find a cover worth cutting to" not in _html_bodies(app)
 # ---------- ניקוי שורת החיפוש ----------
 
 def test_the_empty_screen_marks_itself_for_the_hidden_controls(app):

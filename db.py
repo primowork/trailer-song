@@ -60,6 +60,16 @@ CREATE TABLE IF NOT EXISTS evidence (
     payload     jsonb NOT NULL,
     fetched_at  timestamptz NOT NULL DEFAULT now()
 );
+-- עטיפות אלבום לפי cache_key. משותף כמו evidence: כתובת של עטיפה היא
+-- עובדה ציבורית ולא העדפה, וכל משתמש שפותח את מסך הפתיחה היה מוציא אחרת
+-- את אותן קריאות רשת בדיוק. הערך הוא מחרוזת, ומחרוזת **ריקה** היא תשובה
+-- לגיטימית שנשמרת בכוונה: "חיפשנו ולא נמצאה עטיפה", כדי שלא ננסה שוב
+-- בכל רינדור.
+CREATE TABLE IF NOT EXISTS artwork (
+    cache_key   text PRIMARY KEY,
+    url         jsonb NOT NULL,
+    fetched_at  timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS charts (
     slug        text PRIMARY KEY,
     payload     jsonb NOT NULL,
@@ -271,6 +281,14 @@ def load_evidence() -> dict:
 
 def save_evidence(items: dict) -> bool:
     return _save_shared("evidence", "cache_key", "payload", items)
+
+
+def load_artwork() -> dict:
+    return _load_shared("artwork", "cache_key", "url")
+
+
+def save_artwork(items: dict) -> bool:
+    return _save_shared("artwork", "cache_key", "url", items)
 
 
 def load_charts() -> dict:

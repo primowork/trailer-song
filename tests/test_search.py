@@ -423,3 +423,81 @@ def test_refresh_preview_returns_the_id_so_the_next_refresh_is_direct(monkeypatc
         make("2WEI", "Zombie", uid="itunes-77", preview="https://p/77")])
     url, uid = search.refresh_preview({"artist": "2WEI", "track": "Zombie"})
     assert (url, uid) == ("https://p/77", "itunes-77")
+
+
+# ---------- עטיפת אלבום ----------
+
+class _Answers:
+    """לקוח HTTP מזויף שמחזיר תשובה קבועה לכל מארח."""
+
+    def __init__(self, **by_host):
+        self.by_host = by_host
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append(url)
+        host = "deezer" if "deezer" in url else "itunes"
+        payload = self.by_host.get(host)
+        if payload is None:
+            raise RuntimeError("store is down")
+        return _Response(payload)
+
+
+class _Response:
+    status_code = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+DEEZER_HIT = {"data": [{"album": {"cover_medium": "https://dz/cover.jpg"}}]}
+ITUNES_HIT = {"results": [{"artworkUrl100": "https://it/cover.jpg"}]}
+
+
+def test_deezer_answers_first_and_itunes_is_never_asked():
+    """מגבלת הקצב של iTunes היא כעשרים בקשות לדקה, ורשת כפתורים אחת
+    מייצרת עשרות. Deezer היא המקור, iTunes רק הנפילה לאחור."""
+    client = _Answers(deezer=DEEZER_HIT, itunes=ITUNES_HIT)
+    assert search.album_art("Beck", "Loser", client=client) == "https://dz/cover.jpg"
+    assert len(client.calls) == 1
+
+
+def test_itunes_catches_what_deezer_does_not_have():
+    client = _Answers(deezer={"data": []}, itunes=ITUNES_HIT)
+    assert search.album_art("Beck", "Loser", client=client) == "https://it/cover.jpg"
+
+
+def test_no_cover_anywhere_is_an_empty_string_not_a_failure():
+    client = _Answers(deezer={"data": []}, itunes={"results": []})
+    assert search.album_art("Beck", "Loser", client=client) == ""
+
+
+def test_both_stores_down_is_none_and_not_an_empty_answer():
+    """ההבדל שמונע מתקלת רשת רגעית להיחרט בקאש המשותף כ'אין עטיפה'."""
+    client = _Answers()
+    assert search.album_art("Beck", "Loser", client=client) is None
+
+
+def test_a_failed_cover_lookup_is_not_reported_as_a_failed_search():
+    """העטיפה היא קישוט. בלי `quiet` הכישלון שלה היה מוצג למשתמש
+    כ'החיפוש לא הושלם' — שקר על התוצאות שכן חזרו."""
+    search.reset_errors()
+    search.album_art("Beck", "Loser", client=_Answers())
+    assert search.last_errors() == []
+
+
+def test_a_cover_lookup_does_not_climb_the_retry_ladder():
+    """שלושה ניסיונות עם השהיה גדלה, כפול עשרות ריבועים, הופכים חנות
+    איטית להמתנה ארוכה על מסך הפתיחה."""
+    client = _Answers()
+    search.album_art("Beck", "Loser", client=client)
+    assert len(client.calls) == 2, client.calls
+
+
+def test_an_empty_pair_asks_nothing():
+    client = _Answers(deezer=DEEZER_HIT)
+    assert search.album_art("", "", client=client) == ""
+    assert client.calls == []

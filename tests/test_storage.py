@@ -129,3 +129,29 @@ def test_two_users_correcting_different_tracks_do_not_overwrite(tmp_path, monkey
     storage.add_category_correction("a|b", "a", "a|album", "Rock")
     storage.add_category_correction("c|d", "c", "c|album", "Classical")
     assert len(storage.load_category_corrections()) == 2
+def test_artwork_cache_merges_instead_of_replacing(tmp_path, monkeypatch):
+    """הקאש גדל לכל שיר בכל מצעד, ולכן הקורא שולח רק את מה שהתחדש —
+    שמירה שדורסת הייתה מוחקת את כל מה שנצבר לפניה."""
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    assert storage.load_artwork() == {}
+
+    assert storage.save_artwork({"beck|loser": "https://cdn/a.jpg"})
+    assert storage.save_artwork({"coldplay|yellow": "https://cdn/b.jpg"})
+    assert storage.load_artwork() == {
+        "beck|loser": "https://cdn/a.jpg",
+        "coldplay|yellow": "https://cdn/b.jpg",
+    }
+
+
+def test_an_album_with_no_cover_is_stored_as_an_answer(tmp_path, monkeypatch):
+    """מחרוזת ריקה אינה 'לא נבדק': בלעדיה שיר שאין לו עטיפה בשום חנות
+    היה נשלח לרשת שוב בכל רינדור."""
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    storage.save_artwork({"nobody|nothing": ""})
+    assert storage.load_artwork() == {"nobody|nothing": ""}
+
+
+def test_saving_nothing_is_not_an_error(tmp_path, monkeypatch):
+    storage = _fresh_storage(tmp_path, monkeypatch)
+    assert storage.save_artwork({})
+    assert storage.load_artwork() == {}
